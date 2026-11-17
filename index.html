@@ -19,7 +19,7 @@
   <div class="pill" id="speedBtn" title="Game speed">⏵ x1</div>
 </div>
 
-<div id="objectives"><h4>Guild Quests:</h4><ul id="objList"></ul><div id="royal"></div></div>
+<div id="objectives"><h4>Guild Quests:</h4><ul id="objList"></ul><div id="expeds"></div><div id="royal"></div></div>
 
 <div id="camctl">
   <button id="camLeft" title="Rotate left (←)">⟲</button><button id="camRight" title="Rotate right (→)">⟳</button>
@@ -30,7 +30,12 @@
 
 <div id="banner" class="hidden"></div>
 <div id="toasts"></div>
-<div id="placeHint" class="hidden">Click to place · Right-click / Esc to cancel · Drag to pan · Right-drag to rotate</div>
+<div id="placeHint" class="hidden">Drag the golden plot (or tap the ground) to move it · rotate with ⟲ ⟳ · then confirm</div>
+<div id="placeBar" class="hidden">
+  <div class="pname"><b id="placeName"></b> <span class="tag">💰 <span id="placeCost"></span></span></div>
+  <div class="pbtns"><button class="act" id="placeL" title="Rotate left">⟲ Rotate</button><button class="act" id="placeR" title="Rotate right (R)">Rotate ⟳</button>
+  <button class="act" id="placeOk" title="Build here (Enter)">✔ Build</button><button class="act red" id="placeNo" title="Cancel (Esc)">✖ Cancel</button></div>
+</div>
 
 <div id="toolbar">
   <button data-open="build"><span>🔨</span>Build</button>

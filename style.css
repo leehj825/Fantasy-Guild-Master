@@ -69,3 +69,14 @@ button.act.red{background:linear-gradient(#d65353,#8b1d1d);color:#fff}
 #camctl button.on{background:linear-gradient(#e8b53a,#a77a1c);color:var(--ink)}
 @media (max-width:600px){#camctl{grid-template-columns:repeat(4,32px)}#camctl button{height:32px;font-size:15px}}
 @media (max-width:600px){#camctl{bottom:84px}}
+
+#expeds:not(:empty){margin-top:6px;border-top:1px solid var(--gold2);padding-top:6px}
+#expeds h4{margin:0 0 3px}
+.exp{font-size:12px;margin-bottom:5px;display:grid;grid-template-columns:1fr auto;gap:0 6px}
+.exp .bar{grid-column:1 / -1}
+#placeBar{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);z-index:6;background:linear-gradient(#6b4423,#4a2d14);border:2px solid var(--gold);border-radius:12px;padding:8px 10px;box-shadow:0 4px 12px #000a;text-align:center;max-width:96vw}
+#placeBar .pname{margin-bottom:6px;font-size:14px}
+#placeBar .pbtns{display:flex;gap:6px;justify-content:center;flex-wrap:wrap}
+#placeBar button.act{padding:9px 12px;font-size:14px;min-width:84px}
+#placeHint{bottom:122px;max-width:92vw;text-align:center}
+@media (max-width:600px){#camctl{bottom:84px}body.placing #camctl{bottom:140px}}

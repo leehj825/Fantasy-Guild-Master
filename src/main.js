@@ -10,7 +10,9 @@ const $ = id => document.getElementById(id);
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const LOWFX = matchMedia('(pointer: coarse)').matches;   // phones/tablets: lighter rendering so the game runs at full speed
+renderer.setPixelRatio(LOWFX ? Math.min(devicePixelRatio, 1.25) : Math.min(devicePixelRatio, 2));
+const stripLights = o => { if (!LOWFX) return; const ls = []; o.traverse(c => { if (c.isPointLight) ls.push(c); }); ls.forEach(l => l.parent.remove(l)); };
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x2f7a32);
@@ -59,7 +61,7 @@ const sun = new THREE.DirectionalLight(0xfff1d0, 1.05);
 sun.position.set(N / 2 + 18, 30, N / 2 + 8);
 sun.target.position.set(N / 2, 0, N / 2);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(LOWFX ? 1024 : 2048, LOWFX ? 1024 : 2048);
 Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 1, far: 90 });
 sun.shadow.bias = -0.0006;
 scene.add(sun, sun.target);
@@ -158,7 +160,7 @@ const key = (x, z) => x + ',' + z;
   place(PROPS.barricade(), HALL.cx + 11.5, HALL.cz + 5, 0.4); place(PROPS.barricade(), HALL.cx + 5.5, HALL.cz + 12, -1.1); place(PROPS.spikeBarricade(), HALL.cx + 13.3, HALL.cz + 2.5, 0.2);
   [[HALL.cx + 0.5, HALL.cz + 5.3], [HALL.cx + 4.5, HALL.cz + 5.3], [HALL.cx + 7, HALL.cz + 5.3], [HALL.cx + 6.2, HALL.cz + 7.8]].forEach(([x, z]) => place(PROPS.lantern(), x, z, 0));
   place(PROPS.campfire(), HALL.cx + 7.2, HALL.cz + 9.5, 0);
-  scene.add(g); window.__decor = g;
+  stripLights(g); scene.add(g); window.__decor = g;
 }
 
 /* ------------------------------------------------------------------ *
@@ -167,25 +169,27 @@ const key = (x, z) => x + ',' + z;
 const bGroup = new THREE.Group(); scene.add(bGroup);
 const worldEl = document.getElementById('world');
 
-function canPlace(type, cx, cz) {
-  const t = BUILDINGS[type];
-  if (cx < 2 || cz < 2 || cx + t.w > N - 2 || cz + t.d > N - 2) return false;
-  for (let x = cx; x < cx + t.w; x++) for (let z = cz; z < cz + t.d; z++) if (occ.has(key(x, z))) return false;
+const footprint = (type, rot) => { const t = BUILDINGS[type]; return rot % 2 ? [t.d, t.w] : [t.w, t.d]; };
+function canPlace(type, cx, cz, rot = 0) {
+  const [w, d] = footprint(type, rot);
+  if (cx < 2 || cz < 2 || cx + w > N - 2 || cz + d > N - 2) return false;
+  for (let x = cx; x < cx + w; x++) for (let z = cz; z < cz + d; z++) if (occ.has(key(x, z))) return false;
   return true;
 }
-function addBuilding(type, cx, cz) {
-  const t = BUILDINGS[type];
+function addBuilding(type, cx, cz, rot = 0) {
+  const t = BUILDINGS[type], [w, d] = footprint(type, rot), th = rot * Math.PI / 2;
   const variant = type === 'tent' ? (ofType('tent').length % 2 ? 0 : 1) : 0;
   const group = buildBuilding(type, variant);
-  group.position.set(cx + t.w / 2, 0, cz + t.d / 2);
-  group.rotation.y = 0;
+  group.position.set(cx + w / 2, 0, cz + d / 2);
+  group.rotation.y = th;
+  stripLights(group);
   bGroup.add(group);
   const b = {
-    id: G.nextId++, type, cx, cz, w: t.w, d: t.d, level: 1, stock: 0, progress: 0, group,
-    door: new THREE.Vector3(cx + t.w / 2, 0, cz + t.d + 0.7),
+    id: G.nextId++, type, cx, cz, w, d, rot, level: 1, stock: 0, progress: 0, group,
+    door: new THREE.Vector3(cx + w / 2 + Math.sin(th) * (t.d / 2 + 0.7), 0, cz + d / 2 + Math.cos(th) * (t.d / 2 + 0.7)),
   };
   group.userData.bid = b.id;
-  for (let x = cx; x < cx + t.w; x++) for (let z = cz; z < cz + t.d; z++) occ.add(key(x, z));
+  for (let x = cx; x < cx + w; x++) for (let z = cz; z < cz + d; z++) occ.add(key(x, z));
   if (type === 'forge' || type === 'alchemy') {
     b.bar = document.createElement('div'); b.bar.className = 'pbar'; b.bar.innerHTML = '<i></i>'; worldEl.appendChild(b.bar);
     b.tag = document.createElement('div'); b.tag.className = 'btag'; worldEl.appendChild(b.tag);
@@ -588,6 +592,8 @@ function updateHUD() {
   $('hMana').textContent = G.mana;
   $('hPop').textContent = `${G.heroes.length}/${popCap()}`;
   $('hOre').textContent = G.ore; $('hWood').textContent = G.wood; $('hHerbs').textContent = G.herbs;
+  const ex = G.quests.filter(q => q.state === 'active').map(q => `<div class="exp"><span>⚔️ ${q.name}</span><span>${Math.ceil(q.t)}s</span><div class="bar"><i style="width:${100 - q.t / q.dur * 100}%"></i></div></div>`).join('');
+  if (ex !== $('expeds')._h) { $('expeds')._h = ex; $('expeds').innerHTML = ex ? '<h4>Expeditions:</h4>' + ex : ''; }
   const pend = OBJ.filter(o => !o[1]()).slice(0, 3);
   const done = OBJ.filter(o => o[1]()).slice(-1);
   const html = [...done, ...pend].map(o => `<li class="${o[1]() ? 'done' : ''}">${o[1]() ? '☑' : '☐'} ${o[0]}</li>`).join('');
@@ -734,11 +740,11 @@ $('speedBtn').onclick = () => { G.speed = G.speed === 1 ? 2 : G.speed === 2 ? 4 
  * ------------------------------------------------------------------ */
 const grid = new THREE.GridHelper(N, N, 0xffffff, 0xffffff);
 grid.position.set(N / 2, 0.05, N / 2); grid.material.transparent = true; grid.material.opacity = 0.18; grid.visible = false; scene.add(grid);
-let placing = null, ghost = null, ghostCell = [0, 0];
+let placing = null, ghost = null, ghostCell = [0, 0], ghostRot = 0;
 function startPlacement(type) {
-  cancelPlacement(); placing = type;
+  cancelPlacement(); placing = type; ghostRot = 0;
   const t = BUILDINGS[type];
-  ghost = new THREE.Group();
+  ghost = new THREE.Group(); const pivot = new THREE.Group(); ghost.add(pivot); ghost.userData.pivot = pivot;
   // translucent golden preview of the real model on a glowing tiled plot
   const preview = buildBuilding(type, 0); const lights = [];
   const gm = new THREE.MeshBasicMaterial({ color: 0xffd24a, transparent: true, opacity: 0.42, depthWrite: false });
@@ -750,66 +756,95 @@ function startPlacement(type) {
   const pm = new THREE.MeshBasicMaterial({ map: tex, color: 0xffffff, transparent: true, depthWrite: false });
   const plane = new THREE.Mesh(new THREE.PlaneGeometry(t.w, t.d), pm);
   plane.rotation.x = -Math.PI / 2; plane.position.y = 0.08;
-  ghost.add(preview, plane); ghost.userData.mats = [gm, pm];
-  scene.add(ghost); grid.visible = true; $('placeHint').classList.remove('hidden');
-  ghostCell = [HALL.cx + 6, HALL.cz + 6]; moveGhost(ghostCell[0], ghostCell[1]);
+  // front marker (little arrow) so the facing direction is obvious while rotating
+  const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.45, 3), new THREE.MeshBasicMaterial({ color: 0xfff2a0 }));
+  arrow.rotation.x = Math.PI / 2; arrow.position.set(0, 0.12, t.d / 2 + 0.35);
+  pivot.add(preview, plane, arrow); ghost.userData.mats = [gm, pm];
+  scene.add(ghost); grid.visible = true;
+  $('placeHint').classList.remove('hidden'); $('placeBar').classList.remove('hidden'); $('toolbar').classList.add('hidden'); document.body.classList.add('placing');
+  $('placeCost').textContent = t.cost; $('placeName').textContent = t.name;
+  const [w, d] = footprint(type, 0);
+  moveGhost(Math.floor(camTarget.x - w / 2 + 0.5), Math.floor(camTarget.z - d / 2 + 0.5));
 }
 function cancelPlacement() {
-  placing = null; if (ghost) { scene.remove(ghost); ghost = null; } grid.visible = false; $('placeHint').classList.add('hidden');
+  placing = null; if (ghost) { scene.remove(ghost); ghost = null; } grid.visible = false;
+  $('placeHint').classList.add('hidden'); $('placeBar').classList.add('hidden'); $('toolbar').classList.remove('hidden'); document.body.classList.remove('placing');
 }
 function moveGhost(cx, cz) {
-  const t = BUILDINGS[placing]; ghostCell = [cx, cz];
-  ghost.position.set(cx + t.w / 2, 0, cz + t.d / 2);
-  const ok = canPlace(placing, cx, cz) && G.gold >= t.cost;
+  const [w, d] = footprint(placing, ghostRot), t = BUILDINGS[placing];
+  cx = Math.max(2, Math.min(N - 2 - w, cx)); cz = Math.max(2, Math.min(N - 2 - d, cz));
+  ghostCell = [cx, cz];
+  ghost.position.set(cx + w / 2, 0, cz + d / 2);
+  ghost.userData.pivot.rotation.y = ghostRot * Math.PI / 2;
+  const ok = canPlace(placing, cx, cz, ghostRot) && G.gold >= t.cost;
   ghost.userData.mats.forEach((m, i) => m.color.setHex(i === 1 ? (ok ? 0xffffff : 0xff6060) : (ok ? 0xffd24a : 0xff4040)));
-  ghost.userData.ok = ok;
+  ghost.userData.ok = ok; $('placeOk').disabled = !ok;
 }
+function rotateGhost(dir) {
+  if (!placing) return;
+  const [w0, d0] = footprint(placing, ghostRot), ccx = ghostCell[0] + w0 / 2, ccz = ghostCell[1] + d0 / 2;   // rotate about the footprint centre
+  ghostRot = (ghostRot + dir + 4) % 4;
+  const [w, d] = footprint(placing, ghostRot);
+  moveGhost(Math.floor(ccx - w / 2 + 0.5), Math.floor(ccz - d / 2 + 0.5));
+}
+function confirmPlacement() {
+  if (!placing) return;
+  const t = BUILDINGS[placing];
+  if (!ghost.userData.ok) return toast(G.gold < t.cost ? 'Not enough gold.' : 'Cannot build there.');
+  G.gold -= t.cost; const b = addBuilding(placing, ghostCell[0], ghostCell[1], ghostRot);
+  floatText(new THREE.Vector3(b.cx + b.w / 2, 1, b.cz + b.d / 2), `-${t.cost} Gold`, '#ff9a9a');
+  toast(`${t.name} constructed!`); cancelPlacement();
+}
+$('placeL').onclick = () => rotateGhost(-1); $('placeR').onclick = () => rotateGhost(1);
+$('placeOk').onclick = confirmPlacement; $('placeNo').onclick = cancelPlacement;
 const ray = new THREE.Raycaster(), ptr = new THREE.Vector2(), plane0 = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 function groundAt(cx, cy) {
   ptr.set(cx / innerWidth * 2 - 1, -(cy / innerHeight) * 2 + 1); ray.setFromCamera(ptr, camera);
   const p = new THREE.Vector3(); return ray.ray.intersectPlane(plane0, p) ? p : null;
 }
+// Touch/mouse scheme: ONE finger (or left mouse) = rotate (sideways) and tilt (up/down); TWO fingers (or right mouse / Shift) = pan, pinch = zoom.
+// While placing a building, dragging the golden plot moves it; tapping the ground moves it there.
 let drag = null;
-const pts = new Map(); let pinch = null;
+const pts = new Map(); let two = null;
+const cellFor = (x, z) => { const [w, d] = footprint(placing, ghostRot); return [Math.floor(x - w / 2 + 0.5), Math.floor(z - d / 2 + 0.5)]; };
 canvas.addEventListener('pointerdown', e => {
   pts.set(e.pointerId, [e.clientX, e.clientY]);
-  if (pts.size === 1) drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, btn: e.button, rotate: e.button === 2 || e.button === 1 || e.shiftKey || e.ctrlKey };
-  else if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), ang: Math.atan2(b[1] - a[1], b[0] - a[0]), my: (a[1] + b[1]) / 2 }; if (drag) drag.moved = true; }
+  if (pts.size === 1) {
+    drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, btn: e.button, mode: (e.button === 2 || e.button === 1 || e.shiftKey || e.ctrlKey) ? 'pan' : 'orbit' };
+    if (placing && drag.mode === 'orbit') {
+      const p = groundAt(e.clientX, e.clientY), [w, d] = footprint(placing, ghostRot);
+      if (p && Math.abs(p.x - ghost.position.x) < w / 2 + 0.8 && Math.abs(p.z - ghost.position.z) < d / 2 + 0.8) { drag.mode = 'ghost'; drag.off = [p.x - ghost.position.x, p.z - ghost.position.z]; }
+    }
+  } else if (pts.size === 2) {
+    const [a, b] = [...pts.values()]; two = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), mx: (a[0] + b[0]) / 2, my: (a[1] + b[1]) / 2 };
+    if (drag) { drag.moved = true; drag.mode = 'none'; }
+  }
   canvas.setPointerCapture(e.pointerId);
 });
 canvas.addEventListener('pointermove', e => {
   if (pts.has(e.pointerId)) pts.set(e.pointerId, [e.clientX, e.clientY]);
-  if (placing && pts.size < 2) { const p = groundAt(e.clientX, e.clientY); if (p) { const t = BUILDINGS[placing]; moveGhost(Math.floor(p.x - t.w / 2 + 0.5), Math.floor(p.z - t.d / 2 + 0.5)); } }
-  if (pts.size === 2 && pinch) {   // two fingers: pinch = zoom, twist = rotate, vertical drag = tilt
-    const [a, b] = [...pts.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), ang = Math.atan2(b[1] - a[1], b[0] - a[0]), my = (a[1] + b[1]) / 2;
-    let da = ang - pinch.ang; if (da > Math.PI) da -= 2 * Math.PI; if (da < -Math.PI) da += 2 * Math.PI;
-    viewS *= pinch.d / d; yaw -= da; pitch += (my - pinch.my) * 0.005; updateCamera();
-    pinch = { d, ang, my }; return;
+  if (pts.size === 2 && two) {   // two fingers: pan with the midpoint, zoom with the pinch
+    const [a, b] = [...pts.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+    viewS *= two.d / d; panBy(mx - two.mx, my - two.my); two = { d, mx, my }; return;
   }
-  if (!drag) return;
+  if (!drag || drag.mode === 'none') return;
   if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 6) drag.moved = true;
   if (drag.moved) {
     const dx = e.clientX - drag.lx, dy = e.clientY - drag.ly;
-    if (drag.rotate) rotateBy(-dx * 0.008, dy * 0.005); else panBy(dx, dy);
+    if (drag.mode === 'orbit') rotateBy(-dx * 0.008, dy * 0.005);
+    else if (drag.mode === 'pan') panBy(dx, dy);
+    else if (drag.mode === 'ghost') { const p = groundAt(e.clientX, e.clientY); if (p) { const [cx, cz] = cellFor(p.x - drag.off[0], p.z - drag.off[1]); moveGhost(cx, cz); } }
   }
   drag.lx = e.clientX; drag.ly = e.clientY;
 });
-const endPtr = e => { pts.delete(e.pointerId); if (pts.size < 2) pinch = null; };
+const endPtr = e => { pts.delete(e.pointerId); if (pts.size < 2) two = null; };
 canvas.addEventListener('pointercancel', endPtr);
 canvas.addEventListener('pointerup', e => {
   endPtr(e);
   const d = drag; if (pts.size === 0) drag = null; if (!d || d.moved || pts.size > 0) return;
   if (d.btn === 2) return cancelPlacement();
-  if (d.btn === 1 || d.rotate) return;
-  if (placing) {
-    const p = groundAt(e.clientX, e.clientY); if (p) { const t = BUILDINGS[placing]; moveGhost(Math.floor(p.x - t.w / 2 + 0.5), Math.floor(p.z - t.d / 2 + 0.5)); }
-    if (ghost.userData.ok) {
-      const t = BUILDINGS[placing]; G.gold -= t.cost; addBuilding(placing, ghostCell[0], ghostCell[1]);
-      floatText(new THREE.Vector3(ghostCell[0] + t.w / 2, 1, ghostCell[1] + t.d / 2), `-${t.cost} Gold`, '#ff9a9a');
-      toast(`${t.name} constructed!`); cancelPlacement();
-    } else toast(G.gold < BUILDINGS[placing].cost ? 'Not enough gold.' : 'Cannot build there.');
-    return;
-  }
+  if (d.btn === 1 || d.mode === 'pan') return;
+  if (placing) { const p = groundAt(e.clientX, e.clientY); if (p) { const [cx, cz] = cellFor(p.x, p.z); moveGhost(cx, cz); } return; }
   ptr.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ptr, camera);
   const hit = ray.intersectObjects(bGroup.children, true)[0];
   if (hit) { let o = hit.object; while (o && o.userData.bid === undefined) o = o.parent; if (o) openModal('building', o.userData.bid); }
@@ -819,6 +854,7 @@ canvas.addEventListener('wheel', e => { e.preventDefault(); if (e.shiftKey || e.
 addEventListener('keydown', e => {
   if (e.key === 'Escape') { cancelPlacement(); closeModal(); return; }
   if (modalKind) return;
+  if (placing) { const k = e.key.toLowerCase(); if (k === 'r') return rotateGhost(e.shiftKey ? -1 : 1); if (e.key === 'Enter') return confirmPlacement(); }
   const step = e.shiftKey ? 0.25 : 0.12;
   if (e.key === 'ArrowLeft') return rotateBy(step, 0);
   if (e.key === 'ArrowRight') return rotateBy(-step, 0);
@@ -872,7 +908,7 @@ function syncStaff() {
 const clock = new THREE.Clock(); let modalTick = 0, hudTick = 0;
 function frame() {
   requestAnimationFrame(frame);
-  const rdt = Math.min(clock.getDelta(), 0.1), dt = rdt * G.speed;
+  const rdt = Math.min(clock.getDelta(), 0.5), dt = rdt * G.speed;   // wall-clock timing: slow frames no longer slow the game
   updateEconomy(dt);
   G.heroes.slice().forEach(h => updateHero(h, dt));
   updateGoblins(dt);
