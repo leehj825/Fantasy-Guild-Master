@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fantasy Guild Master – Model Gallery</title>
+<style>html,body{margin:0;height:100%;background:#4fa63f;overflow:hidden}canvas{display:block;width:100%;height:100%}
+#hint{position:fixed;left:8px;top:8px;color:#fff;font:13px sans-serif;text-shadow:0 1px 2px #000}</style></head>
+<body><canvas id="gl"></canvas><div id="hint">Model gallery · drag to orbit/pan · wheel to zoom · ?row=0..4 to focus a row</div>
+<script type="module">
+import * as THREE from './vendor/three.module.js';
+import { buildBuilding, buildHero, buildStaff, buildGoblin, LOOKS, makeChar, PROPS, BUILDINGS } from './src/models.js';
+const P = PROPS;
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('gl'), antialias: true });
+renderer.shadowMap.enabled = true; renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x4fa63f);
+scene.add(new THREE.AmbientLight(0xcfe3ff, 0.8), new THREE.HemisphereLight(0xbfe6ff, 0x4a7a3a, 0.35));
+const sun = new THREE.DirectionalLight(0xfff1d0, 1.1); sun.position.set(30, 40, 20); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -30, right: 30, top: 30, bottom: -30, near: 1, far: 120 }); scene.add(sun);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshLambertMaterial({ color: 0x5aae45 })); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+
+const rows = [
+  // buildings
+  [[buildBuilding('tavern'), 0], [buildBuilding('forge'), 0], [buildBuilding('alchemy'), 0], [buildBuilding('portal'), 0], [buildBuilding('tent', 1), 0], [buildBuilding('tent', 0), 0], [buildBuilding('hall'), 0]],
+  // props 1
+  [[P.cartProp(0)], [P.cartProp(1)], [P.crateStack()], [P.marketStall()], [P.dummyProp(false)], [P.archeryTarget()], [P.dummyProp(true)], [P.noticeBoard()], [P.barricade()], [P.spikeBarricade()], [P.campfire()], [P.bigMushroom(0xd6336c, 1.4)], [P.bigMushroom(0x7b3fb5, 1.1)], [P.bigMushroom(0x2aa9a0, 1)], [P.bigMushroom(0xe07a1f, 0.8)], [P.standingStones()]],
+  // props 2
+  [[P.weaponRack()], [P.shieldRack()], [P.spearFence()], [P.potion(0xc050ff)], [P.potion(0xb040ff, true)], [P.flaskStand(0xc050ff, 'round')], [P.flaskStand(0x55e07a, 'tall')], [P.planter(0)], [P.planter(1)], [P.anvil(0)], [P.anvil(1)], [P.lantern()], [P.lanternSmall()]],
+  // characters
+  Object.keys(LOOKS).map(k => [makeChar(LOOKS[k])]),
+];
+const spacing = [6.2, 2.6, 2.4, 1.0];
+const rowDown = [0, 9, 14, 19];
+const scales = [1, 1, 1, 2.4];
+const R = new THREE.Vector3(1, 0, -1).normalize(), D = new THREE.Vector3(1, 0, 1).normalize();
+rows.forEach((row, r) => row.forEach(([m], i) => {
+  m.scale.multiplyScalar(scales[r]);
+  const sp = spacing[r] * (r === 3 ? 1.9 : 1), off = (i - (row.length - 1) / 2) * sp;
+  m.position.copy(R.clone().multiplyScalar(off)).add(D.clone().multiplyScalar(rowDown[r]));
+  scene.add(m);
+}));
+const pot = (r) => rows[r].forEach(([m]) => m.traverse(o => { if (o.isMesh) o.castShadow = true; }));
+const q = new URLSearchParams(location.search); const focus = q.get('row');
+const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, -200, 400);
+let viewS = focus !== null ? [8, 5, 4, 3.5][+focus] : 17; const target = new THREE.Vector3(0, 0, 0).add(D.clone().multiplyScalar(9));
+if (focus !== null) target.copy(D).multiplyScalar(rowDown[+focus]);
+function upd() { const a = innerWidth / innerHeight; cam.left = -viewS * a; cam.right = viewS * a; cam.top = viewS; cam.bottom = -viewS; cam.position.copy(target).add(new THREE.Vector3(1, 1, 1).multiplyScalar(60)); cam.lookAt(target); cam.updateProjectionMatrix(); }
+function resize() { renderer.setSize(innerWidth, innerHeight, false); upd(); } addEventListener('resize', resize); resize();
+let d = null; addEventListener('pointerdown', e => d = [e.clientX, e.clientY]); addEventListener('pointerup', () => d = null);
+addEventListener('pointermove', e => { if (!d) return; const u = 2 * viewS / innerHeight, s = Math.SQRT1_2, dx = e.clientX - d[0], dy = e.clientY - d[1]; target.x += -dx * u * s - dy * u * 1.732 * s; target.z += dx * u * s - dy * u * 1.732 * s; d = [e.clientX, e.clientY]; upd(); });
+addEventListener('wheel', e => { viewS = Math.max(2, Math.min(30, viewS * (1 + Math.sign(e.deltaY) * 0.1))); upd(); });
+(function loop() { requestAnimationFrame(loop); const t = performance.now() / 1000;
+  scene.traverse(o => { if (o.userData.swirl) o.userData.swirl.children.forEach(c => { if (c.userData.arm !== undefined) c.rotation.z = t * (1 + c.userData.arm * 0.4) + c.userData.arm * 1.3; }); });
+  renderer.render(scene, cam); })();
+window.__ready = true;
+</script></body></html>

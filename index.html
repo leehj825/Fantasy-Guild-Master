@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Fantasy Guild Master</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="world"></div>
+
+<div id="topbar">
+  <div class="pill" title="Gold">💰 <b id="hGold">0</b></div>
+  <div class="pill" title="Guild Renown">⭐ <b id="hRenown">0</b></div>
+  <div class="pill" title="Mana">✨ <b id="hMana">0</b></div>
+  <div class="pill" title="Heroes / Population capacity">🛡️ <b id="hPop">0/0</b></div>
+  <div class="pill mats" title="Ore / Wood / Herbs">⛏️<b id="hOre">0</b> 🪵<b id="hWood">0</b> 🌿<b id="hHerbs">0</b></div>
+  <div class="pill" id="speedBtn" title="Game speed">⏵ x1</div>
+</div>
+
+<div id="objectives"><h4>Guild Quests:</h4><ul id="objList"></ul><div id="royal"></div></div>
+
+<div id="banner" class="hidden"></div>
+<div id="toasts"></div>
+<div id="placeHint" class="hidden">Click to place · Right-click / Esc to cancel · Drag to pan</div>
+
+<div id="toolbar">
+  <button data-open="build"><span>🔨</span>Build</button>
+  <button data-open="quests"><span>📜</span>Quests</button>
+  <button data-open="recruit"><span>🛡️</span>Recruit</button>
+  <button data-open="research"><span>⚗️</span>Research</button>
+  <button data-open="upgrades"><span>⬆️</span>Upgrades</button>
+</div>
+
+<div id="modal" class="hidden">
+  <div id="modalBox">
+    <button id="modalClose">✕</button>
+    <h2 id="modalTitle"></h2>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
