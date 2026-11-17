@@ -62,3 +62,10 @@ button.act.red{background:linear-gradient(#d65353,#8b1d1d);color:#fff}
   #toolbar button{min-width:58px;font-size:11px;padding:4px 6px}
   #toolbar button span{font-size:20px}
 }
+
+#camctl{position:fixed;left:8px;bottom:8px;display:grid;grid-template-columns:repeat(4,38px);gap:4px;z-index:5}
+#camctl button{height:38px;background:linear-gradient(#7a4f28,#4a2d14);border:2px solid var(--gold);border-radius:8px;color:var(--paper);font-size:18px;font-weight:700;cursor:pointer;touch-action:none;padding:0}
+#camctl button:active{filter:brightness(1.3)}
+#camctl button.on{background:linear-gradient(#e8b53a,#a77a1c);color:var(--ink)}
+@media (max-width:600px){#camctl{grid-template-columns:repeat(4,32px)}#camctl button{height:32px;font-size:15px}}
+@media (max-width:600px){#camctl{bottom:84px}}

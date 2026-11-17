@@ -13,7 +13,9 @@ python3 -m http.server 8123
 Then visit http://localhost:8123/ . A model viewer lives at `/gallery.html` (buildings, props and characters side by side).
 
 ## Controls
-- Drag: pan · Wheel / pinch: zoom · Click a building: open its menu
+- Camera: left-drag pans · right-drag (or Shift-drag) orbits and tilts · wheel zooms · two fingers on touch: pinch = zoom, twist = rotate, drag up/down = tilt
+- Keys: ←/→ rotate · ↑/↓ tilt · +/− zoom · `V` toggles perspective 3D · `Home` resets · on-screen camera buttons bottom-left
+- Click a building: open its menu
 - Toolbar (or keys `B` `Q` `R` `T` `U`): Build, Quests, Recruit, Research, Upgrades
 - Placement: click to place, right-click / `Esc` to cancel
 

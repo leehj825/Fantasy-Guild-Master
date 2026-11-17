@@ -6,6 +6,7 @@ import { BUILDINGS, buildBuilding, buildHero, buildStaff, buildGoblin, buildMerc
  * ------------------------------------------------------------------ */
 const N = 28;                       // grid size (cells)
 const canvas = document.getElementById('gl');
+const $ = id => document.getElementById(id);
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -14,16 +15,41 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x2f7a32);
 
-let viewS = 10;                     // half view height in world units
-const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -200, 400);
+// Free 3D camera: orbit (yaw/pitch), pan, zoom, optional perspective. Orthographic isometric by default.
+const VIEW0 = { yaw: Math.PI / 4, pitch: Math.atan(1 / Math.SQRT2), zoom: 10 };   // true isometric angles
+let yaw = VIEW0.yaw, pitch = VIEW0.pitch, viewS = VIEW0.zoom, perspective = false;
+const FOV = 38;
+const orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -300, 500);
+const perspCam = new THREE.PerspectiveCamera(FOV, 1, 0.5, 400);
+let camera = orthoCam;
 const camTarget = new THREE.Vector3(N / 2 + 1, 0, N / 2 + 1);
+const clampView = () => {
+  pitch = Math.max(0.28, Math.min(1.42, pitch)); viewS = Math.max(3.5, Math.min(24, viewS));
+  camTarget.x = Math.max(2, Math.min(N - 2, camTarget.x)); camTarget.z = Math.max(2, Math.min(N - 2, camTarget.z));
+};
 function updateCamera() {
+  clampView();
   const a = innerWidth / innerHeight;
-  camera.left = -viewS * a; camera.right = viewS * a; camera.top = viewS; camera.bottom = -viewS;
-  camera.position.copy(camTarget).add(new THREE.Vector3(1, 1, 1).multiplyScalar(60));
-  camera.lookAt(camTarget);
-  camera.updateProjectionMatrix();
+  const dir = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
+  camera = perspective ? perspCam : orthoCam;
+  if (perspective) {
+    const dist = viewS / Math.tan(THREE.MathUtils.degToRad(FOV / 2));
+    perspCam.aspect = a; perspCam.position.copy(camTarget).addScaledVector(dir, dist);
+  } else {
+    orthoCam.left = -viewS * a; orthoCam.right = viewS * a; orthoCam.top = viewS; orthoCam.bottom = -viewS;
+    orthoCam.position.copy(camTarget).addScaledVector(dir, 80);
+  }
+  camera.lookAt(camTarget); camera.updateProjectionMatrix(); camera.updateMatrixWorld();
 }
+// ground-plane pan along the current view axes (px -> world)
+function panBy(dx, dy) {
+  const u = 2 * viewS / innerHeight, rx = Math.cos(yaw), rz = -Math.sin(yaw), ux = -Math.sin(yaw), uz = -Math.cos(yaw), k = u / Math.sin(pitch);
+  camTarget.x += -dx * u * rx + dy * k * ux; camTarget.z += -dx * u * rz + dy * k * uz; updateCamera();
+}
+function rotateBy(dyaw, dpitch) { yaw += dyaw; pitch += dpitch; updateCamera(); }
+function zoomBy(f) { viewS *= f; updateCamera(); }
+function resetView() { yaw = VIEW0.yaw; pitch = VIEW0.pitch; viewS = VIEW0.zoom; camTarget.set(N / 2 + 1, 0, N / 2 + 1); updateCamera(); }
+function togglePerspective() { perspective = !perspective; $('camPersp').classList.toggle('on', perspective); updateCamera(); }
 function resize() { renderer.setSize(innerWidth, innerHeight, false); updateCamera(); }
 addEventListener('resize', resize);
 
@@ -45,8 +71,8 @@ scene.add(sun, sun.target);
   x.fillStyle = '#4fa63f'; x.fillRect(0, 0, 2, 2);
   x.fillStyle = '#58b046'; x.fillRect(0, 0, 1, 1); x.fillRect(1, 1, 1, 1);
   const tex = new THREE.CanvasTexture(c);
-  tex.magFilter = THREE.NearestFilter; tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(N + 20, N + 20);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(N + 20, N + 20), new THREE.MeshLambertMaterial({ map: tex }));
+  tex.magFilter = THREE.NearestFilter; tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(N + 160, N + 160);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(N + 160, N + 160), new THREE.MeshLambertMaterial({ map: tex }));
   ground.rotation.x = -Math.PI / 2; ground.position.set(N / 2, 0, N / 2); ground.receiveShadow = true;
   scene.add(ground);
 }
@@ -140,7 +166,6 @@ const key = (x, z) => x + ',' + z;
  * ------------------------------------------------------------------ */
 const bGroup = new THREE.Group(); scene.add(bGroup);
 const worldEl = document.getElementById('world');
-const $ = id => document.getElementById(id);
 
 function canPlace(type, cx, cz) {
   const t = BUILDINGS[type];
@@ -745,22 +770,37 @@ function groundAt(cx, cy) {
   const p = new THREE.Vector3(); return ray.ray.intersectPlane(plane0, p) ? p : null;
 }
 let drag = null;
-canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, btn: e.button }; canvas.setPointerCapture(e.pointerId); });
+const pts = new Map(); let pinch = null;
+canvas.addEventListener('pointerdown', e => {
+  pts.set(e.pointerId, [e.clientX, e.clientY]);
+  if (pts.size === 1) drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, btn: e.button, rotate: e.button === 2 || e.button === 1 || e.shiftKey || e.ctrlKey };
+  else if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), ang: Math.atan2(b[1] - a[1], b[0] - a[0]), my: (a[1] + b[1]) / 2 }; if (drag) drag.moved = true; }
+  canvas.setPointerCapture(e.pointerId);
+});
 canvas.addEventListener('pointermove', e => {
-  if (placing) { const p = groundAt(e.clientX, e.clientY); if (p) { const t = BUILDINGS[placing]; moveGhost(Math.floor(p.x - t.w / 2 + 0.5), Math.floor(p.z - t.d / 2 + 0.5)); } }
+  if (pts.has(e.pointerId)) pts.set(e.pointerId, [e.clientX, e.clientY]);
+  if (placing && pts.size < 2) { const p = groundAt(e.clientX, e.clientY); if (p) { const t = BUILDINGS[placing]; moveGhost(Math.floor(p.x - t.w / 2 + 0.5), Math.floor(p.z - t.d / 2 + 0.5)); } }
+  if (pts.size === 2 && pinch) {   // two fingers: pinch = zoom, twist = rotate, vertical drag = tilt
+    const [a, b] = [...pts.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), ang = Math.atan2(b[1] - a[1], b[0] - a[0]), my = (a[1] + b[1]) / 2;
+    let da = ang - pinch.ang; if (da > Math.PI) da -= 2 * Math.PI; if (da < -Math.PI) da += 2 * Math.PI;
+    viewS *= pinch.d / d; yaw -= da; pitch += (my - pinch.my) * 0.005; updateCamera();
+    pinch = { d, ang, my }; return;
+  }
   if (!drag) return;
   if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 6) drag.moved = true;
   if (drag.moved) {
-    const u = 2 * viewS / innerHeight, dx = e.clientX - drag.lx, dy = e.clientY - drag.ly, s = Math.SQRT1_2;
-    camTarget.x += -dx * u * s - dy * u * 1.732 * s; camTarget.z += dx * u * s - dy * u * 1.732 * s;
-    camTarget.x = Math.max(2, Math.min(N - 2, camTarget.x)); camTarget.z = Math.max(2, Math.min(N - 2, camTarget.z));
-    updateCamera();
+    const dx = e.clientX - drag.lx, dy = e.clientY - drag.ly;
+    if (drag.rotate) rotateBy(-dx * 0.008, dy * 0.005); else panBy(dx, dy);
   }
   drag.lx = e.clientX; drag.ly = e.clientY;
 });
+const endPtr = e => { pts.delete(e.pointerId); if (pts.size < 2) pinch = null; };
+canvas.addEventListener('pointercancel', endPtr);
 canvas.addEventListener('pointerup', e => {
-  const d = drag; drag = null; if (!d || d.moved) return;
+  endPtr(e);
+  const d = drag; if (pts.size === 0) drag = null; if (!d || d.moved || pts.size > 0) return;
   if (d.btn === 2) return cancelPlacement();
+  if (d.btn === 1 || d.rotate) return;
   if (placing) {
     const p = groundAt(e.clientX, e.clientY); if (p) { const t = BUILDINGS[placing]; moveGhost(Math.floor(p.x - t.w / 2 + 0.5), Math.floor(p.z - t.d / 2 + 0.5)); }
     if (ghost.userData.ok) {
@@ -774,22 +814,34 @@ canvas.addEventListener('pointerup', e => {
   const hit = ray.intersectObjects(bGroup.children, true)[0];
   if (hit) { let o = hit.object; while (o && o.userData.bid === undefined) o = o.parent; if (o) openModal('building', o.userData.bid); }
 });
-canvas.addEventListener('contextmenu', e => { e.preventDefault(); cancelPlacement(); });
-canvas.addEventListener('wheel', e => { e.preventDefault(); viewS = Math.max(5, Math.min(18, viewS * (1 + Math.sign(e.deltaY) * 0.1))); updateCamera(); }, { passive: false });
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('wheel', e => { e.preventDefault(); if (e.shiftKey || e.ctrlKey) rotateBy(-e.deltaX * 0.004 - e.deltaY * 0.004, 0); else zoomBy(1 + Math.sign(e.deltaY) * 0.1); }, { passive: false });
 addEventListener('keydown', e => {
-  if (e.key === 'Escape') { cancelPlacement(); closeModal(); }
+  if (e.key === 'Escape') { cancelPlacement(); closeModal(); return; }
+  if (modalKind) return;
+  const step = e.shiftKey ? 0.25 : 0.12;
+  if (e.key === 'ArrowLeft') return rotateBy(step, 0);
+  if (e.key === 'ArrowRight') return rotateBy(-step, 0);
+  if (e.key === 'ArrowUp') return rotateBy(0, step * 0.6), e.preventDefault();
+  if (e.key === 'ArrowDown') return rotateBy(0, -step * 0.6), e.preventDefault();
+  if (e.key === '+' || e.key === '=') return zoomBy(0.88);
+  if (e.key === '-' || e.key === '_') return zoomBy(1.14);
+  if (e.key === 'Home' || e.key === '0') return resetView();
+  if (e.key.toLowerCase() === 'v') return togglePerspective();
   const k = { b: 'build', q: 'quests', r: 'recruit', t: 'research', u: 'upgrades' }[e.key.toLowerCase()]; if (k) openModal(k);
 });
-// pinch zoom
+// on-screen camera controls
 {
-  const pts = new Map(); let pd = 0;
-  canvas.addEventListener('pointerdown', e => pts.set(e.pointerId, [e.clientX, e.clientY]));
-  canvas.addEventListener('pointermove', e => {
-    if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, [e.clientX, e.clientY]);
-    if (pts.size === 2) { const [a, b] = [...pts.values()]; const d = Math.hypot(a[0] - b[0], a[1] - b[1]); if (pd) { viewS = Math.max(5, Math.min(18, viewS * pd / d)); updateCamera(); } pd = d; if (drag) drag.moved = true; }
-  });
-  const up = e => { pts.delete(e.pointerId); pd = 0; };
-  canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+  const hold = (id, fn) => {   // press-and-hold repeat
+    const el = $(id); let t = null;
+    const stop = () => { clearInterval(t); t = null; };
+    el.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); fn(); stop(); t = setInterval(fn, 60); el.setPointerCapture(e.pointerId); });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => el.addEventListener(ev, stop));
+  };
+  hold('camLeft', () => rotateBy(0.06, 0)); hold('camRight', () => rotateBy(-0.06, 0));
+  hold('camUp', () => rotateBy(0, 0.04)); hold('camDown', () => rotateBy(0, -0.04));
+  hold('camIn', () => zoomBy(0.96)); hold('camOut', () => zoomBy(1.05));
+  $('camPersp').onclick = togglePerspective; $('camReset').onclick = resetView;
 }
 
 /* ------------------------------------------------------------------ *
