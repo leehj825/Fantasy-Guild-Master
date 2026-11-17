@@ -1,0 +1,58 @@
+name: Android debug APK
+
+# Builds Fantasy Guild Master as a debug APK: a WebView around the web files at the repository root (see android/).
+# The APK is published as a pre-release on the repository (one per branch, replaced by each build), so it does not use the Actions
+# artifact storage quota. Install it on a phone with `adb install` or by opening the file. Pull requests only build it.
+# A debug build allows chrome://inspect, so the game can be inspected from a computer.
+
+on:
+  push:
+    paths: ['index.html', 'style.css', 'src/**', 'vendor/**', 'android/**', '.github/workflows/android-debug.yml']
+  pull_request:
+    paths: ['index.html', 'style.css', 'src/**', 'vendor/**', 'android/**', '.github/workflows/android-debug.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write # to create the pre-release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # The runner image already has the Android SDK (platform 34 and build tools); this installs Gradle itself, so no wrapper is committed
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build the debug APK
+        working-directory: android
+        run: gradle --no-daemon assembleDebug
+
+      - name: Publish the APK as a pre-release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SAFE="${GITHUB_REF_NAME//[^A-Za-z0-9._-]/-}"
+          TAG="apk-${SAFE}"
+          mkdir -p apk-out
+          cp android/app/build/outputs/apk/debug/*.apk "apk-out/fantasy-guild-master-${SAFE}-debug.apk"
+          NOTES="Debug APK built from ${GITHUB_SHA::7} on ${GITHUB_REF_NAME}. Replaced by every build of this branch."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --prerelease --notes "$NOTES"
+          else
+            gh release create "$TAG" --prerelease --target "$GITHUB_SHA" --title "Debug APK (${GITHUB_REF_NAME})" --notes "$NOTES"
+          fi
+          gh release upload "$TAG" "apk-out/fantasy-guild-master-${SAFE}-debug.apk" --clobber
+
+      - name: Check the APK was built (pull requests)
+        if: github.event_name == 'pull_request'
+        run: ls -l android/app/build/outputs/apk/debug/*.apk
