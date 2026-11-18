@@ -1,5 +1,6 @@
 import * as THREE from '../vendor/three.module.js';
 import { BUILDINGS, buildBuilding, buildHero, buildStaff, buildGoblin, buildMerchantCart, vox, mat, PROPS } from './models.js';
+import { tr, trHtml, initLang, setLang, getLang, onLangChange, translateStatic, LANGS } from './i18n.js';
 import { Expedition, genScript, STAGE_X, heroHp, phaseText, newDiveScript, ensureFloors, rebuildDive, diveFloorIndex, diveCheckpoint, rewardText, RELICS, relicMods, relicOffer } from './expedition.js';
 
 /* ------------------------------------------------------------------ *
@@ -261,12 +262,12 @@ function toScreen(pos, dy = 0) {
 }
 const floaters = [];
 function floatText(pos, text, color) {
-  const el = document.createElement('div'); el.className = 'fl'; el.textContent = text; if (color) el.style.color = color;
+  const el = document.createElement('div'); el.className = 'fl'; el.textContent = tr(text); if (color) el.style.color = color;
   worldEl.appendChild(el);
   floaters.push({ el, pos: pos.clone(), t: 0 });
 }
 function toast(msg) {
-  const el = document.createElement('div'); el.className = 'toast'; el.textContent = msg;
+  const el = document.createElement('div'); el.className = 'toast'; el.textContent = tr(msg);
   $('toasts').appendChild(el); setTimeout(() => el.remove(), 4000);
   while ($('toasts').children.length > 4) $('toasts').firstChild.remove();
 }
@@ -811,6 +812,7 @@ function startMerchant() {
   showBanner('merchant', '🛒 A wandering merchant arrived with rare wares!', [['Trade', 'openMerchant', '']]);
 }
 function endMerchant() { G.merchant = null; if (cart) { scene.remove(cart); cart = null; } hideBanner('merchant'); if (modalKind === 'merchant') closeModal(); }
+onLangChange(() => { lastHtml = ''; hudCache = ''; $('royal')._h = null; $('expeds')._h = null; renderModal(true); renderBanner(); updateHUD(); if (watching) updateWatchHUD(); });
 // ---- orders: Royal Demand and visible bulk Trade Caravans (deliver swords/potions from Forge and Lab stock)
 const ORDER_SRC = { sword: { src: 'forge', icon: '🗡️', label: 'swords' }, potion: { src: 'alchemy', icon: '🧪', label: 'potions' } };
 const stockOf = kind => ofType(ORDER_SRC[kind].src).reduce((n, b) => n + b.stock, 0);
@@ -854,7 +856,7 @@ function renderBanner() {
   if (!ids.length) return el.classList.add('hidden');
   const id = ids[ids.length - 1], b = banners[id];
   el.className = id === 'merchant' ? 'merchant' : '';
-  el.innerHTML = `<span>${b.text}</span>` + b.buttons.map(([l, a, c]) => `<button class="act ${c}" data-act="${a}">${l}</button>`).join('');
+  el.innerHTML = trHtml(`<span>${b.text}</span>` + b.buttons.map(([l, a, c]) => `<button class="act ${c}" data-act="${a}">${l}</button>`).join(''));
 }
 
 /* ------------------------------------------------------------------ *
@@ -988,15 +990,15 @@ function updateHUD() {
   $('hIngot').classList.toggle('hidden', !first('smelter') && G.ingots === 0); $('hIng').textContent = G.ingots;
   $('hOre').textContent = G.ore; $('hWood').textContent = G.wood; $('hHerbs').textContent = G.herbs;
   const ex = G.quests.filter(q => q.state === 'active').map(q => { const dv = q.dive, lab = dv ? `Floor ${diveFloorIndex(q.script, q.elapsed) + 1}` : `${Math.ceil(q.t)}s`, pr = dv ? diveProg(q) : 100 - q.t / q.dur * 100; return `<div class="exp" data-act="watch" data-q="${q.id}" title="Watch this expedition live"><span>${dv ? '🌀' : '👁'} ${q.name}</span><span>${lab}</span><div class="bar"><i style="width:${pr}%"></i></div></div>`; }).join('');
-  if (ex !== $('expeds')._h) { $('expeds')._h = ex; $('expeds').innerHTML = ex ? '<h4>Expeditions:</h4>' + ex : ''; }
+  if (ex !== $('expeds')._h) { $('expeds')._h = ex; $('expeds').innerHTML = ex ? trHtml('<h4>Expeditions:</h4>' + ex) : ''; }
   const open = GOALS.map((g, i) => [g, i]).filter(([, i]) => !G.goalsDone[i]).slice(0, 3), nDone = Object.keys(G.goalsDone).length;
   const html = `<li class="s">${RANKS[G.rank].icon} <b>${RANKS[G.rank].name}</b> · goals ${nDone}/${GOALS.length}</li>` + open.map(([g]) => `<li>☐ ${g[0]} <span class="s">${rewardTags(g[2])}</span></li>`).join('');
-  if (html !== hudCache) { hudCache = html; $('objList').innerHTML = html; }
+  if (html !== hudCache) { hudCache = html; $('objList').innerHTML = trHtml(html); }
   const rh = G.orders.map(o => {
     const needs = Object.entries(o.need).filter(([, v]) => v > 0).map(([k, v]) => `${ORDER_SRC[k].icon} ${v}`).join(' + '), avail = Object.keys(o.need).reduce((n, k) => n + (o.need[k] > 0 ? stockOf(k) : 0), 0);
     return `<div class="ord"><b>${o.icon} ${o.title}</b> · ${Math.ceil(o.t)}s<br>Need ${needs}<br>Reward ${o.reward}g +${o.ren}⭐<br><button class="act" data-act="deliver" data-id="${o.id}" ${avail < 1 ? 'disabled' : ''}>Deliver (${avail} in stock)</button></div>`;
   }).join('');
-  if (rh !== $('royal')._h) { $('royal')._h = rh; $('royal').innerHTML = rh; }
+  if (rh !== $('royal')._h) { $('royal')._h = rh; $('royal').innerHTML = trHtml(rh); }
 }
 
 /* ------------------------------------------------------------------ *
@@ -1077,6 +1079,7 @@ function modalContent() {
     case 'research': return ['⚗️ Research', Object.entries(TECHS).map(([k, [n, d, c, req]]) => `<div class="row"><div class="grow"><div class="t">${n}</div><div class="s">${d}</div>${cost(c)}${rareTags(req)}</div>
         ${G.research[k] ? '<span class="tag">✔ Researched</span>' : `<button class="act" data-act="research" data-k="${k}" ${G.gold < c || !hasRare(req) ? 'disabled' : ''}>Research</button>`}</div>`).join('')];
     case 'settings': return ['⚙ Settings & Save', `
+      <div class="row"><div class="grow"><div class="t">🌐 Language</div><div class="s">English / 한국어</div></div>${Object.entries(LANGS).map(([k, n]) => `<button class="act ${getLang() === k ? '' : 'red'}" style="${getLang() === k ? 'outline:2px solid #fff8' : ''}" data-act="lang" data-l="${k}">${n}</button>`).join('')}</div>
       <div class="row"><div class="grow"><div class="t">💾 Save</div><div class="s">The game autosaves every 15 seconds and when you leave. Last save: ${lastSaved ? Math.round((Date.now() - lastSaved) / 1000) + 's ago' : 'not yet'}.</div></div><button class="act" data-act="save">Save now</button></div>
       <div class="row"><div class="grow"><div class="t">🗑 New game</div><div class="s">${modalArg === 'confirm' ? '<b style="color:#ff9a9a">This erases your saved guild. Tap again to confirm.</b>' : 'Delete the save and start a fresh guild.'}</div></div><button class="act red" data-act="newgame">${modalArg === 'confirm' ? 'Really erase' : 'New game'}</button></div>
       <div class="s" style="margin-top:8px">Quests keep running for up to 10 minutes while you are away.</div>
@@ -1169,10 +1172,11 @@ function renderModal(force) {
   const [title, body] = modalContent();
   const html = title + '||' + body;
   if (!force && html === lastHtml) return;
-  lastHtml = html; $('modalTitle').textContent = title; $('modalBody').innerHTML = body;
+  lastHtml = html; $('modalTitle').textContent = tr(title); $('modalBody').innerHTML = trHtml(body);
 }
 
 const ACT = {
+  lang(d) { setLang(d.l); },
   relicpick(d) { const q = G.quests.find(x => x.dive && x.offer); if (q) { pickRelic(q, +d.i, false); closeModal(); } },
   relic() { openModal('relic'); },
   pick(d) { openModal('party', { qid: +d.q, sel: [], approach: 'standard', enchant: false, potion: false }); },
@@ -1250,7 +1254,7 @@ function startPlacement(type) {
   pivot.add(preview, plane, arrow); ghost.userData.mats = [gm, pm];
   scene.add(ghost); grid.visible = true;
   $('placeHint').classList.remove('hidden'); $('placeBar').classList.remove('hidden'); $('toolbar').classList.add('hidden'); document.body.classList.add('placing');
-  $('placeCost').textContent = t.cost; $('placeName').textContent = t.name;
+  $('placeCost').textContent = t.cost; $('placeName').textContent = tr(t.name);
   const [w, d] = footprint(type, 0);
   moveGhost(Math.floor(camTarget.x - w / 2 + 0.5), Math.floor(camTarget.z - d / 2 + 0.5));
 }
@@ -1267,7 +1271,7 @@ function moveGhost(cx, cz) {
   const ok = canPlace(placing, cx, cz, ghostRot) && G.gold >= t.cost;
   ghost.userData.mats.forEach((m, i) => m.color.setHex(i === 1 ? (ok ? 0xffffff : 0xff6060) : (ok ? 0xffd24a : 0xff4040)));
   ghost.userData.ok = ok; $('placeOk').disabled = !ok;
-  const bonus = previewBonus(placing, cx, cz, ghostRot); $('placeHint').innerHTML = bonus.length ? '✦ Here: ' + bonus.join(' · ') : 'Drag the golden plot (or tap the ground) to move it · rotate with ⟲ ⟳ · place buildings near partners for bonuses';
+  const bonus = previewBonus(placing, cx, cz, ghostRot); $('placeHint').innerHTML = trHtml(bonus.length ? '✦ Here: ' + bonus.join(' · ') : 'Drag the golden plot (or tap the ground) to move it · rotate with ⟲ ⟳ · place buildings near partners for bonuses');
 }
 function rotateGhost(dir) {
   if (!placing) return;
@@ -1464,7 +1468,7 @@ const canIntervene = q => q.state === 'active' && (q.dive ? !q.script.wiped : (q
 const nowT = w => w.finish ? w.finish.T : Math.max(0, w.q.dur - w.q.t);
 function logReset(w, T) { const ev = w.q.script.events; w.logIdx = ev.findIndex(e => e.t > T - 2.5); if (w.logIdx < 0) w.logIdx = ev.length; w.lastScript = w.q.script; }
 function addLog(e) {
-  const el = document.createElement('div'); el.className = 'lg l-' + e.type; el.textContent = e.log + (e.dmg ? e.dmg : '');
+  const el = document.createElement('div'); el.className = 'lg l-' + e.type; el.textContent = tr(e.log + (e.dmg ? e.dmg : ''));
   const box = $('watchLog'); box.appendChild(el); while (box.children.length > 7) box.firstChild.remove();
 }
 function startWatch(qid) {
@@ -1536,22 +1540,22 @@ function watchRecall() {
 }
 function updateWatchHUD() {
   const w = watching; if (!w) return; const q = w.q, S = q.script, T = nowT(w), dv = !!q.dive;
-  $('wRelic').classList.toggle('hidden', !(dv && q.offer)); $('wName').textContent = dv ? `Endless Dungeon — floor ${diveFloorIndex(S, T) + 1} · best ${G.diveBest} ${(q.relics || []).map(r => RELICS[r.id].icon).join('')}` : `${w.exp.name} — ${q.name}`;
-  $('wPhase').textContent = w.finish ? w.finish.text : phaseText(S, T);
+  $('wRelic').classList.toggle('hidden', !(dv && q.offer)); $('wName').textContent = tr(dv ? `Endless Dungeon — floor ${diveFloorIndex(S, T) + 1} · best ${G.diveBest} ${(q.relics || []).map(r => RELICS[r.id].icon).join('')}` : `${w.exp.name} — ${q.name}`);
+  $('wPhase').textContent = tr(w.finish ? w.finish.text : phaseText(S, T));
   $('wProg').style.width = (dv ? (diveFloor({ script: S, elapsed: T }) ? Math.min(100, (T - diveFloor({ script: S, elapsed: T }).s) / (diveFloor({ script: S, elapsed: T }).e - diveFloor({ script: S, elapsed: T }).s) * 100) : 0) : T / q.dur * 100) + '%';
   $('watchBar').classList.toggle('dive', dv);
-  $('wParty').innerHTML = q.party.map((p, h) => { const hp = heroHp(q, S, h, T), dead = S.heroes[h].dies && T >= S.heroes[h].D; return `<div class="chip ${dead ? 'dead' : ''}"><span>${dead ? '☠' : CLASSES[p.cls].icon} ${p.name}</span><b><i style="width:${hp * 100}%;background:${hp > 0.5 ? '#5be35b' : hp > 0.25 ? '#f0c040' : '#e0503a'}"></i></b></div>`; }).join('');
+  $('wParty').innerHTML = trHtml(q.party.map((p, h) => { const hp = heroHp(q, S, h, T), dead = S.heroes[h].dies && T >= S.heroes[h].D; return `<div class="chip ${dead ? 'dead' : ''}"><span>${dead ? '☠' : CLASSES[p.cls].icon} ${p.name}</span><b><i style="width:${hp * 100}%;background:${hp > 0.5 ? '#5be35b' : hp > 0.25 ? '#f0c040' : '#e0503a'}"></i></b></div>`; }).join(''));
   const ci = canIntervene(q), lab = first('alchemy');
   $('wRecall').classList.toggle('hidden', !!q.defense);
   const potions = ofType('alchemy').reduce((n, b) => n + b.stock, 0), nextF = dv ? diveFloorIndex(S, T) + 1 : 0, warded = dv && (q.enchants || []).some(x => x.floor + 3 > nextF);
-  $('wEnchant').disabled = !ci || G.mana < 5 || (dv ? warded : !!(q.enchant || q.enchantedMid)); $('wEnchant').textContent = dv ? (warded ? '✨ Ward active' : '✨ Ward (5)') : `✨ Enchant (5) · ${Math.round(q.chance * 100)}%`;
-  $('wPotion').disabled = !ci || potions < 1; $('wPotion').textContent = `🧪 Potion (${potions})`;
-  $('wRecall').disabled = !!w.finish; $('wRecall').textContent = w.recallArm > 0 ? (dv ? '🏁 Confirm: bank & leave?' : '🏳 Confirm recall?') : (dv ? '🏁 Bank & leave' : '🏳 Recall');
-  $('wFollow').classList.toggle('on', w.follow); $('wFollow').textContent = w.follow ? '🎯 Following' : '🎯 Follow';
+  $('wEnchant').disabled = !ci || G.mana < 5 || (dv ? warded : !!(q.enchant || q.enchantedMid)); $('wEnchant').textContent = tr(dv ? (warded ? '✨ Ward active' : '✨ Ward (5)') : `✨ Enchant (5) · ${Math.round(q.chance * 100)}%`);
+  $('wPotion').disabled = !ci || potions < 1; $('wPotion').textContent = tr(`🧪 Potion (${potions})`);
+  $('wRecall').disabled = !!w.finish; $('wRecall').textContent = tr(w.recallArm > 0 ? (dv ? '🏁 Confirm: bank & leave?' : '🏳 Confirm recall?') : (dv ? '🏁 Bank & leave' : '🏳 Recall'));
+  $('wFollow').classList.toggle('on', w.follow); $('wFollow').textContent = tr(w.follow ? '🎯 Following' : '🎯 Follow');
   $('wPipBtn').classList.toggle('on', w.pip); $('pipFrame').classList.toggle('off', !w.pip);
   $('wSpeed').textContent = '⏵ x' + G.speed;
-  $('wSwitch').innerHTML = G.quests.filter(x => x.state === 'active' && x !== q).map(x => `<button class="act" data-act="watch" data-q="${x.id}">👁 ${x.name}</button>`).join('');
-  $('wHint').textContent = dv ? (w.finish ? '' : (S.wiped ? 'The party has fallen…' : `At risk: ${rewardText(q.pending)} · next checkpoint: floor ${Math.ceil((q.cleared + 1) / 5) * 5}`)) : (ci ? 'Intervene before the finale!' : (w.finish ? '' : 'The finale has begun — no more help possible'));
+  $('wSwitch').innerHTML = trHtml(G.quests.filter(x => x.state === 'active' && x !== q).map(x => `<button class="act" data-act="watch" data-q="${x.id}">👁 ${x.name}</button>`).join(''));
+  $('wHint').textContent = tr(dv ? (w.finish ? '' : (S.wiped ? 'The party has fallen…' : `At risk: ${rewardText(q.pending)} · next checkpoint: floor ${Math.ceil((q.cleared + 1) / 5) * 5}`)) : (ci ? 'Intervene before the finale!' : (w.finish ? '' : 'The finale has begun — no more help possible')));
 }
 $('wBack').onclick = endWatch; $('pipFrame').onclick = endWatch;
 $('wFollow').onclick = () => { if (watching) { watching.follow = !watching.follow; updateWatchHUD(); } };
@@ -1646,6 +1650,7 @@ function frame() {
 /* ------------------------------------------------------------------ *
  *  Boot: starter heroes + quests
  * ------------------------------------------------------------------ */
+initLang();
 resize();
 if (!loadGame()) {
   spawnHero('knight', true); spawnHero('ranger', true);

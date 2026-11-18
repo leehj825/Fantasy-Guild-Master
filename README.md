@@ -12,6 +12,9 @@ python3 -m http.server 8123
 
 Then visit http://localhost:8123/ . A model viewer lives at `/gallery.html` (buildings, props and characters side by side).
 
+## Languages
+English and 한국어 (Korean). Pick a language in ⚙ Settings; it is remembered and defaults to your browser language. All code and data stay in English: text is translated where it is shown by `src/i18n.js` using the dictionary in `src/lang-ko.js` (add another language by adding a dictionary).
+
 ## Controls
 - Camera: left-drag pans · right-drag (or Shift-drag) orbits and tilts · wheel zooms · two fingers on touch: pinch = zoom, twist = rotate, drag up/down = tilt
 - Keys: ←/→ rotate · ↑/↓ tilt · +/− zoom · `V` toggles perspective 3D · `Home` resets · on-screen camera buttons bottom-left

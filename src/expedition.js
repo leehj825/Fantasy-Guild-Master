@@ -3,6 +3,7 @@
 //  - Expedition draws the stage and the actors for any moment T (seconds since dispatch), so a quest can be watched,
 //    joined late, sped up, or closed and reopened without ever contradicting the result.
 import * as THREE from '../vendor/three.module.js';
+import { tr } from './i18n.js';
 import { makeChar, buildHero, buildGoblin, buildBuilding, vox, tbox, mat, cyl, cone, sph, rot, PROPS } from './models.js';
 
 export const STAGE_X = 170;                                   // stage sits far off the base map
@@ -368,7 +369,7 @@ export class Expedition {
     this.nums = []; this.fired = new Set(); this.T = 0; scene.add(this.group);
     this.syncFoes(0); this.index();
   }
-  bar(name, cls) { const el = document.createElement('div'); el.className = 'hpbar ' + cls; el.innerHTML = (name ? `<span>${name}</span>` : '') + '<b><i></i></b>'; this.labelEl.appendChild(el); return el; }
+  bar(name, cls) { const el = document.createElement('div'); el.className = 'hpbar ' + cls; el.innerHTML = (name ? `<span>${tr(name)}</span>` : '') + '<b><i></i></b>'; this.labelEl.appendChild(el); return el; }
   // enemy meshes follow the script: created as floors are generated, dropped when rebuilt or long past
   syncFoes(T) {
     const S = this.S;
