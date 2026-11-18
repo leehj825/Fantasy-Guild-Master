@@ -4,6 +4,7 @@
 //    joined late, sped up, or closed and reopened without ever contradicting the result.
 import * as THREE from '../vendor/three.module.js';
 import { tr } from './i18n.js';
+import { sfx } from './audio.js';
 import { makeChar, buildHero, buildGoblin, buildBuilding, vox, tbox, mat, cyl, cone, sph, rot, PROPS } from './models.js';
 
 export const STAGE_X = 170;                                   // stage sits far off the base map
@@ -456,6 +457,7 @@ export class Expedition {
     });
     // chest, coins, swirl, flicker
     const ch = this.stage.chest, lidT = dive ? -1 : T - S.dur * 0.93;
+    if (!dive && q.ok && lidT > 0 && !this.chestHeard) { this.chestHeard = true; sfx('chest'); }
     ch.visible = !dive && q.ok; ch.userData.lid.rotation.x = -1.15 * sm(lidT / 0.4); ch.userData.glow.visible = !dive && q.ok && lidT > 0.2;
     this.coins.forEach((c, i) => { const t = dive ? -1 : (T - (S.dur * 0.94 + i * 0.08)); c.visible = !dive && q.ok && t > 0 && t < 1.4; if (c.visible) c.position.set(CHEST_X + Math.sin(i * 2.4) * 0.5 * t, 0.5 + t * 1.6 - t * t * 0.9, Math.cos(i * 2.4) * 0.4 * t); });
     if (this.stage.swirl) this.stage.swirl.children.forEach(c => { if (c.userData.arm !== undefined) c.rotation.z = performance.now() / 1000 * (1 + c.userData.arm * 0.4) + c.userData.arm * 1.3; });
@@ -480,7 +482,7 @@ export class Expedition {
         const s = this.spark[si++], f = (T - hit) / 0.25; s.visible = true; s.position.set(to.x, 1.0, to.z + 0.1); s.scale.setScalar(0.6 + f); s.material.opacity = 0.9 * (1 - f); s.material.color.setHex(e.type === 'hit' ? 0xffe08a : 0xff6a5a);
       }
       if (T >= hit && T - hit < 0.6 && !this.fired.has(e.id)) {
-        this.fired.add(e.id); const el = document.createElement('div'); el.className = 'fl dnum ' + (e.type === 'hit' ? 'dh' : 'de'); el.textContent = '−' + e.dmg; this.labelEl.appendChild(el);
+        this.fired.add(e.id); sfx(e.type === 'hit' ? 'hit' : 'ehit'); const el = document.createElement('div'); el.className = 'fl dnum ' + (e.type === 'hit' ? 'dh' : 'de'); el.textContent = '−' + e.dmg; this.labelEl.appendChild(el);
         this.nums.push({ el, pos: this.wpos(to, 1.6), age: 0 });
       }
     }

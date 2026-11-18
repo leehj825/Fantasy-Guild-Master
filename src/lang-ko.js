@@ -116,6 +116,7 @@ const BUILD = {
 };
 
 const PROG = {
+  'Procedural sound effects and music (no downloads).': '실시간 합성 효과음과 음악입니다 (다운로드 없음).', 'Effects: On': '효과음: 켜짐', 'Effects: Off': '효과음: 꺼짐', 'Music: On': '음악: 켜짐', 'Music: Off': '음악: 꺼짐',
   'Tutorial': '튜토리얼', 'Skip': '건너뛰기', '🎓 Tutorial': '🎓 튜토리얼', 'Show the first-run guide again.': '처음 플레이 안내를 다시 보여줍니다.', 'Replay': '다시 보기',
   'Welcome, Guild Master! Tap "Build" and place a Tavern so heroes have somewhere to rest. Drag the golden plot, rotate it with ⟲ ⟳, then press ✔ Build.': '환영합니다, 길드 마스터! "건설"을 눌러 영웅들이 쉴 수 있는 여관을 지으세요. 황금 부지를 끌어서 옮기고 ⟲ ⟳ 로 회전한 뒤 ✔ 건설을 누르면 됩니다.',
   'Now build a Forge. It turns Iron Ore into weapons that your heroes buy.': '이제 대장간을 지으세요. 철광석으로 영웅들이 사 가는 무기를 만듭니다.',
