@@ -5,7 +5,8 @@
 import * as THREE from '../vendor/three.module.js';
 import { tr } from './i18n.js';
 import { sfx } from './audio.js';
-import { makeChar, buildHero, buildGoblin, buildBuilding, vox, tbox, mat, cyl, cone, sph, rot, PROPS } from './models.js';
+import { clipInfo } from './rigchar.js';
+import { makeChar, buildChar, buildHero, buildGoblin, buildBuilding, vox, tbox, mat, cyl, cone, sph, rot, PROPS } from './models.js';
 
 export const STAGE_X = 170;                                   // stage sits far off the base map
 export const TL = { enc: [[0.10, 0.36], [0.36, 0.62], [0.62, 0.90]], loot: 0.90, cutoff: 0.62 };
@@ -28,7 +29,7 @@ const ENEMY = {
   golem:  { name: 'Ancient Golem', make: () => golem(), h: 3.4, boss: true },
 };
 function charEnemy(look, scale) {
-  const g = makeChar(look); g.scale.multiplyScalar(scale);
+  const g = buildChar(look); g.scale.multiplyScalar(scale); if (g.userData.anim) return g;   // rigged: the clips animate it
   const [L, A] = [g.userData.legs, g.userData.arms];
   g.userData.swing = a => { L[0].rotation.x = a; L[1].rotation.x = -a; A[0].rotation.x = -a * 0.7; };
   g.userData.attack = u => { A[1].rotation.x = -2.4 * Math.sin(u * Math.PI); };
@@ -354,6 +355,9 @@ const THEME = {
 };
 
 /* ------------------------------------------------------------ the live stage */
+// Which clips each class fights with (see clips.js): blades for knights, the bow for rangers, bolts and fire for wizards
+const ATTACKS = { knight: ['slash1', 'slash3', 'attack1'], ranger: ['shoot'], wizard: ['mgBolt', 'mgFire'] };
+const firstAfter = (arr, t) => { let lo = 0, hi = arr.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (arr[mid].t < t) lo = mid + 1; else hi = mid; } return lo; };
 export class Expedition {
   constructor({ scene, q, lowfx, labelEl, project }) {
     this.scene = scene; this.q = q; this.S = q.script; this.labelEl = labelEl; this.project = project; this.lowfx = lowfx;
@@ -395,6 +399,34 @@ export class Expedition {
     this.foe.forEach(o => { if (!o.gone && o.m.visible && !o.dead) { x += o.m.position.x * 0.8; z += o.m.position.z * 0.8; n += 0.8; } });
     return new THREE.Vector3(x / n + this.origin.x, 0, z / n + this.origin.z);
   }
+  // A rigged hero at moment T: march, run in to melee range, strike with the class's clip, flinch, fall, or cast a heal
+  driveHero(o, h, T, hp, dead, moving, retreat, px, n, rdt) {
+    const m = o.m, S = this.S, q = this.q, H = S.heroes[h], cls = o.p.cls, melee = cls === 'knight', clips = ATTACKS[cls] || ATTACKS.knight, hits = this.hitsBy[h] || [];
+    let x = px - (h % 2) * 0.6, z = (h - (n - 1) / 2) * 1.25, rotY = Math.PI / 2, name = 'idleEase', t = T + h * 0.9, atk = null, env = 0, fwd = false;
+    for (let i = firstAfter(hits, T - 3); i < hits.length; i++) {
+      const nm = clips[i % clips.length], ci = clipInfo(nm), s0 = hits[i].t - ci.hit, RUN = 0.5, BACK = 0.55;
+      if (s0 - RUN > T) break;
+      if (T >= s0 && T < s0 + ci.d) atk = { nm, t: T - s0 };
+      if (melee) {
+        let v = 0;
+        if (T >= s0 - RUN && T < s0) { v = sm((T - (s0 - RUN)) / RUN); fwd = true; } else if (T >= s0 && T < s0 + ci.d) v = 1; else if (T >= s0 + ci.d && T < s0 + ci.d + BACK) v = 1 - sm((T - s0 - ci.d) / BACK);
+        if (v > env) env = v;
+      }
+    }
+    const eh = this.last(this.ehitsOnHero[h], T), healer = q.party.findIndex(p => p.cls === 'wizard'), hi = healer < 0 ? 0 : healer;
+    let cast = null;
+    if (h === hi) { for (const e of q.heals || []) if (T >= e.t && T < e.t + 1.1) cast = ['mgHeal', T - e.t]; for (const e of q.enchants || []) if (T >= e.t && T < e.t + 1.1) cast = ['mgBless', T - e.t]; }
+    const DASH = 2.4; x += dead ? 0 : DASH * env;
+    if (dead) { name = 'die'; t = T - H.D; }
+    else if (atk) { name = atk.nm; t = atk.t; }
+    else if (eh && T - eh.t < 0.75) { name = 'impact'; t = T - eh.t; }
+    else if (cast) { name = cast[0]; t = cast[1]; }
+    else if (env > 0.02) { name = 'runCalm'; t = T * 1.4; if (!fwd) rotY = -Math.PI / 2; }      // run to the enemy, then back
+    else if (moving) { name = retreat ? 'runCalm' : 'walkCalm'; t = T * (retreat ? 1.2 : 1.15) + h * 0.3; if (retreat) rotY = -Math.PI / 2; }
+    o.m.userData.anim.drive(name, t, rdt);
+    m.rotation.set(0, rotY, 0); m.position.set(x, 0, z);
+    this.setBar(o.bar, m.position, 2.15, hp, dead);
+  }
   update(T, rdt) {
     const q = this.q, S = q.script; T = clamp(T, 0, S.dur); this.T = T;
     if (S !== this.S) { this.S = S; this.fired.clear(); this.syncFoes(T); this.index(); }
@@ -413,6 +445,7 @@ export class Expedition {
     // heroes
     this.hero.forEach((o, h) => {
       const m = o.m, H = S.heroes[h], hp = heroHp(q, S, h, T), dead = H.dies && T >= H.D;
+      if (m.userData.anim) { this.driveHero(o, h, T, hp, dead, moving, retreat, px, n, rdt); return; }
       const L = m.userData.legs, A = m.userData.arms; A[0].rotation.x = A[1].rotation.x = 0; L[0].rotation.x = L[1].rotation.x = 0;
       let x = px - (h % 2) * 0.6, z = (h - (n - 1) / 2) * 1.25, y = 0, lunge = 0;
       const a = this.last(this.hitsBy[h], T), u = a ? (T - a.t) / 0.45 : 2;
@@ -438,6 +471,17 @@ export class Expedition {
       const encEnd = S.encs[E.enc].e, show = T >= E.s && (T <= encEnd + 1.2 || (!isFinite(E.D) && T <= S.dur));
       m.visible = show; o.dead = dying; if (!show) { o.bar.style.display = 'none'; return; }
       const info = m.userData; const approach = clamp((T - E.s) / (E.a - E.s), 0, 1), walking = approach < 1 && !dying;
+      if (info.anim) {      // rigged raider: walk in, swing, flinch, fall — all from clips
+        const approach2 = approach, hitsE = this.ehitsBy[k] || [], ci = clipInfo('attack1'); let name = 'idleEase', t = T + k * 0.6, atk = null, lunge2 = 0;
+        for (let i = firstAfter(hitsE, T - 1.6); i < hitsE.length; i++) { const s0 = hitsE[i].t - ci.hit; if (s0 > T) break; if (T < s0 + ci.d) atk = T - s0; }
+        const hh = this.last(this.hitsOnFoe[k], T);
+        if (dying) { name = 'die'; t = T - E.D; }
+        else if (atk !== null) { name = 'attack1'; t = atk; lunge2 = -0.9 * Math.sin(clamp(atk / ci.d, 0, 1) * Math.PI); }
+        else if (hh && T - hh.t < 0.7) { name = 'impact'; t = T - hh.t; }
+        else if (approach2 < 1) { name = 'walkCalm'; t = T * 1.15; }
+        info.anim.drive(name, t, rdt); m.rotation.set(0, -Math.PI / 2, 0); m.scale.setScalar(m.userData.s0 ??= m.scale.x);
+        m.position.set(E.home.x + 9 * (1 - approach2) + lunge2, 0, E.home.z); this.setBar(o.bar, m.position, ENEMY[E.kind].h, hp, dying); return;
+      }
       let x = E.home.x + 9 * (1 - approach), y = 0, lunge = 0; const z = E.home.z;
       const a = this.last(this.ehitsBy[k], T), u = a ? (T - a.t) / 0.45 : 2;
       m.rotation.set(0, -Math.PI / 2, 0);

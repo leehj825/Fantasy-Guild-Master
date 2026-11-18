@@ -623,20 +623,24 @@ export const LOOKS = {
   guardB:      { skin: 0xe6b88a, plate: 0xb8bcc4, shirt: 0xb8bcc4, sleeve: 0x8a8f98, pants: 0x4a4d54, hat: 'guard', sword: true, shield: { body: 0xb8bcc4, trim: 0xe8c04a } },
 };
 const CLASS_LOOKS = { knight: ['knightA', 'knightB', 'knightC'], ranger: ['elfBlond', 'elfHood', 'elfGreen'], wizard: ['wizardBlue', 'wizardPurple'] };
+// Which builder makes people: the classic box figure, or a rigged one (src/rigchar.js) that plays motion clips. Set once at boot.
+let charMaker = makeChar;
+export const setCharMaker = f => { charMaker = f || makeChar; };
+export const buildChar = look => charMaker(look);
 export function buildHero(cls, variant = 0) {
   const list = CLASS_LOOKS[cls];
-  return makeChar(LOOKS[list[variant % list.length]]);
+  return buildChar(LOOKS[list[variant % list.length]]);
 }
 export const STAFF_LOOK = { smith: 'dwarfOrange', alch: 'wizardBlue', cook: 'villagerA', bard: 'villagerB', guard: 'guardA', porter: 'dwarfBrown' };
 export const buildStaff = kind => {
   const look = { ...LOOKS[STAFF_LOOK[kind]] };
   if (kind === 'bard') look.lute = true; if (kind === 'cook') look.apron = 0xf4f0e6;
   if (kind === 'smith') look.hammer = true; if (kind === 'porter') look.pack = true;
-  return makeChar(look);
+  return buildChar(look);
 };
 
 export function buildGoblin() {
-  return makeChar({ skin: 0x6fbf3f, shirt: 0x5a3a1a, sleeve: 0x6fbf3f, pants: 0x3a5a2a, boots: 0x2a1a0a, dwarf: true, hat: 'cap', hatColor: 0x7a2a2a, ears: true, hammer: true, belt: 0x2a1a0a });
+  return buildChar({ skin: 0x6fbf3f, shirt: 0x5a3a1a, sleeve: 0x6fbf3f, pants: 0x3a5a2a, boots: 0x2a1a0a, dwarf: true, hat: 'cap', hatColor: 0x7a2a2a, ears: true, hammer: true, belt: 0x2a1a0a });
 }
 export function buildMerchantCart() {
   const g = cartProp(1); g.add(vox(1.0, 0.7, 0.7, 0xe6d5b0, 0, 0.7, 0), roof(1.2, 1.1, 0.4, 0xc0392b, 1.4, 'x'), vox(0.3, 0.3, 0.3, 0xffd24a, 0.1, 1.8, 0, 0xffd24a, 0.7)); return g;

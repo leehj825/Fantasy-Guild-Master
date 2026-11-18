@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rigged characters</title>
+<style>html,body{margin:0;height:100%;background:#4fa63f;overflow:hidden;font:13px sans-serif}canvas{display:block;width:100%;height:100%}
+#ui{position:fixed;left:8px;top:8px;right:8px;color:#fff;text-shadow:0 1px 2px #000}#ui button{margin:2px;padding:4px 8px;border-radius:6px;border:1px solid #432;background:#f1e2b8;font:12px sans-serif}#ui button.on{background:#e8b84a;font-weight:bold}</style></head>
+<body><canvas id="gl"></canvas><div id="ui"><div id="styles"></div><div id="clips"></div></div>
+<script type="module">
+import * as THREE from './vendor/three.module.js';
+import { LOOKS, makeChar } from './src/models.js';
+import { makeRigChar, CLIP_NAMES } from './src/rigchar.js';
+const q = new URLSearchParams(location.search);
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('gl'), antialias: true });
+renderer.shadowMap.enabled = true; renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x4fa63f);
+scene.add(new THREE.AmbientLight(0xcfe3ff, 0.8), new THREE.HemisphereLight(0xbfe6ff, 0x4a7a3a, 0.35));
+const sun = new THREE.DirectionalLight(0xfff1d0, 1.1); sun.position.set(8, 14, 10); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 12, bottom: -12, near: 1, far: 50 }); scene.add(sun);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshLambertMaterial({ color: 0x5aae45 })); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+const cam = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+const keys = (q.get('looks') || 'knightB,wizardBlue,elfBlond,dwarfBrown,guardA,villagerA,elfHood,wizardPurple').split(',');
+const STYLES = ['old', 'voxel', 'round'];
+const group = new THREE.Group(); scene.add(group); let anims = [], clip = q.get('clip') || 'idleEase';
+function build() {
+  group.clear(); anims = [];
+  STYLES.forEach((st, r) => keys.forEach((k, i) => {
+    const m = st === 'old' ? makeChar(LOOKS[k]) : makeRigChar(LOOKS[k], st);
+    m.position.set((i - (keys.length - 1) / 2) * 1.25, 0, (r - 1) * 2.4); m.rotation.y = 0; group.add(m);
+    if (m.userData.anim) { m.userData.anim.play(clip, { fade: 0 }); m.userData.anim.t = i * 0.13; anims.push(m.userData.anim); }
+  }));
+}
+build();
+const ui = document.getElementById('clips'); ui.textContent = 'clip: ';
+const SHOW = ['idleEase', 'walkCalm', 'runCalm', 'slash1', 'slash3', 'attack1', 'shoot', 'mgBolt', 'mgFire', 'mgHeal', 'mgBless', 'impact', 'die'];
+SHOW.filter(c => CLIP_NAMES.includes(c)).forEach(c => { const b = document.createElement('button'); b.textContent = c; b.onclick = () => { clip = c; anims.forEach((a, i) => a.play(c, { restart: true })); [...ui.querySelectorAll('button')].forEach(x => x.classList.toggle('on', x === b)); }; if (c === clip) b.classList.add('on'); ui.append(b); });
+document.getElementById('styles').textContent = 'rows (top to bottom): old · voxel rig · round rig';
+let yaw = +(q.get('yaw') || 0.5), pitch = +(q.get('pitch') || 0.28), dist = +(q.get('dist') || 8.5), tx = 0, drag = null;
+addEventListener('pointerdown', e => drag = [e.clientX, e.clientY]); addEventListener('pointerup', () => drag = null);
+addEventListener('pointermove', e => { if (drag) { yaw -= (e.clientX - drag[0]) * 0.006; pitch = Math.max(0.1, Math.min(1.4, pitch + (e.clientY - drag[1]) * 0.005)); drag = [e.clientX, e.clientY]; } });
+addEventListener('wheel', e => { dist = Math.max(2, Math.min(25, dist * (1 + e.deltaY * 0.001))); });
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix();
+  cam.position.set(Math.sin(yaw) * Math.cos(pitch) * dist, 0.6 + Math.sin(pitch) * dist, Math.cos(yaw) * Math.cos(pitch) * dist); cam.lookAt(0, 0.55, 0);
+  anims.forEach(a => a.update(dt)); renderer.render(scene, cam); requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+window.__setClip = c => { clip = c; anims.forEach(a => a.play(c, { restart: true, fade: 0 })); };
+</script></body></html>

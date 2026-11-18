@@ -116,6 +116,9 @@ const BUILD = {
 };
 
 const PROG = {
+  'Characters': '캐릭터', 'Rigged · blocky': '관절형 · 각진 몸', 'Rigged · rounded': '관절형 · 둥근 몸', 'Classic': '클래식',
+  'Body style. Rigged bodies use motion-capture clips (walk, run, sword, bow, magic, heal). Changing it reloads the game (progress is saved).': '몸 스타일. 관절형 몸은 모션 클립(걷기, 달리기, 검, 활, 마법, 치유)을 사용합니다. 바꾸면 게임이 다시 로드됩니다(진행 상황은 저장됨).',
+
   'Iron Vanguard': '강철 선봉대', "Ranger's Path": '레인저의 길', 'Arcane Circle': '비전 결사', 'Guild Specialization': '길드 전문화', '(permanent · needs Guild Rank Hold)': '(영구 · 길드 등급 \'요새\' 필요)', 'Declare': '선언', 'Specialization:': '전문화:',
   'Masters of the front line. Iron spikes and shields adorn the hall.': '최전선의 달인들. 길드 홀을 철 가시와 방패가 장식합니다.', '+10% success on combat quests · Knights +10% power · Forge +15% speed': '전투 퀘스트 성공 +10% · 기사 전투력 +10% · 대장간 속도 +15%',
   'Scholars of the unseen. Floating crystals and glowing runes surround the hall.': '보이지 않는 것의 학자들. 떠다니는 수정과 빛나는 룬이 길드 홀을 감쌉니다.', '+10% success on arcane quests · Wizards +10% power · Lab +15% speed · +1 Mana regen': '비전 퀘스트 성공 +10% · 마법사 전투력 +10% · 실험실 속도 +15% · 마나 재생 +1',

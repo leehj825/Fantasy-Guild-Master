@@ -39,6 +39,7 @@ English and 한국어 (Korean). Pick a language in ⚙ Settings; it is remembere
 - **Pressure:** raids scale with renown and rank, arrive as a watchable defence battle (guards, Guard Towers, mustered heroes), and every 4th raid is a warchief. Losing costs gold, stock and renown.
 - **Dive relics:** pick 1 of 3 relics at every checkpoint (Iron Skin, Vampiric Blades, Gold Magnet, ...).
 - **Hero depth:** promotions (Paladin / Warden / Archmage), a talent choice at levels 3 and 6, friendships and rivalries that change party odds, and a Hall of the Fallen.
+- **Rigged characters:** people use the 15-joint rig and motion clips from the model_check library (`src/rigchar.js`, `src/clips.js`): idle, walk, run, sword slashes, bow, bolt/fire magic, heal/bless, flinch and fall. Melee heroes run up to the enemy to strike and run back. Pick Rigged blocky / Rigged rounded / Classic in ⚙ Settings. `rigtest.html` compares the styles.
 - **Tutorial:** a seven-step guide card for new guilds (skip or restart it in ⚙ Settings).
 - **Sound:** all effects and ambient/battle music are synthesised with WebAudio (no audio files); toggle in ⚙ Settings.
 - **Territory + world map:** buy land to expand the base (the pathfinding grid grows with it) and unlock Greenwood, Stonepeak, Ashen Ruins; each region has its own enemies, loot weights and levelling perk.
