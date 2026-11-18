@@ -107,8 +107,8 @@ const G = {
   staff: { smith: 0, alch: 0, cook: 0, bard: 0, guard: 0, porter: 0 },
   research: {}, outpost: 0, boardLvl: 0, walls: 0,
   buildings: [], heroes: [], quests: [], goblins: [],
-  royal: null, merchant: null, alarm: false, questsDone: 0, nextId: 1,
-  tm: { spawn: 4, quest: 1, wage: 30, trickle: 0, merchant: 100, royal: 160, raid: 150, tavern: 0, mana: 0 },
+  orders: [], merchant: null, alarm: false, questsDone: 0, nextId: 1,
+  tm: { spawn: 4, quest: 1, wage: 30, trickle: 0, merchant: 100, royal: 160, caravan: 260, raid: 150, tavern: 0, mana: 0 },
 };
 window.__G = G;
 
@@ -217,7 +217,8 @@ const alchSpeed = () => (1 + 0.25 * G.staff.alch) * (G.research.forging ? 1.15 :
 const mealGold = () => 12 * (1 + 0.15 * G.staff.cook) * (1 + 0.3 * ((first('tavern')?.level || 1) - 1));
 const questGoldMul = () => (G.research.charter ? 1.25 : 1);
 const trickleMul = () => (1 + 0.5 * G.staff.porter);
-const stockCap = b => 4 + 2 * b.level;
+const warehouseBonus = () => ofType('warehouse').reduce((s, w) => s + 6 + 4 * (w.level - 1), 0);
+const stockCap = b => 4 + 2 * b.level + warehouseBonus();
 const wage = () => Object.values(G.staff).reduce((a, b) => a + b, 0) * 4;
 const maxStaff = 3;
 
@@ -579,10 +580,36 @@ function startMerchant() {
   showBanner('merchant', '🛒 A wandering merchant arrived with rare wares!', [['Trade', 'openMerchant', '']]);
 }
 function endMerchant() { G.merchant = null; if (cart) { scene.remove(cart); cart = null; } hideBanner('merchant'); if (modalKind === 'merchant') closeModal(); }
-function startRoyal() {
-  const need = 5 + Math.floor(G.renown / 8);
-  G.royal = { need, t: 150, reward: 150 + need * 40, ren: 5 };
-  toast(`👑 Royal Demand: ${need} iron swords!`);
+// ---- orders: Royal Demand and visible bulk Trade Caravans (deliver swords/potions from Forge and Lab stock)
+const ORDER_SRC = { sword: { src: 'forge', icon: '🗡️', label: 'swords' }, potion: { src: 'alchemy', icon: '🧪', label: 'potions' } };
+const stockOf = kind => ofType(ORDER_SRC[kind].src).reduce((n, b) => n + b.stock, 0);
+let caravan = null;
+function spawnCaravan() {
+  if (caravan) return; caravan = new THREE.Group();
+  const c1 = PROPS.cartProp(0), c2 = PROPS.cartProp(1), c3 = PROPS.cartProp(1);
+  c1.position.set(-1.8, 0, 0); c2.position.set(0.4, 0, 0.3); c3.position.set(2.6, 0, -0.2); [c1, c2, c3].forEach(c => { c.rotation.y = -0.15; caravan.add(c); });
+  [-2.6, 1.4, 3.6].forEach((x, i) => { const p = buildStaff(i % 2 ? 'porter' : 'guard'); p.position.set(x, 0, 1.2); p.rotation.y = 3.14; caravan.add(p); });
+  caravan.position.set(N - 5, 0, HALL.cz + 2.2); scene.add(caravan);
+}
+function endCaravanIfDone() { if (caravan && !G.orders.some(o => o.kind === 'caravan')) { scene.remove(caravan); caravan = null; } }
+function addOrder(kind) {
+  const o = { id: G.nextId++, kind, need: {} };
+  if (kind === 'royal') { const n = 5 + Math.floor(G.renown / 8); Object.assign(o, { need: { sword: n }, t: 150, tMax: 150, reward: 150 + n * 40, ren: 5, pen: 3, title: 'Royal Demand', icon: '👑' }); toast(`👑 Royal Demand: ${n} iron swords!`); }
+  else {
+    const sw = 6 + Math.floor(G.renown / 2), po = first('alchemy') ? 4 + Math.floor(G.renown / 3) : 0; o.need.sword = sw; if (po) o.need.potion = po;
+    Object.assign(o, { t: 260, tMax: 260, reward: 60 + sw * 38 + po * 32, ren: 3 + Math.floor((sw + po) / 8), pen: 2, title: 'Trade Caravan', icon: '🐪' });
+    spawnCaravan(); toast(`🐪 A trade caravan arrived! Bulk order: ${sw} swords${po ? ` + ${po} potions` : ''}.`);
+  }
+  G.orders.push(o);
+}
+function deliverOrder(id) {
+  const o = G.orders.find(x => x.id === id); if (!o) return; let moved = 0;
+  for (const kind of Object.keys(o.need)) for (const b of ofType(ORDER_SRC[kind].src)) while (o.need[kind] > 0 && b.stock > 0) { b.stock--; o.need[kind]--; moved++; }
+  if (Object.values(o.need).every(v => v <= 0)) {
+    G.orders.splice(G.orders.indexOf(o), 1); gain(G.buildings[0].door, o.reward); G.renown += o.ren; endCaravanIfDone();
+    toast(`${o.icon} ${o.title} fulfilled! +${o.reward}g, +${o.ren}⭐`);
+  } else if (moved) toast(`Delivered ${moved}. Still needed: ${Object.entries(o.need).filter(([, v]) => v > 0).map(([k, v]) => v + ' ' + ORDER_SRC[k].label).join(', ')}.`);
+  else toast('Nothing in stock to deliver yet.');
 }
 
 /* ------------------------------------------------------------------ *
@@ -649,10 +676,11 @@ function updateEconomy(dt) {
   t.merchant -= dt; if (t.merchant <= 0) { t.merchant = rnd(150, 220); if (G.renown >= 2 && !G.merchant) startMerchant(); }
   if (G.merchant) { G.merchant.t -= dt; if (G.merchant.t <= 0) endMerchant(); }
   t.raid -= dt; if (t.raid <= 0) { t.raid = rnd(120, 190); if (G.renown >= 3 && !G.goblins.length) startRaid(); }
-  t.royal -= dt; if (t.royal <= 0) { t.royal = rnd(200, 280); if (G.renown >= 4 && first('forge') && !G.royal) startRoyal(); }
-  if (G.royal) {
-    G.royal.t -= dt;
-    if (G.royal.t <= 0) { G.renown = Math.max(0, G.renown - 3); toast('👑 You failed the King. Reputation damaged! (-3 ⭐)'); G.royal = null; }
+  t.royal -= dt; if (t.royal <= 0) { t.royal = rnd(200, 280); if (G.renown >= 4 && first('forge') && !G.orders.some(o => o.kind === 'royal')) addOrder('royal'); }
+  t.caravan = (t.caravan ?? 260) - dt; if (t.caravan <= 0) { t.caravan = rnd(300, 420); if (G.renown >= 5 && first('forge') && !G.orders.some(o => o.kind === 'caravan')) addOrder('caravan'); }
+  for (const o of [...G.orders]) {
+    o.t -= dt;
+    if (o.t <= 0) { G.orders.splice(G.orders.indexOf(o), 1); G.renown = Math.max(0, G.renown - o.pen); toast(`${o.icon} ${o.title} expired — reputation damaged! (−${o.pen} ⭐)`); endCaravanIfDone(); }
   }
 }
 
@@ -682,8 +710,10 @@ function updateHUD() {
   const done = OBJ.filter(o => o[1]()).slice(-1);
   const html = [...done, ...pend].map(o => `<li class="${o[1]() ? 'done' : ''}">${o[1]() ? '☑' : '☐'} ${o[0]}</li>`).join('');
   if (html !== hudCache) { hudCache = html; $('objList').innerHTML = html; }
-  const r = G.royal;
-  const rh = r ? `<b>👑 Royal Demand</b><br>${r.need} swords · ${Math.ceil(r.t)}s<br>Reward ${r.reward}g +${r.ren}⭐<br><button class="act" data-act="deliver" ${(first('forge')?.stock || 0) < 1 ? 'disabled' : ''}>Deliver from Forge (${first('forge')?.stock || 0})</button>` : '';
+  const rh = G.orders.map(o => {
+    const needs = Object.entries(o.need).filter(([, v]) => v > 0).map(([k, v]) => `${ORDER_SRC[k].icon} ${v}`).join(' + '), avail = Object.keys(o.need).reduce((n, k) => n + (o.need[k] > 0 ? stockOf(k) : 0), 0);
+    return `<div class="ord"><b>${o.icon} ${o.title}</b> · ${Math.ceil(o.t)}s<br>Need ${needs}<br>Reward ${o.reward}g +${o.ren}⭐<br><button class="act" data-act="deliver" data-id="${o.id}" ${avail < 1 ? 'disabled' : ''}>Deliver (${avail} in stock)</button></div>`;
+  }).join('');
   if (rh !== $('royal')._h) { $('royal')._h = rh; $('royal').innerHTML = rh; }
 }
 
@@ -780,9 +810,10 @@ function modalContent() {
       const t = BUILDINGS[b.type]; let h = `<div class="s">${t.desc}</div><div class="row"><div class="grow"><div class="t">Level ${b.level}</div>`;
       if (b.type === 'forge') h += `<div class="s">Weapons in stock: <b>${b.stock}/${stockCap(b)}</b> · Iron Ore: ${G.ore}</div><div class="bar"><i style="width:${b.progress * 100}%"></i></div>`;
       if (b.type === 'alchemy') h += `<div class="s">Potions in stock: <b>${b.stock}/${stockCap(b)}</b> · Herbs: ${G.herbs}</div><div class="bar"><i style="width:${b.progress * 100}%"></i></div>`;
+      if (b.type === 'warehouse') h += `<div class="s">This warehouse adds <b>+${6 + 4 * (b.level - 1)}</b> stock to every Forge and Lab · total bonus +${warehouseBonus()}</div>`;
       if (b.type === 'tavern') h += `<div class="s">Meal price: ${mealGold().toFixed(1)}g · Passive: ${b.level * 0.25}g/s</div>`;
       const uc = 150 * b.level + 100;
-      if (['forge', 'alchemy', 'tavern'].includes(b.type)) h += `</div><button class="act" data-act="upBuilding" data-id="${b.id}" ${G.gold < uc || G.wood < 5 * b.level || b.level >= 5 ? 'disabled' : ''}>Upgrade<br>${uc}g + ${5 * b.level}🪵</button></div>`; else h += '</div></div>';
+      if (['forge', 'alchemy', 'tavern', 'warehouse'].includes(b.type)) h += `</div><button class="act" data-act="upBuilding" data-id="${b.id}" ${G.gold < uc || G.wood < 5 * b.level || b.level >= 5 ? 'disabled' : ''}>Upgrade<br>${uc}g + ${5 * b.level}🪵</button></div>`; else h += '</div></div>';
       if (b.type === 'hall') h += `<button class="act" data-act="open" data-k="quests" style="margin:6px 0">Open Quest Board</button>`;
       if (b.type === 'market') h += '<div class="sec">Buy Materials</div>' + [['ore', '⛏️ Iron Ore', 8], ['herbs', '🌿 Herbs', 6], ['wood', '🪵 Pine Wood', 6]].map(([k, n, p]) => `<div class="row"><div class="grow"><div class="t">${n} ×5</div>${cost(p * 5)}<span class="tag">have ${G[k]}</span></div><button class="act" data-act="buy" data-k="${k}" data-p="${p * 5}" ${G.gold < p * 5 ? 'disabled' : ''}>Buy</button></div>`).join('');
       return [t.icon + ' ' + t.name, h];
@@ -814,12 +845,7 @@ const ACT = {
   watch(d) { startWatch(+d.q); },
   alarm() { G.alarm = true; toast('🔔 Alarm sounded! Heroes rush to defend!'); hideBanner('raid'); showBanner('raid', '🔔 Alarm sounded — heroes are defending!', []); },
   openMerchant() { openModal('merchant'); },
-  deliver() {
-    const f = first('forge'), r = G.royal; if (!f || !r) return;
-    const n = Math.min(f.stock, r.need); f.stock -= n; r.need -= n;
-    if (r.need <= 0) { gain(f.door, r.reward); G.renown += r.ren; toast(`👑 The King is pleased! +${r.reward}g, +${r.ren}⭐`); G.royal = null; }
-    else toast(`Delivered ${n}. ${r.need} still needed.`);
-  },
+  deliver(d) { deliverOrder(+d.id); },
   place(d) { startPlacement(d.k); closeModal(); },
   dispatch(d) { dispatch(+d.q, false); },
   dispatchE(d) { dispatch(+d.q, true); },
@@ -1023,7 +1049,7 @@ const SCALARS = ['gold', 'renown', 'mana', 'ore', 'wood', 'herbs', 'time', 'spee
 let lastSaved = 0;
 function serialize() {
   const g = {}; SCALARS.forEach(k => { g[k] = G[k]; });
-  Object.assign(g, { staff: G.staff, research: G.research, tm: G.tm, royal: G.royal });
+  Object.assign(g, { staff: G.staff, research: G.research, tm: G.tm, orders: G.orders });
   return {
     v: 1, savedAt: Date.now(), g,
     buildings: G.buildings.map(b => ({ type: b.type, cx: b.cx, cz: b.cz, rot: b.rot || 0, level: b.level, stock: b.stock, progress: b.progress })),
@@ -1044,7 +1070,9 @@ function loadGame() {
   if (!d || d.v !== 1) return false;
   try {
     SCALARS.forEach(k => { if (d.g[k] !== undefined) G[k] = d.g[k]; });
-    Object.assign(G.staff, d.g.staff); G.research = d.g.research || {}; Object.assign(G.tm, d.g.tm); G.royal = d.g.royal || null;
+    Object.assign(G.staff, d.g.staff); G.research = d.g.research || {}; Object.assign(G.tm, d.g.tm);
+    G.orders = d.g.orders || (d.g.royal ? [{ id: G.nextId++, kind: 'royal', need: { sword: d.g.royal.need }, t: d.g.royal.t, tMax: 150, reward: d.g.royal.reward, ren: d.g.royal.ren, pen: 3, title: 'Royal Demand', icon: '👑' }] : []);
+    if (G.orders.some(o => o.kind === 'caravan')) spawnCaravan();
     const nextId = G.nextId;
     d.buildings.forEach(sb => {
       if (sb.type === 'hall') { G.buildings[0].level = sb.level; return; }
@@ -1257,4 +1285,4 @@ if (!loadGame()) {
   toast('Welcome, Guild Master! Build a Tavern and a Forge to attract & equip heroes.');
 }
 frame();
-window.__api = { toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, startRoyal, genQuest, dispatch, readyHeroes };
+window.__api = { toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };

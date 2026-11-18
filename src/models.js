@@ -273,6 +273,7 @@ export const BUILDINGS = {
   forge:   { name: 'Iron & Ember Forge',       w: 4, d: 3, cost: 300, renown: 0, icon: '⚒️', desc: 'Crafts weapons from Iron Ore. Sold to Knights and Rangers.' },
   alchemy: { name: "Sage's Alchemical Lab",    w: 4, d: 3, cost: 450, renown: 3, icon: '🧪', desc: 'Brews potions from Herbs for Wizards. Generates Mana.' },
   portal:  { name: 'Waystone Portal',          w: 3, d: 3, cost: 700, renown: 6, icon: '🌀', desc: 'Ancient arch. Heroes arrive twice as often and rare VIP heroes are drawn to it. Unlocks the Endless Dive.' },
+  warehouse: { name: 'Warehouse',            w: 4, d: 3, cost: 250, renown: 2, icon: '📦', desc: 'Storage hall. Raises the stock limit of every Forge and Lab (+6, +4 per upgrade level). Needed for bulk orders.' },
   market:  { name: 'Market Stall',             w: 3, d: 2, cost: 120, renown: 0, icon: '🛒', desc: 'Buy raw materials. Boosts passive gold slightly.' },
   tent:    { name: 'Hero Tent',                w: 2, d: 2, cost: 80,  renown: 0, icon: '⛺', desc: 'Cheap lodging: +3 population capacity.' },
   // decor / minor facilities
@@ -418,6 +419,22 @@ function hall() {
   return g;
 }
 
+function warehouse() {
+  const g = new THREE.Group();
+  g.add(tbox(3.7, 0.25, 2.7, 'stone', 0, 0, 0), tbox(3.5, 1.45, 2.5, 'plank', 0, 0.25, 0));
+  for (const x of [-1.72, 1.72]) for (const z of [-1.22, 1.22]) g.add(vox(0.16, 1.5, 0.16, WOOD_D, x, 0.25, z));
+  // big double doors with cross bracing
+  g.add(vox(1.6, 1.25, 0.06, 0x2e1c0e, 0, 0.25, 1.27), vox(0.74, 1.15, 0.05, 0x7a4f28, -0.39, 0.28, 1.31), vox(0.74, 1.15, 0.05, 0x7a4f28, 0.39, 0.28, 1.31));
+  g.add(rot(vox(0.07, 1.3, 0.04, WOOD_D, -0.39, 0.25, 1.35), 0, 0, 0.7), rot(vox(0.07, 1.3, 0.04, WOOD_D, 0.39, 0.25, 1.35), 0, 0, -0.7), vox(0.1, 0.1, 0.05, 0xe8c04a, -0.06, 0.8, 1.36), vox(0.1, 0.1, 0.05, 0xe8c04a, 0.06, 0.8, 1.36));
+  for (const x of [-1.15, 1.15]) g.add(vox(0.4, 0.4, 0.05, 0x2e1c0e, x, 0.8, 1.27), vox(0.3, 0.3, 0.04, GLOW, x, 0.85, 1.3, 0xffa030, 0.8));
+  g.add(gableRoof(3.9, 3.0, 1.25, 1.7, 'x', 0x8a5a2b));
+  // hoist crane with a hanging crate
+  g.add(vox(0.14, 2.6, 0.14, WOOD_D, 1.95, 0, 1.0), vox(1.2, 0.12, 0.12, WOOD_D, 1.4, 2.5, 1.0), vox(0.03, 0.9, 0.03, 0xc9b27a, 0.9, 1.6, 1.0), crate(0.4, 0.9, 1.0, 1.2));
+  // goods piled outside
+  g.add(crate(0.55, -2.15, 1.0, 0), crate(0.5, -2.1, 1.55, 0, 0xb5803f), crate(0.45, -2.15, 1.05, 0.55, 0x9c6b3c), barrel(-2.0, -0.3), barrel(-2.0, 0.2), sack(1.5, 1.8), sack(1.8, 1.55), logs(-0.9, 1.9, 0));
+  return g;
+}
+
 function market() {
   const g = marketStall();
   return g;
@@ -461,6 +478,7 @@ export function buildBuilding(type, variant = 0) {
     case 'alchemy': return alchemy();
     case 'portal': return portal();
     case 'hall': return hall();
+    case 'warehouse': return warehouse();
     case 'market': return market();
     case 'tent': return tent(variant);
     case 'garden': return garden();
