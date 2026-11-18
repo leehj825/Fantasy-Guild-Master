@@ -483,44 +483,89 @@ const QNAMES = {
   gather: ['Scout the Whispering Woods', 'Gather Moonpetal Herbs', 'Map the Old Mine', 'Track the Lost Merchant'],
   arcane: ['Seal the Rift', 'Recover the Rune Tome', 'Banish the Wisp Swarm', 'Study the Ancient Obelisk'],
 };
-function genQuest() {
-  const type = pick(['combat', 'gather', 'arcane']);
+// quest modifiers: each one asks for something specific (a class, gear grade, a potion) or trades risk for reward
+const MODS = {
+  elite: { icon: '💀', label: 'Elite', desc: '+40% danger, +50% gold, may drop rare Mythril.' },
+  cursed: { icon: '☠️', label: 'Cursed', desc: '−15% success unless the party has a Wizard.' },
+  storm: { icon: '⛈️', label: 'Storm', desc: '−12% success unless the party has a Ranger.' },
+  armored: { icon: '🛡️', label: 'Armored foes', desc: '−15% success unless the party averages Steel gear or better.' },
+  poison: { icon: '🧪', label: 'Poisoned', desc: '−12% success unless you bring a potion (uses 1 from the Lab).' },
+  rush: { icon: '⏱️', label: 'Rush job', desc: 'Takes 40% less time, +20% gold.' },
+  bounty: { icon: '💰', label: 'Bounty', desc: '+60% gold but −10% success.' },
+  hoard: { icon: '🎁', label: 'Hoard', desc: 'Double material loot.' },
+};
+const APPROACH = {
+  cautious: { label: 'Cautious', icon: '🛡️', chance: 0.08, gold: 0.85, dur: 1.2, survive: 0.1, desc: '+8% success, −15% gold, 20% slower, fewer casualties' },
+  standard: { label: 'Standard', icon: '⚔️', chance: 0, gold: 1, dur: 1, survive: 0, desc: 'Balanced' },
+  bold: { label: 'Bold', icon: '🔥', chance: -0.08, gold: 1.3, dur: 0.85, survive: -0.1, desc: '−8% success, +30% gold, 15% faster, more casualties' },
+};
+function makeQuest(o = {}) {
+  const type = o.type || pick(['combat', 'gather', 'arcane']);
   const tier = 1 + G.renown / 6;
-  const minH = Math.random() < 0.5 ? 1 : (Math.random() < 0.7 ? 2 : 3);
-  const diff = (2.6 + rnd(0, 1.2) + (minH - 1) * 2.4) * (0.9 + 0.1 * tier);
+  const minH = o.minH || (Math.random() < 0.5 ? 1 : (Math.random() < 0.7 ? 2 : 3));
+  let diff = (2.6 + rnd(0, 1.2) + (minH - 1) * 2.4) * (0.9 + 0.1 * tier) * (1 + 0.08 * G.rank);
   const loot = {};
   if (type === 'combat') loot.ore = Math.round(rnd(2, 5) * minH);
   if (type === 'gather') { loot.herbs = Math.round(rnd(2, 5) * minH); loot.wood = Math.round(rnd(2, 4)); }
   if (type === 'arcane') loot.arcane = Math.round(rnd(1, 3) * minH);
-  G.quests.push({
-    id: G.nextId++, name: pick(QNAMES[type]), type, diff, minH, maxH: Math.min(4, minH + 1),
-    dur: rnd(22, 40) + minH * 6, gold: Math.round((55 + diff * 28) * rnd(0.9, 1.15)), renown: Math.max(1, Math.round(diff / 2.2)),
-    loot, state: 'open', heroes: [], t: 0, enchant: false, chance: 0,
-  });
+  let mods = o.mods;
+  if (!mods) {
+    mods = []; const chance = G.renown < 3 ? 0.25 : G.renown < 10 ? 0.55 : 0.8, keys = Object.keys(MODS);
+    if (Math.random() < chance) mods.push(pick(keys)); if (G.renown >= 10 && Math.random() < 0.3) { const k2 = pick(keys); if (!mods.includes(k2)) mods.push(k2); }
+  }
+  let gold = (55 + diff * 28) * rnd(0.9, 1.15), dur = rnd(22, 40) + minH * 6;
+  if (mods.includes('elite')) { diff *= 1.4; gold *= 1.5; } if (mods.includes('rush')) { dur *= 0.6; gold *= 1.2; } if (mods.includes('bounty')) gold *= 1.6;
+  if (mods.includes('hoard')) for (const k of Object.keys(loot)) loot[k] *= 2;
+  gold *= (o.goldMul || 1);
+  const q = {
+    id: G.nextId++, name: o.name || pick(QNAMES[type]), type, diff, minH, maxH: Math.min(4, minH + 1), dur, gold: Math.round(gold), renown: Math.max(1, Math.round(diff / 2.2)) + (o.renownBonus || 0),
+    loot, mods, special: !!o.special, state: 'open', heroes: [], t: 0, enchant: false, chance: 0,
+  };
+  G.quests.push(q); return q;
 }
+const genQuest = () => makeQuest();
+const modTags = q => (q.mods || []).map(k => `<span class="tag" title="${MODS[k].desc}">${MODS[k].icon} ${MODS[k].label}</span>`).join('');
+const questPay = q => Math.round(q.gold * questGoldMul() * (q.approachGold || 1));
 const readyHeroes = () => G.heroes.filter(h => h.gear && h.stamina >= 45 && h.state !== 'quest' && h.state !== 'leaving');
 function bestParty(q) {
   const r = readyHeroes().sort((a, b) => heroPower(b, q.type) - heroPower(a, q.type));
   return r.slice(0, q.maxH);
 }
-function chanceFor(q, party, enchant) {
+function modPenalty(q, party, opts = {}) {   // returns [delta, [unmet requirement notes]]
+  let d = 0; const notes = [], has = c => party.some(h => h.cls === c), avgTier = party.length ? party.reduce((n, h) => n + (h.gearTier || 1), 0) / party.length : 1;
+  for (const k of q.mods || []) {
+    if (k === 'cursed' && !has('wizard')) { d -= 0.15; notes.push('needs a Wizard'); }
+    if (k === 'storm' && !has('ranger')) { d -= 0.12; notes.push('needs a Ranger'); }
+    if (k === 'armored' && avgTier < 2) { d -= 0.15; notes.push('needs Steel gear'); }
+    if (k === 'poison' && !opts.potion) { d -= 0.12; notes.push('bring a potion'); }
+    if (k === 'bounty') d -= 0.10;
+  }
+  return [d, notes];
+}
+function chanceFor(q, party, o = false) {
+  if (typeof o === 'boolean') o = { enchant: o };
   const P = party.reduce((s, h) => s + heroPower(h, q.type), 0);
   let c = P / (q.diff * 1.25);
   if (G.research.valor) c += 0.1;
   for (const h of party) { const t = traitOf(h); if (t === 'lucky') c += 0.08; if (t === 'clumsy') c -= 0.10; }
-  if (enchant) c += G.research.arcane ? 0.3 : 0.2;
+  c += modPenalty(q, party, o)[0] + (APPROACH[o.approach || 'standard'].chance);
+  if (o.enchant) c += G.research.arcane ? 0.3 : 0.2;
   return Math.max(0.03, Math.min(0.97, c));
 }
-function dispatch(qid, enchant) {
+function dispatch(qid, enchant, partyOverride, extra = {}) {
   const q = G.quests.find(x => x.id === qid); if (!q || q.state !== 'open') return;
-  const party = bestParty(q);
-  if (party.length < q.minH) return toast(`Need ${q.minH} ready hero(es) with gear and stamina.`);
-  if (enchant) { if (G.mana < 5) return toast('Not enough Mana.'); G.mana -= 5; }
-  q.enchant = enchant; q.chance = chanceFor(q, party, enchant); q.heroes = party; q.state = 'active'; q.t = q.dur;
+  const party = partyOverride || bestParty(q), ap = APPROACH[extra.approach || 'standard'];
+  if (party.length < q.minH || party.length > q.maxH) return toast(`This quest needs ${q.minH}–${q.maxH} ready heroes with gear and stamina.`);
+  if (enchant && G.mana < 5) return toast('Not enough Mana.');
+  let lab = null; if (extra.potion) { lab = ofType('alchemy').find(b => b.stock > 0); if (!lab) return toast('No potions in stock.'); }
+  if (enchant) G.mana -= 5; if (lab) lab.stock--;
+  const o = { enchant, approach: extra.approach || 'standard', potion: !!lab };
+  q.enchant = enchant; q.approach = o.approach; q.chance = chanceFor(q, party, o); q.heroes = party; q.state = 'active';
+  q.dur = Math.round(q.dur * ap.dur); q.t = q.dur; q.approachGold = ap.gold;
   // the outcome is rolled now so the expedition can be watched live without ever contradicting the result
   q.party = party.map(h => heroSnap(h));
   q.seed = (Math.random() * 1e9) | 0; q.ok = Math.random() < q.chance; q.heals = [];
-  q.deaths = party.filter(h => Math.random() > CLASSES[h.cls].survive + 0.15 + (traitOf(h) === 'brave' ? 0.35 : 0)).map(h => h.id);
+  q.deaths = party.filter(h => Math.random() > CLASSES[h.cls].survive + 0.15 + ap.survive + (traitOf(h) === 'brave' ? 0.35 : 0)).map(h => h.id);
   q.script = genScript(q);
   party.forEach(h => { h.state = 'quest'; h.mesh.visible = false; setMood(h, null); h.onDone = null; });
   toast(`Party of ${party.length} dispatched: ${q.name}`);
@@ -544,7 +589,8 @@ function resolveQuest(q) {
     alive.push(h);
   });
   if (ok) {
-    const g = Math.round(q.gold * questGoldMul());
+    const g = questPay(q);
+    if (q.mods && q.mods.includes('elite') && Math.random() < 0.35) { G.rare.mythril++; toast('💀 The elite foe dropped a Mythril shard!'); }
     gain(hp, g); G.renown += q.renown;
     floatText(hp.clone().add(new THREE.Vector3(0, 0.6, 0)), `+${q.renown} ⭐`, '#ffd24a');
     const oreMul = (G.research.prospect ? 1.5 : 1) * (1 + 0.2 * q.party.filter(x => x.trait === 'clumsy').length);
@@ -559,6 +605,46 @@ function resolveQuest(q) {
     toast(`✘ ${q.name} failed. The party limps home.`);
   }
   renderModal(true);
+}
+
+/* ------------------------------------------------------------------ *
+ *  Stories: events with choices and lasting consequences
+ * ------------------------------------------------------------------ */
+function giveVip(cls, trait, name) {
+  const p = new THREE.Vector3(HALL.cx + 2.5, 0, HALL.cz + 5.5);
+  const h = createHero({ cls, variant: Math.floor(Math.random() * 3), name: `${name} ${TRAITS[trait].epithet}`, x: p.x, z: p.z, level: 3, vip: { trait } });
+  toast(`⭐ ${h.name} joins your guild! (${TRAITS[trait].label})`); return h;
+}
+const STORIES = [
+  { id: 'ransom', when: () => G.questsDone >= 3, title: "The Merchant's Ransom", text: "A frightened merchant begs at your gate: bandits hold his brother and demand 150 gold. He swears he will remember your kindness… or you could storm the bandit camp yourselves.", choices: [
+    { label: 'Pay the ransom (−150g)', hint: '+3 renown. The merchant pays 10% more when you sell materials.', ok: () => G.gold >= 150, fx: () => { G.gold -= 150; G.renown += 3; G.flags.merchantFriend = 1; } },
+    { label: 'Storm the camp', hint: 'Posts a special Elite quest with a big reward.', fx: () => { makeQuest({ type: 'combat', mods: ['elite', 'bounty'], minH: 2, name: "Free the Merchant's Brother", special: true, renownBonus: 2 }); toast('📖 A special quest was posted on the board!'); } },
+    { label: 'Turn him away', hint: '−1 renown.', fx: () => { G.renown = Math.max(0, G.renown - 1); } }] },
+  { id: 'knight', when: () => G.questsDone >= 6, title: 'A Wounded Stranger', text: 'A knight in battered armour collapses at the gate. He says he fought a whole warband alone. He will need a bed, a healer, and trust.', choices: [
+    { label: 'Shelter him (−80g)', hint: 'A Brave VIP knight joins the guild.', ok: () => G.gold >= 80, fx: () => { G.gold -= 80; giveVip('knight', 'brave', 'Sir Aldous'); } },
+    { label: 'Send him on his way (+40g)', hint: 'He leaves a few coins for the favour.', fx: () => { G.gold += 40; } }] },
+  { id: 'festival', when: () => G.renown >= 8, title: 'The Harvest Festival', text: 'The villagers propose a festival in your courtyard. It will cost coin, but heroes love a feast — and word travels.', choices: [
+    { label: 'Host it (−300g)', hint: 'All heroes become happy, +2 renown, one hero becomes Lucky.', ok: () => G.gold >= 300, fx: () => { G.gold -= 300; G.renown += 2; G.heroes.forEach(h => { h.happy = 100; h.stamina = 100; }); const h = pick(G.heroes.filter(x => !x.vip)); if (h) { h.vip = { trait: 'lucky' }; h.name += ' the Lucky'; addStar(h); toast(`🍀 ${h.name} caught the bouquet — Lucky!`); } } },
+    { label: 'Decline', fx: () => { } }] },
+  { id: 'tome', when: () => G.renown >= 12 && !!first('alchemy'), title: "The Wizard's Bargain", text: 'A hooded wizard offers a tome of forbidden lore. His price is 20 mana — a steep one — but the book could make your Lab far more potent.', choices: [
+    { label: 'Trade 20 mana for the tome', hint: 'Unlocks Arcane Studies research for free.', ok: () => G.mana >= 20 && !G.research.arcane, fx: () => { G.mana -= 20; G.research.arcane = true; } },
+    { label: 'Refuse politely (+1 renown)', fx: () => { G.renown++; } }] },
+  { id: 'rival', when: () => G.renown >= 20, title: 'The Iron Wolves', text: 'The rival Iron Wolves guild rides to your gate. Their captain offers a pact: 800 gold now, but your caravans will pay less. Or you can send them packing, and risk their anger.', choices: [
+    { label: 'Accept the pact (+800g)', hint: 'Trade caravans pay 20% less from now on.', fx: () => { G.gold += 800; G.flags.pact = 1; } },
+    { label: 'Reject them (+3 renown)', hint: 'The Wolves will raid you more often.', fx: () => { G.renown += 3; G.flags.hostile = 1; } }] },
+  { id: 'dragon', when: () => G.renown >= 40 && G.rank >= 2, title: "The Dragon's Shadow", text: 'A shadow crosses the sun. Scouts report a young dragon nesting in the northern peaks. Heroes whisper of glory — and of ash.', choices: [
+    { label: 'Hunt the dragon', hint: 'Posts a legendary Elite quest with a huge reward.', fx: () => { makeQuest({ type: 'combat', mods: ['elite', 'hoard', 'bounty'], minH: 3, name: 'Slay the Young Dragon', special: true, goldMul: 2, renownBonus: 6 }); toast('📖 A legendary quest was posted!'); } },
+    { label: 'Pay tribute (−2000g)', hint: 'Receive a Dragon Scale and keep the peace.', ok: () => G.gold >= 2000, fx: () => { G.gold -= 2000; G.rare.scale++; } }] },
+];
+function checkStories() {
+  if (G.flags.pending) return;
+  const st = STORIES.find(x => !G.flags['story_' + x.id] && x.when()); if (!st) return;
+  G.flags['story_' + st.id] = 1; G.flags.pending = st.id; showStoryBanner();
+}
+function showStoryBanner() { const st = STORIES.find(x => x.id === G.flags.pending); if (st) showBanner('story', `📖 ${st.title} — a decision awaits`, [['Read', 'openStory', '']]); }
+function chooseStory(i) {
+  const st = STORIES.find(x => x.id === G.flags.pending); if (!st) return; const c = st.choices[i]; if (!c || (c.ok && !c.ok())) return;
+  c.fx(); G.flags.pending = null; hideBanner('story'); closeModal(); toast(`📖 ${st.title}: ${c.label}`);
 }
 
 /* ------------------------------------------------------------------ *
@@ -679,7 +765,7 @@ function addOrder(kind) {
   if (kind === 'royal') { const n = 5 + Math.floor(G.renown / 8); Object.assign(o, { need: { sword: n }, t: 150, tMax: 150, reward: 150 + n * 40, ren: 5, pen: 3, title: 'Royal Demand', icon: '👑' }); toast(`👑 Royal Demand: ${n} iron swords!`); }
   else {
     const sw = 6 + Math.floor(G.renown / 2), po = first('alchemy') ? 4 + Math.floor(G.renown / 3) : 0; o.need.sword = sw; if (po) o.need.potion = po;
-    Object.assign(o, { t: 260, tMax: 260, reward: 60 + sw * 38 + po * 32, ren: 3 + Math.floor((sw + po) / 8), pen: 2, title: 'Trade Caravan', icon: '🐪' });
+    Object.assign(o, { t: 260, tMax: 260, reward: Math.round((60 + sw * 38 + po * 32) * (G.flags.pact ? 0.8 : 1)), ren: 3 + Math.floor((sw + po) / 8), pen: 2, title: 'Trade Caravan', icon: '🐪' });
     spawnCaravan(); toast(`🐪 A trade caravan arrived! Bulk order: ${sw} swords${po ? ` + ${po} potions` : ''}.`);
   }
   G.orders.push(o);
@@ -730,7 +816,7 @@ function updateEconomy(dt) {
   }
   if (first('alchemy')) { t.mana += dt; if (t.mana >= 5) { t.mana = 0; G.mana += 1 + (G.research.arcane ? 1 : 0); } }
   t.market -= dt; if (t.market <= 0) { t.market = rnd(70, 100); tickMarket(); }
-  t.goals -= dt; if (t.goals <= 0) { t.goals = 1; checkGoals(); }
+  t.goals -= dt; if (t.goals <= 0) { t.goals = 1; checkGoals(); checkStories(); }
   // minor facilities
   t.minor = (t.minor || 0) + dt;
   if (t.minor >= 6) {
@@ -761,7 +847,7 @@ function updateEconomy(dt) {
   // events
   t.merchant -= dt; if (t.merchant <= 0) { t.merchant = rnd(150, 220); if (G.renown >= 2 && !G.merchant) startMerchant(); }
   if (G.merchant) { G.merchant.t -= dt; if (G.merchant.t <= 0) endMerchant(); }
-  t.raid -= dt; if (t.raid <= 0) { t.raid = rnd(120, 190); if (G.renown >= 3 && !G.goblins.length) startRaid(); }
+  t.raid -= dt; if (t.raid <= 0) { t.raid = rnd(120, 190) * (G.flags.hostile ? 0.7 : 1); if (G.renown >= 3 && !G.goblins.length) startRaid(); }
   t.royal -= dt; if (t.royal <= 0) { t.royal = rnd(200, 280); if (G.renown >= 4 && first('forge') && !G.orders.some(o => o.kind === 'royal')) addOrder('royal'); }
   t.caravan = (t.caravan ?? 260) - dt; if (t.caravan <= 0) { t.caravan = rnd(300, 420); if (G.renown >= 5 && first('forge') && !G.orders.some(o => o.kind === 'caravan')) addOrder('caravan'); }
   for (const o of [...G.orders]) {
@@ -826,7 +912,7 @@ function tickMarket() {
   const k = pick(Object.keys(BASE_PRICE)), up = Math.random() < 0.5; m[k] = up ? rnd(1.6, 2.1) : rnd(0.5, 0.65);
   m.news = `${{ ore: 'Iron Ore', herbs: 'Herbs', wood: 'Pine Wood' }[k]} ${up ? 'is scarce — prices surge!' : 'is plentiful — prices crash!'}`; toast(`🛒 Market: ${m.news}`);
 }
-const buyPrice = k => Math.ceil(BASE_PRICE[k] * G.market[k] * 5), sellPrice = k => Math.floor(BASE_PRICE[k] * 0.55 * G.market[k] * 5);
+const buyPrice = k => Math.ceil(BASE_PRICE[k] * G.market[k] * 5), sellPrice = k => Math.floor(BASE_PRICE[k] * 0.55 * G.market[k] * 5 * (G.flags.merchantFriend ? 1.1 : 1));
 const trend = k => G.market[k] > 1.15 ? '<span style="color:#ff9a9a">▲</span>' : G.market[k] < 0.87 ? '<span style="color:#9bff9b">▼</span>' : '▬';
 let hudCache = '';
 function updateHUD() {
@@ -905,14 +991,14 @@ function modalContent() {
         ? `<div class="row"><div class="grow"><div class="t">🌀 Endless Dive — floor ${diveFloorIndex(q.script, q.elapsed) + 1}</div><div class="s">${q.heroes.map(x => x.name).join(', ')} · at risk: ${rewardText(q.pending)}</div><div class="bar"><i style="width:${diveProg(q)}%"></i></div></div><div style="text-align:center"><button class="act" data-act="watch" data-q="${q.id}">👁 Watch</button></div></div>`
         : `<div class="row"><div class="grow"><div class="t">${q.name}</div><div class="s">${q.heroes.map(x => x.name).join(', ')} · success ${Math.round(q.chance * 100)}%</div><div class="bar"><i style="width:${100 - q.t / q.dur * 100}%"></i></div></div><div style="text-align:center">${Math.ceil(q.t)}s<br><button class="act" data-act="watch" data-q="${q.id}">👁 Watch</button></div></div>`).join('') || '<div class="s">None.</div>');
       h += '<div class="sec">Quest Board</div>' + (open.map(q => {
-        const party = bestParty(q), ok = party.length >= q.minH, c = Math.round(chanceFor(q, party, false) * 100), ce = Math.round(chanceFor(q, party, true) * 100);
+        const party = bestParty(q), ok = party.length >= q.minH, c = Math.round(chanceFor(q, party, { potion: false }) * 100), notes = ok ? modPenalty(q, party)[1] : [];
         const loot = Object.entries(q.loot).map(([k, v]) => ({ ore: '⛏️', herbs: '🌿', wood: '🪵', arcane: '✨' }[k]) + v).join(' ');
-        return `<div class="row"><div class="grow"><div class="t">${q.name} <span class="tag">${q.type}</span></div>
+        return `<div class="row" ${q.special ? 'style="border-color:#ff9a4a"' : ''}><div class="grow"><div class="t">${q.special ? '📖 ' : ''}${q.name} <span class="tag">${q.type}</span> ${modTags(q)}</div>
           <div class="s">Party ${q.minH}–${q.maxH} · Danger ${q.diff.toFixed(1)} · ${Math.round(q.dur)}s</div>
           ${cost(q.gold)}<span class="tag">⭐ ${q.renown}</span><span class="tag">${loot}</span>
-          <div class="s">${ok ? `Best party: ${party.map(x => x.name).join(', ')} → <b>${c}%</b> (${ce}% enchanted)` : '<span style="color:#ff9a9a">Not enough ready heroes</span>'}</div></div>
-          <div style="display:flex;flex-direction:column;gap:4px"><button class="act" data-act="dispatch" data-q="${q.id}" ${ok ? '' : 'disabled'}>Dispatch</button>
-          <button class="act" data-act="dispatchE" data-q="${q.id}" ${ok && G.mana >= 5 ? '' : 'disabled'}>✨ Enchant (5)</button></div></div>`;
+          <div class="s">${ok ? `Auto party: ${party.map(x => x.name).join(', ')} → <b>${c}%</b>${notes.length ? ` <span style="color:#ffb86a">(${notes.join(', ')})</span>` : ''}` : '<span style="color:#ff9a9a">Not enough ready heroes</span>'}</div></div>
+          <div style="display:flex;flex-direction:column;gap:4px"><button class="act" data-act="dispatch" data-q="${q.id}" ${ok ? '' : 'disabled'}>Auto-send</button>
+          <button class="act" data-act="pick" data-q="${q.id}" ${readyHeroes().length ? '' : 'disabled'}>Choose party…</button></div></div>`;
       }).join('') || '<div class="s">No quests posted right now — new ones appear regularly.</div>');
       h += '<div class="sec">Roster <span class="s">(tap a hero for details)</span></div>' + (G.heroes.map(x => `<div class="s" data-act="hero" data-id="${x.id}" style="cursor:pointer">${x.vip ? '⭐ ' : ''}${CLASSES[x.cls].icon} ${x.name} · Lv${x.level} ${CLASSES[x.cls].label} · 🔋${Math.round(x.stamina)} · 😊${Math.round(x.happy)} · ${x.gear ? 'geared' : 'needs gear'}${x.state === 'quest' ? ' · on quest' : ''}</div>`).join('') || '<div class="s">No heroes yet. Build a Tavern to attract them!</div>');
       return ['📜 Quest Board & Guild Hall', h];
@@ -930,6 +1016,22 @@ function modalContent() {
       <div class="row"><div class="grow"><div class="t">💾 Save</div><div class="s">The game autosaves every 15 seconds and when you leave. Last save: ${lastSaved ? Math.round((Date.now() - lastSaved) / 1000) + 's ago' : 'not yet'}.</div></div><button class="act" data-act="save">Save now</button></div>
       <div class="row"><div class="grow"><div class="t">🗑 New game</div><div class="s">${modalArg === 'confirm' ? '<b style="color:#ff9a9a">This erases your saved guild. Tap again to confirm.</b>' : 'Delete the save and start a fresh guild.'}</div></div><button class="act red" data-act="newgame">${modalArg === 'confirm' ? 'Really erase' : 'New game'}</button></div>
       <div class="s" style="margin-top:8px">Quests keep running for up to 10 minutes while you are away.</div>`];
+    case 'party': {
+      const st = modalArg, q = G.quests.find(x => x.id === st.qid); if (!q || q.state !== 'open') return ['Party', '<div class="s">This quest is no longer available.</div>'];
+      const rd = readyHeroes().sort((a, b) => heroPower(b, q.type) - heroPower(a, q.type)), party = st.sel.map(id => G.heroes.find(x => x.id === id)).filter(Boolean), ap = APPROACH[st.approach];
+      const lab = ofType('alchemy').reduce((n, b) => n + b.stock, 0), hasPoison = q.mods.includes('poison');
+      const o = { enchant: st.enchant, approach: st.approach, potion: st.potion }, c = party.length ? Math.round(chanceFor(q, party, o) * 100) : 0, [, notes] = modPenalty(q, party, o);
+      let h = `<div class="s">${modTags(q)}</div><div class="s" style="margin:4px 0">${q.mods.map(k => MODS[k].icon + ' ' + MODS[k].desc).join('<br>') || 'No special conditions.'}</div>`;
+      h += `<div class="sec">Approach</div><div style="display:flex;gap:5px">` + Object.entries(APPROACH).map(([k, a]) => `<button class="act ${st.approach === k ? '' : 'red'}" style="flex:1;${st.approach === k ? 'outline:2px solid #fff8' : ''}" data-act="papp" data-a="${k}">${a.icon} ${a.label}<br><span style="font-weight:400;font-size:10px">${a.desc}</span></button>`).join('') + '</div>';
+      h += `<div style="display:flex;gap:6px;margin-top:6px"><button class="act ${st.enchant ? '' : 'red'}" data-act="pench" ${G.mana < 5 && !st.enchant ? 'disabled' : ''}>✨ Enchant (5 mana) ${st.enchant ? '✔' : ''}</button><button class="act ${st.potion ? '' : 'red'}" data-act="ppot" ${lab < 1 && !st.potion ? 'disabled' : ''}>🧪 Bring a potion (${lab}) ${st.potion ? '✔' : ''}</button></div>`;
+      h += `<div class="sec">Ready heroes <span class="s">(pick ${q.minH}–${q.maxH})</span></div>` + (rd.map(x => `<div class="row" data-act="psel" data-id="${x.id}" style="cursor:pointer;${st.sel.includes(x.id) ? 'border-color:#ffd24a;background:#ffd24a22' : ''}"><div style="font-size:24px">${st.sel.includes(x.id) ? '☑' : '☐'} ${CLASSES[x.cls].icon}</div><div class="grow"><div class="t">${x.vip ? '⭐ ' : ''}${x.name} <span class="tag">Lv${x.level}</span>${x.vip ? `<span class="tag">${TRAITS[x.vip.trait].icon} ${TRAITS[x.vip.trait].label}</span>` : ''}<span class="tag">${gearName(x)} gear</span></div><div class="s">Power ${heroPower(x, q.type).toFixed(1)} on ${q.type} · 🔋${Math.round(x.stamina)}</div></div></div>`).join('') || '<div class="s">No geared, rested heroes available.</div>');
+      h += `<div class="row" style="margin-top:10px;border-color:#ffd24a"><div class="grow"><div class="t">Success chance: <b style="font-size:18px">${c}%</b></div><div class="s">${party.length ? `${party.length} hero(es) · reward ~${Math.round(q.gold * questGoldMul() * ap.gold)}g · ${Math.round(q.dur * ap.dur)}s` : 'Select heroes above'}${notes.length ? `<br><span style="color:#ffb86a">Missing: ${notes.join(', ')}</span>` : ''}</div></div><button class="act" data-act="pgo" ${party.length >= q.minH && party.length <= q.maxH ? '' : 'disabled'}>Send party</button></div>`;
+      return ['🧭 Choose a party — ' + q.name, h];
+    }
+    case 'story': {
+      const st = STORIES.find(x => x.id === G.flags.pending); if (!st) return ['Story', '<div class="s">Nothing to decide right now.</div>'];
+      return ['📖 ' + st.title, `<div style="line-height:1.5;margin-bottom:8px">${st.text}</div>` + st.choices.map((c, i) => `<div class="row"><div class="grow"><div class="t">${c.label}</div>${c.hint ? `<div class="s">${c.hint}</div>` : ''}</div><button class="act" data-act="storychoice" data-i="${i}" ${c.ok && !c.ok() ? 'disabled' : ''}>Choose</button></div>`).join('')];
+    }
     case 'hero': {
       const h = G.heroes.find(x => x.id === modalArg); if (!h) return ['Hero', '<div class="s">This hero is no longer in the guild.</div>'];
       const c = CLASSES[h.cls], tr = h.vip ? TRAITS[h.vip.trait] : null, aq = G.quests.find(q => q.state === 'active' && q.heroes.includes(h));
@@ -995,6 +1097,14 @@ function renderModal(force) {
 }
 
 const ACT = {
+  pick(d) { openModal('party', { qid: +d.q, sel: [], approach: 'standard', enchant: false, potion: false }); },
+  psel(d) { const st = modalArg, q = G.quests.find(x => x.id === st.qid), id = +d.id; if (!q) return; if (st.sel.includes(id)) st.sel = st.sel.filter(x => x !== id); else if (st.sel.length >= q.maxH) toast(`At most ${q.maxH} heroes on this quest.`); else st.sel.push(id); },
+  papp(d) { modalArg.approach = d.a; },
+  pench() { modalArg.enchant = !modalArg.enchant; },
+  ppot() { modalArg.potion = !modalArg.potion; },
+  pgo() { const st = modalArg, party = st.sel.map(id => G.heroes.find(x => x.id === id)).filter(Boolean); dispatch(st.qid, st.enchant, party, { approach: st.approach, potion: st.potion }); if (!G.quests.find(x => x.id === st.qid && x.state === 'open')) openModal('quests'); },
+  openStory() { openModal('story'); },
+  storychoice(d) { chooseStory(+d.i); },
   dive() { dispatchDive(); },
   hero(d) { openModal('hero', +d.id); },
   save() { saveGame(false); renderModal(true); },
@@ -1253,6 +1363,7 @@ function loadGame() {
       G.quests.push(q);
     });
     applyExtra(d.extra || {});
+    if (G.flags.pending) showStoryBanner();
     G.alarm = false; $('speedBtn').textContent = '⏵ x' + G.speed;
     toast(away > 20 ? `💾 Welcome back! Away for ${Math.round(away / 60)} min — quests kept going.` : '💾 Save loaded.');
     return true;
@@ -1302,7 +1413,7 @@ function cleanupWatch() {
 }
 function onQuestEnd(q, ok) {
   if (!watching || watching.q !== q || watching.exiting) return;
-  watching.finish = { ok, t: 4.5, T: q.dive ? q.elapsed : q.dur, text: q.endText || (ok ? `🏆 Victory! +${Math.round(q.gold * questGoldMul())}g · +${q.renown}⭐` : '☠ Defeat — the party limps home') };
+  watching.finish = { ok, t: 4.5, T: q.dive ? q.elapsed : q.dur, text: q.endText || (ok ? `🏆 Victory! +${questPay(q)}g · +${q.renown}⭐` : '☠ Defeat — the party limps home') };
   updateWatchHUD();
 }
 // --- in-fight actions (only before the finale begins)
@@ -1460,4 +1571,4 @@ if (!loadGame()) {
 }
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
-window.__api = { maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__api = { makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
