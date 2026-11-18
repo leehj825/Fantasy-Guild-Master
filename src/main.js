@@ -251,6 +251,19 @@ const CLASSES = {
   wizard: { label: 'Wizard', icon: '🪄', base: 3.5, price: 22, survive: 0.75, quest: 'arcane' },
 };
 const NAMES = ['Aldric', 'Brienne', 'Cael', 'Dara', 'Eldon', 'Fenna', 'Garrick', 'Hilda', 'Ivar', 'Jora', 'Kellan', 'Lyra', 'Mordo', 'Nessa', 'Orin', 'Piper', 'Quill', 'Rurik', 'Sera', 'Thane'];
+const TRAITS = {
+  clumsy: { label: 'Clumsy', icon: '🤕', epithet: 'the Clumsy', desc: '−10% quest success chance, but +20% loot from every quest.' },
+  lucky: { label: 'Lucky', icon: '🍀', epithet: 'the Lucky', desc: '+8% quest success chance.' },
+  glutton: { label: 'Glutton', icon: '🍖', epithet: 'the Hungry', desc: 'Eats double: tavern meals pay twice as much, but stamina drains 40% faster.' },
+  brave: { label: 'Brave', icon: '🦁', epithet: 'the Bold', desc: 'Far less likely to fall in battle.' },
+  scholar: { label: 'Scholar', icon: '📖', epithet: 'the Wise', desc: 'Gains experience twice as fast.' },
+};
+const VIP_POOL = [['Sir Galahad', 'knight'], ['Dame Rowena', 'knight'], ['Lord Percival', 'knight'], ['Lady Isolde', 'ranger'], ['Ranger Thistle', 'ranger'], ['Archmage Orwyn', 'wizard'], ['Mage Lysandra', 'wizard']];
+const traitOf = h => (h.vip ? h.vip.trait : null);
+function addStar(h) {   // a spinning golden star marks VIP heroes
+  const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.16), new THREE.MeshBasicMaterial({ color: 0xffd24a }));
+  star.position.y = h.cls === 'wizard' ? 1.95 : 1.4; h.mesh.add(star); h.mesh.userData.star = star;
+}
 const heroPower = (h, type) => CLASSES[h.cls].base * (1 + 0.2 * (h.level - 1)) * (h.gear ? 1 : 0.5) * (CLASSES[h.cls].quest === type ? 1.3 : 1);
 const heroGroup = new THREE.Group(); scene.add(heroGroup);
 
@@ -266,7 +279,7 @@ function createHero(d) {
     quests: d.quests || 0, vip: d.vip || null,
     mesh, pos: mesh.position, bub, state: 'idle', target: null, onArrive: null, timer: 0, onDone: null, cool: 0, phase: Math.random() * 6, vis: true,
   };
-  mesh.userData.hid = h.id; G.heroes.push(h);
+  mesh.userData.hid = h.id; G.heroes.push(h); if (h.vip) addStar(h);
   return h;
 }
 function spawnHero(cls, atHall = false) {
@@ -277,6 +290,11 @@ function spawnHero(cls, atHall = false) {
     cls = pick(opts);
   }
   const p = atHall ? new THREE.Vector3(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1.2)) : spawnPoint();
+  if (!atHall && Math.random() < (first('portal') ? 0.2 : 0.05) && G.heroes.filter(x => x.vip).length < 3) {   // a rare named VIP arrives
+    const pool = VIP_POOL.filter(v => v[1] !== 'wizard' || first('alchemy')), [base, vcls] = pick(pool), trait = pick(Object.keys(TRAITS));
+    const h = createHero({ cls: vcls, variant: Math.floor(Math.random() * 3), name: `${base} ${TRAITS[trait].epithet}`, x: p.x, z: p.z, level: 2 + Math.floor(Math.random() * 2), vip: { trait } });
+    toast(`⭐ ${h.name} has arrived at your guild! (${TRAITS[trait].label})`); return h;
+  }
   return createHero({ cls, variant: Math.floor(Math.random() * 3), name: pick(NAMES), x: p.x, z: p.z });
 }
 function removeHero(h, why) {
@@ -351,7 +369,7 @@ function decide(h) {
     setMood(h, '🍺');
     if (tavern) {
       return visit(h, tavern, 2.5, () => {
-        const g = mealGold();
+        const g = mealGold() * (traitOf(h) === 'glutton' ? 2 : 1);
         gain(tavern.door, g);
         h.stamina = 100; h.happy = Math.min(100, h.happy + 30);
       });
@@ -383,7 +401,8 @@ function updateHero(h, dt) {
   h.phase += dt * 8;
   if (h.state === 'quest') return;
   const decay = Math.pow(0.7, G.staff.bard);
-  h.stamina = Math.max(0, h.stamina - 0.7 * dt);
+  h.stamina = Math.max(0, h.stamina - 0.7 * (traitOf(h) === 'glutton' ? 1.4 : 1) * dt);
+  if (h.mesh.userData.star) h.mesh.userData.star.rotation.y += dt * 2.5;
   const needy = h.stamina < 45 || !h.gear;
   h.happy = Math.max(0, Math.min(100, h.happy + (needy ? -0.35 * decay : 0.15) * dt));
   if (nearCampfire(h)) h.happy = Math.min(100, h.happy + 0.3 * dt);   // cosy fire
@@ -456,6 +475,7 @@ function chanceFor(q, party, enchant) {
   const P = party.reduce((s, h) => s + heroPower(h, q.type), 0);
   let c = P / (q.diff * 1.25);
   if (G.research.valor) c += 0.1;
+  for (const h of party) { const t = traitOf(h); if (t === 'lucky') c += 0.08; if (t === 'clumsy') c -= 0.10; }
   if (enchant) c += G.research.arcane ? 0.3 : 0.2;
   return Math.max(0.03, Math.min(0.97, c));
 }
@@ -466,9 +486,9 @@ function dispatch(qid, enchant) {
   if (enchant) { if (G.mana < 5) return toast('Not enough Mana.'); G.mana -= 5; }
   q.enchant = enchant; q.chance = chanceFor(q, party, enchant); q.heroes = party; q.state = 'active'; q.t = q.dur;
   // the outcome is rolled now so the expedition can be watched live without ever contradicting the result
-  q.party = party.map(h => ({ id: h.id, name: h.name, cls: h.cls, level: h.level, variant: h.variant || 0 }));
+  q.party = party.map(h => ({ id: h.id, name: h.name, cls: h.cls, level: h.level, variant: h.variant || 0, trait: traitOf(h), vip: !!h.vip }));
   q.seed = (Math.random() * 1e9) | 0; q.ok = Math.random() < q.chance; q.heals = [];
-  q.deaths = party.filter(h => Math.random() > CLASSES[h.cls].survive + 0.15).map(h => h.id);
+  q.deaths = party.filter(h => Math.random() > CLASSES[h.cls].survive + 0.15 + (traitOf(h) === 'brave' ? 0.35 : 0)).map(h => h.id);
   q.script = genScript(q);
   party.forEach(h => { h.state = 'quest'; h.mesh.visible = false; setMood(h, null); h.onDone = null; });
   toast(`Party of ${party.length} dispatched: ${q.name}`);
@@ -484,8 +504,9 @@ function resolveQuest(q) {
     if (!G.heroes.includes(h)) return;
     h.state = 'idle'; h.cool = 0; h.stamina = Math.max(20, h.stamina - 25);
     h.pos.set(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1)); h.mesh.visible = true; h.target = null;
-    if (!ok && q.deaths.includes(h.id)) { removeHero(h, `${h.name} the ${CLASSES[h.cls].label} fell in battle...`); return; }
-    if (ok) { h.xp++; if (h.xp >= h.level + 1) { h.xp = 0; h.level++; floatText(h.pos, `⬆ ${h.name} Lv${h.level}`, '#9bff9b'); } }
+    if (!ok && q.deaths.includes(h.id)) { if (h.vip) G.renown = Math.max(0, G.renown - 1); removeHero(h, h.vip ? `☠ ${h.name} — a legend of the guild — has fallen!` : `${h.name} the ${CLASSES[h.cls].label} fell in battle...`); return; }
+    h.quests = (h.quests || 0) + 1;
+    if (ok) { h.xp += traitOf(h) === 'scholar' ? 2 : 1; while (h.xp >= h.level + 1) { h.xp -= h.level + 1; h.level++; floatText(h.pos, `⬆ ${h.name} Lv${h.level}`, '#9bff9b'); } }
     if (Math.random() < (ok ? 0.5 : 1)) h.gear = false;
     h.happy = Math.min(100, h.happy + (ok ? 20 : -10));
     alive.push(h);
@@ -494,11 +515,11 @@ function resolveQuest(q) {
     const g = Math.round(q.gold * questGoldMul());
     gain(hp, g); G.renown += q.renown;
     floatText(hp.clone().add(new THREE.Vector3(0, 0.6, 0)), `+${q.renown} ⭐`, '#ffd24a');
-    const oreMul = G.research.prospect ? 1.5 : 1;
+    const oreMul = (G.research.prospect ? 1.5 : 1) * (1 + 0.2 * q.party.filter(x => x.trait === 'clumsy').length);
     if (q.loot.ore) G.ore += Math.round(q.loot.ore * oreMul);
-    if (q.loot.herbs) G.herbs += q.loot.herbs;
-    if (q.loot.wood) G.wood += q.loot.wood;
-    if (q.loot.arcane) G.mana += q.loot.arcane * 5;
+    if (q.loot.herbs) G.herbs += Math.round(q.loot.herbs * oreMul / (G.research.prospect ? 1.5 : 1));
+    if (q.loot.wood) G.wood += Math.round(q.loot.wood * oreMul / (G.research.prospect ? 1.5 : 1));
+    if (q.loot.arcane) G.mana += Math.round(q.loot.arcane * 5 * oreMul / (G.research.prospect ? 1.5 : 1));
     G.questsDone++;
     toast(`✔ ${q.name} complete! +${g}g, +${q.renown}⭐, loot collected.`);
   } else {
@@ -717,7 +738,7 @@ function modalContent() {
           <div style="display:flex;flex-direction:column;gap:4px"><button class="act" data-act="dispatch" data-q="${q.id}" ${ok ? '' : 'disabled'}>Dispatch</button>
           <button class="act" data-act="dispatchE" data-q="${q.id}" ${ok && G.mana >= 5 ? '' : 'disabled'}>✨ Enchant (5)</button></div></div>`;
       }).join('') || '<div class="s">No quests posted right now — new ones appear regularly.</div>');
-      h += '<div class="sec">Roster</div>' + (G.heroes.map(x => `<div class="s">${CLASSES[x.cls].icon} ${x.name} · Lv${x.level} ${CLASSES[x.cls].label} · 🔋${Math.round(x.stamina)} · 😊${Math.round(x.happy)} · ${x.gear ? 'geared' : 'needs gear'}${x.state === 'quest' ? ' · on quest' : ''}</div>`).join('') || '<div class="s">No heroes yet. Build a Tavern to attract them!</div>');
+      h += '<div class="sec">Roster <span class="s">(tap a hero for details)</span></div>' + (G.heroes.map(x => `<div class="s" data-act="hero" data-id="${x.id}" style="cursor:pointer">${x.vip ? '⭐ ' : ''}${CLASSES[x.cls].icon} ${x.name} · Lv${x.level} ${CLASSES[x.cls].label} · 🔋${Math.round(x.stamina)} · 😊${Math.round(x.happy)} · ${x.gear ? 'geared' : 'needs gear'}${x.state === 'quest' ? ' · on quest' : ''}</div>`).join('') || '<div class="s">No heroes yet. Build a Tavern to attract them!</div>');
       return ['📜 Quest Board & Guild Hall', h];
     }
     case 'recruit': {
@@ -733,6 +754,20 @@ function modalContent() {
       <div class="row"><div class="grow"><div class="t">💾 Save</div><div class="s">The game autosaves every 15 seconds and when you leave. Last save: ${lastSaved ? Math.round((Date.now() - lastSaved) / 1000) + 's ago' : 'not yet'}.</div></div><button class="act" data-act="save">Save now</button></div>
       <div class="row"><div class="grow"><div class="t">🗑 New game</div><div class="s">${modalArg === 'confirm' ? '<b style="color:#ff9a9a">This erases your saved guild. Tap again to confirm.</b>' : 'Delete the save and start a fresh guild.'}</div></div><button class="act red" data-act="newgame">${modalArg === 'confirm' ? 'Really erase' : 'New game'}</button></div>
       <div class="s" style="margin-top:8px">Quests keep running for up to 10 minutes while you are away.</div>`];
+    case 'hero': {
+      const h = G.heroes.find(x => x.id === modalArg); if (!h) return ['Hero', '<div class="s">This hero is no longer in the guild.</div>'];
+      const c = CLASSES[h.cls], tr = h.vip ? TRAITS[h.vip.trait] : null, aq = G.quests.find(q => q.state === 'active' && q.heroes.includes(h));
+      const bar = (v, col) => `<div class="bar"><i style="width:${Math.max(0, Math.min(100, v))}%;${col ? 'background:' + col : ''}"></i></div>`;
+      const stateTxt = { idle: 'Idle', walking: 'Walking', busy: 'Busy', waiting: 'Waiting around', quest: 'On an expedition', leaving: 'Leaving the guild' }[h.state] || h.state;
+      let body = `<div class="row"><div style="font-size:34px">${c.icon}</div><div class="grow"><div class="t">${h.vip ? '⭐ ' : ''}${h.name}</div><div class="s">Level ${h.level} ${c.label} · ${stateTxt}${h.quests ? ' · ' + h.quests + ' expeditions' : ''}</div></div>${aq ? `<button class="act" data-act="watch" data-q="${aq.id}">👁 Watch</button>` : ''}</div>`;
+      if (tr) body += `<div class="row" style="border-color:#ffd24a"><div style="font-size:30px">${tr.icon}</div><div class="grow"><div class="t">VIP trait: ${tr.label}</div><div class="s">${tr.desc}</div></div></div>`;
+      body += `<div class="s" style="margin-top:6px">Experience ${h.xp}/${h.level + 1}</div>${bar(h.xp / (h.level + 1) * 100, '#8fd4ff')}
+        <div class="s" style="margin-top:6px">Stamina ${Math.round(h.stamina)}</div>${bar(h.stamina, h.stamina < 45 ? '#e0503a' : '#5be35b')}
+        <div class="s" style="margin-top:6px">Happiness ${Math.round(h.happy)}</div>${bar(h.happy, h.happy < 30 ? '#e0503a' : '#f0c040')}
+        <div class="row"><div class="grow"><div class="t">Gear</div><div class="s">${h.gear ? '✔ Equipped — ready for quests' : '✘ Needs ' + (h.cls === 'wizard' ? 'potions from the Alchemical Lab' : 'a weapon from the Forge')}</div></div>
+        <div class="grow"><div class="t">Power</div><div class="s">${heroPower(h, c.quest).toFixed(1)} on ${c.quest} quests</div></div></div>`;
+      return [(h.vip ? '⭐ ' : '') + h.name, body];
+    }
     case 'upgrades': {
       const c1 = 300 * (G.outpost + 1), c2 = 250 * (G.boardLvl + 1), c3 = 200 * (G.walls + 1);
       return ['⬆️ Outpost Upgrades', `
@@ -773,6 +808,7 @@ function renderModal(force) {
 }
 
 const ACT = {
+  hero(d) { openModal('hero', +d.id); },
   save() { saveGame(false); renderModal(true); },
   newgame() { if (modalArg !== 'confirm') { modalArg = 'confirm'; return; } try { localStorage.removeItem(SAVE_KEY); } catch (e) { } window.__noSave = true; location.reload(); },
   watch(d) { startWatch(+d.q); },
@@ -922,7 +958,8 @@ canvas.addEventListener('pointerup', e => {
   if (placing) { const p = groundAt(e.clientX, e.clientY); if (p) { const [cx, cz] = cellFor(p.x, p.z); moveGhost(cx, cz); } return; }
   if (watching) return;
   ptr.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ptr, camera);
-  const hit = ray.intersectObjects(bGroup.children, true)[0];
+  const hit = ray.intersectObjects(bGroup.children, true)[0], hh = ray.intersectObjects(heroGroup.children.filter(m => m.visible), true)[0];
+  if (hh && (!hit || hh.distance < hit.distance + 1.5)) { let o = hh.object; while (o && o.userData.hid === undefined) o = o.parent; if (o) return openModal('hero', o.userData.hid); }
   if (hit) { let o = hit.object; while (o && o.userData.bid === undefined) o = o.parent; if (o) openModal('building', o.userData.bid); }
 });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -1220,4 +1257,4 @@ if (!loadGame()) {
   toast('Welcome, Guild Master! Build a Tavern and a Forge to attract & equip heroes.');
 }
 frame();
-window.__api = { findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, startRoyal, genQuest, dispatch, readyHeroes };
+window.__api = { toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, startRoyal, genQuest, dispatch, readyHeroes };
