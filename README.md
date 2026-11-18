@@ -19,7 +19,7 @@ English and 한국어 (Korean). Pick a language in ⚙ Settings; it is remembere
 - Camera: left-drag pans · right-drag (or Shift-drag) orbits and tilts · wheel zooms · two fingers on touch: pinch = zoom, twist = rotate, drag up/down = tilt
 - Keys: ←/→ rotate · ↑/↓ tilt · +/− zoom · `V` toggles perspective 3D · `Home` resets · on-screen camera buttons bottom-left
 - Click a building: open its menu
-- Toolbar (or keys `B` `Q` `R` `T` `U`): Build, Quests, Recruit, Research, Upgrades
+- Toolbar (or keys `B` `Q` `R` `T` `U`): Build, Quests, Map, Recruit, Research, Upgrades
 - Placement: click to place, right-click / `Esc` to cancel
 
 ## What's in
@@ -35,9 +35,15 @@ English and 한국어 (Korean). Pick a language in ⚙ Settings; it is remembere
 - **Guild ranks and goals:** Outpost → Hold → Keep → Fortress (level caps, beds, quest slots, unlocks; costs include rare materials and dive depth) and a 27-goal ladder that pays gold, renown and rare materials.
 - **Crafting depth:** Iron/Steel/Mythril weapons and Minor/Greater/Superior potions, a Smeltery (ore → ingots), and **adjacency bonuses** (Smeltery+Forge, Garden+Lab, Market+Tavern, Campfire+Tavern, Warehouse) with a live preview while placing.
 - **Living market:** prices drift and spike with news; buy low, sell high.
-- **Quest decisions:** choose your own party with live odds, pick an approach (Cautious / Standard / Bold), and handle modifiers (Elite, Cursed, Storm, Armored, Poisoned, Rush, Bounty, Hoard) that demand specific classes, gear grades or potions. Six story events offer choices with lasting consequences.
+- **Quest decisions:** choose your own party with live odds, pick an approach (Cautious / Standard / Bold), and handle modifiers (Elite, Cursed, Storm, Armored, Poisoned, Rush, Bounty, Hoard) that demand specific classes, gear grades or potions. Eighteen story events offer choices with lasting consequences.
 - **Pressure:** raids scale with renown and rank, arrive as a watchable defence battle (guards, Guard Towers, mustered heroes), and every 4th raid is a warchief. Losing costs gold, stock and renown.
 - **Dive relics:** pick 1 of 3 relics at every checkpoint (Iron Skin, Vampiric Blades, Gold Magnet, ...).
 - **Hero depth:** promotions (Paladin / Warden / Archmage), a talent choice at levels 3 and 6, friendships and rivalries that change party odds, and a Hall of the Fallen.
+- **Tutorial:** a seven-step guide card for new guilds (skip or restart it in ⚙ Settings).
+- **Sound:** all effects and ambient/battle music are synthesised with WebAudio (no audio files); toggle in ⚙ Settings.
+- **Territory + world map:** buy land to expand the base (the pathfinding grid grows with it) and unlock Greenwood, Stonepeak, Ashen Ruins; each region has its own enemies, loot weights and levelling perk.
+- **Guild factions:** pick Vanguard, Arcane Circle or Rangers once; each gives a different edge and changes the look of your Guild Hall.
+- **Korean UI:** switch language in ⚙ Settings; text is translated at display time, code stays English.
+- **Tests:** `npm test` runs pure-logic tests (scripts, dive, relics, translation); CI runs them on every push.
 - Events: monster incursion (sound the alarm), wandering merchant, royal demand
 - HTML/CSS HUD overlay with floating world UI (gold popups, mood bubbles, progress bars)
