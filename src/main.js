@@ -1,10 +1,10 @@
 import * as THREE from '../vendor/three.module.js';
 import { factionDecor, BUILDINGS, buildBuilding, buildHero, buildStaff, buildGoblin, buildMerchantCart, vox, mat, PROPS, setCharMaker } from './models.js';
-import { makeRigChar, makeRigGolem, autoAnim } from './rigchar.js';
+import { makeRigChar, makeRigGolem, makeRigOgre, autoAnim } from './rigchar.js';
 import { createTutorial } from './tutorial.js';
 import { sfx, unlock, setPref, getPrefs, setMusicMood, audioState } from './audio.js';
 import { tr, trHtml, initLang, setLang, getLang, onLangChange, translateStatic, LANGS } from './i18n.js';
-import { Expedition, setGolemMaker, genScript, STAGE_X, heroHp, phaseText, newDiveScript, ensureFloors, rebuildDive, diveFloorIndex, diveCheckpoint, rewardText, RELICS, relicMods, relicOffer } from './expedition.js';
+import { Expedition, setBigMakers, genScript, STAGE_X, heroHp, phaseText, newDiveScript, ensureFloors, rebuildDive, diveFloorIndex, diveCheckpoint, rewardText, RELICS, relicMods, relicOffer } from './expedition.js';
 
 /* ------------------------------------------------------------------ *
  *  Setup: renderer, isometric ortho camera, lights, terrain
@@ -25,7 +25,7 @@ scene.background = new THREE.Color(0x2f7a32);
 // Character style: 'classic' (old box figures), 'voxel' or 'round' (rigged bodies that play motion clips). Changing it reloads the page.
 const STYLE_KEY = 'fantasy-guild-master-charstyle', CHAR_STYLES = { voxel: 'Rigged · blocky', round: 'Rigged · rounded', classic: 'Classic' };
 let charStyle = 'voxel'; try { const v = localStorage.getItem(STYLE_KEY); if (CHAR_STYLES[v]) charStyle = v; } catch (e) { /* default */ }
-if (charStyle !== 'classic') { setCharMaker(look => makeRigChar(look, charStyle)); setGolemMaker(() => makeRigGolem()); }
+if (charStyle !== 'classic') { setCharMaker(look => makeRigChar(look, charStyle)); setBigMakers({ golem: () => makeRigGolem(), ogre: () => makeRigOgre() }); }
 
 // Free 3D perspective camera: orbit (yaw/pitch), pan, zoom.
 const VIEW0 = { yaw: Math.PI / 4, pitch: Math.atan(1 / Math.SQRT2), zoom: 10 };   // true isometric angles

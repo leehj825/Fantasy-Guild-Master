@@ -21,14 +21,14 @@ export function mulberry(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 
 const ENEMY = {
   goblin: { name: 'Goblin', make: () => buildGoblin(), h: 1.35 },
   wolf:   { name: 'Dire Wolf', make: () => wolf(), h: 1.3 },
-  ogre:   { name: 'Ogre Warchief', make: () => ogre(), h: 3.4, boss: true },
+  ogre:   { name: 'Ogre Warchief', make: () => (BIG.ogre ? BIG.ogre() : ogre()), h: 3.4, boss: true },
   bandit: { name: 'Bandit', make: () => bandit(false), h: 1.5 },
   chief:  { name: 'Bandit Chief', make: () => bandit(true), h: 2.3, boss: true },
   wisp:   { name: 'Wisp', make: () => wisp(), h: 1.6 },
   imp:    { name: 'Imp', make: () => imp(), h: 1.3 },
-  golem:  { name: 'Ancient Golem', make: () => (golemMaker ? golemMaker() : golem()), h: 3.4, boss: true },
+  golem:  { name: 'Ancient Golem', make: () => (BIG.golem ? BIG.golem() : golem()), h: 3.4, boss: true },
 };
-let golemMaker = null; export const setGolemMaker = f => { golemMaker = f; };   // main.js sets the rigged golem when rigged bodies are on
+const BIG = {}; export const setBigMakers = m => Object.assign(BIG, m);   // main.js sets the rigged golem / ogre when rigged bodies are on
 function charEnemy(look, scale) {
   const g = buildChar(look); g.scale.multiplyScalar(scale); if (g.userData.anim) return g;   // rigged: the clips animate it
   const [L, A] = [g.userData.legs, g.userData.arms];
@@ -56,9 +56,11 @@ function ogre() {
   return g;
 }
 function bandit(chief) {
-  return charEnemy(chief
+  const g = charEnemy(chief
     ? { skin: 0xe6b88a, shirt: 0x55555d, plate: 0x55555d, sleeve: 0x55555d, pants: 0x2a2a2a, hat: 'helm', metal: 0x55555d, plume: 0x8b1d1d, sword: true, cape: 0x6b1d1d, shield: { body: 0x5a3a1a, trim: 0x8b1d1d } }
     : { skin: 0xf0c8a0, shirt: 0x3a3a46, sleeve: 0x3a3a46, pants: 0x2a2a2a, hat: 'hood', hatColor: 0x2a2a30, cape: 0x2a2a30, sword: true }, chief ? 1.45 : 1);
+  if (chief && g.userData.anim) g.userData.clips = { attack: 'slash3', walk: 'walkCalm', walkSpeed: 1.0 };
+  return g;
 }
 function wisp() {
   const g = new THREE.Group(); const col = 0x7affff;

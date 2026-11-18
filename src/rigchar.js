@@ -229,3 +229,38 @@ export function makeRigGolem() {
   g.userData.clips = { attack: 'attack3', walk: 'walkCalm', walkSpeed: 0.7 };     // heavy swing, slow stride
   return g;
 }
+
+// ------------------------------------------------------------------ the Ogre Warchief on the same rig
+// A hulking green brute: small head, huge belly and shoulders, thick arms, a spiked club in the right hand.
+export function makeRigOgre() {
+  const skin = 0x8aa84e, dark = 0x6e8a3e, cloth = 0x6b4a2a, belt = 0x3a2a1a, boots = 0x2a1a0a;
+  const J = { hips: [0, 0.58, 0], torso: [0, 0.7, 0], head: [0, 1.2, 0] };
+  for (const [s, sx] of [['L', 1], ['R', -1]]) {
+    J['hip' + s] = [sx * 0.24, 0.58, 0]; J['knee' + s] = [sx * 0.24, 0.32, 0]; J['ank' + s] = [sx * 0.24, 0.1, 0];
+    J['sh' + s] = [sx * 0.62, 1.12, 0]; J['el' + s] = [sx * 0.7, 0.72, 0]; J['wr' + s] = [sx * 0.7, 0.4, 0];
+  }
+  const g = new THREE.Group(), root = new THREE.Group(); g.add(root);
+  const j = {}; for (const b of BONES) j[b] = new THREE.Group();
+  for (const b of BONES) { const p = PARENT[b]; if (p) { j[b].position.fromArray(J[b].map((v, i) => v - J[p][i])); j[p].add(j[b]); } else { j[b].position.fromArray(J[b]); root.add(j[b]); } }
+  const put = (jn, ...ms) => { for (const m of ms.flat()) { m.position.x -= J[jn][0]; m.position.y -= J[jn][1]; m.position.z -= J[jn][2]; j[jn].add(m); } };
+  for (const [s, sx] of [['L', 1], ['R', -1]]) {
+    put('hip' + s, vox(0.34, 0.3, 0.36, cloth, sx * 0.24, 0.32, 0));
+    put('knee' + s, vox(0.3, 0.26, 0.32, skin, sx * 0.24, 0.1, 0));
+    put('ank' + s, vox(0.36, 0.12, 0.5, boots, sx * 0.24, 0, 0.07));
+    put('sh' + s, vox(0.42, 0.26, 0.46, dark, sx * 0.62, 1.0, 0), vox(0.3, 0.46, 0.32, skin, sx * 0.7, 0.72, 0));
+    put('el' + s, vox(0.27, 0.34, 0.3, skin, sx * 0.7, 0.4, 0), vox(0.3, 0.06, 0.32, belt, sx * 0.7, 0.42, 0));
+    put('wr' + s, vox(0.34, 0.3, 0.34, dark, sx * 0.7, 0.1, 0.03));
+  }
+  put('hips', vox(0.7, 0.22, 0.46, cloth, 0, 0.5, 0), vox(0.74, 0.06, 0.5, belt, 0, 0.66, 0), vox(0.14, 0.08, 0.05, GOLD, 0, 0.65, 0.26));
+  put('torso', vox(0.98, 0.6, 0.62, skin, 0, 0.72, 0), vox(0.8, 0.34, 0.2, dark, 0, 0.72, 0.36), vox(0.9, 0.2, 0.55, dark, 0, 1.12, 0));          // chest, belly, hunched shoulders
+  put('head', vox(0.5, 0.42, 0.46, skin, 0, 1.18, 0.04), vox(0.14, 0.08, 0.04, 0xffe45a, -0.12, 1.4, 0.28, 0xffe45a, 0.8), vox(0.14, 0.08, 0.04, 0xffe45a, 0.12, 1.4, 0.28, 0xffe45a, 0.8),
+    vox(0.5, 0.1, 0.12, dark, 0, 1.5, 0.22), vox(0.4, 0.14, 0.12, boots, 0, 1.2, 0.3), cone(0.05, 0.18, 0xf4f0e6, -0.13, 1.18, 0.34, 4), cone(0.05, 0.18, 0xf4f0e6, 0.13, 1.18, 0.34, 4), vox(0.52, 0.1, 0.5, belt, 0, 1.58, 0.02));
+  const club = new THREE.Group(); club.add(vox(0.09, 0.8, 0.09, 0x7a4f28, 0, -0.2, 0), vox(0.3, 0.42, 0.3, 0x6b4a2a, 0, 0.5, 0), vox(0.1, 0.1, 0.1, 0xb8bcc4, 0.18, 0.62, 0), vox(0.1, 0.1, 0.1, 0xb8bcc4, -0.18, 0.62, 0), vox(0.1, 0.1, 0.1, 0xb8bcc4, 0, 0.62, 0.18), vox(0.1, 0.1, 0.1, 0xb8bcc4, 0, 0.62, -0.18));
+  const holder = new THREE.Group(); holder.add(club); holder.quaternion.set(0.7931, -0.1585, 0.1425, 0.5706); holder.position.set(-0.003, -0.1, -0.002); j.wrR.add(holder);
+  g.scale.setScalar(1.55);
+  g.userData.rig = { root, hips: j.hips, j, hipsRest: J.hips[1] };
+  const dummy = () => new THREE.Group(); g.userData.legs = [dummy(), dummy()]; g.userData.arms = [dummy(), dummy()];
+  g.userData.anim = new Animator(g.userData.rig);
+  g.userData.clips = { attack: 'attack3', walk: 'walkCalm', walkSpeed: 0.8 };
+  return g;
+}
