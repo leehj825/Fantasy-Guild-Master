@@ -116,6 +116,16 @@ const BUILD = {
 };
 
 const PROG = {
+  'Tutorial': '튜토리얼', 'Skip': '건너뛰기', '🎓 Tutorial': '🎓 튜토리얼', 'Show the first-run guide again.': '처음 플레이 안내를 다시 보여줍니다.', 'Replay': '다시 보기',
+  'Welcome, Guild Master! Tap "Build" and place a Tavern so heroes have somewhere to rest. Drag the golden plot, rotate it with ⟲ ⟳, then press ✔ Build.': '환영합니다, 길드 마스터! "건설"을 눌러 영웅들이 쉴 수 있는 여관을 지으세요. 황금 부지를 끌어서 옮기고 ⟲ ⟳ 로 회전한 뒤 ✔ 건설을 누르면 됩니다.',
+  'Now build a Forge. It turns Iron Ore into weapons that your heroes buy.': '이제 대장간을 지으세요. 철광석으로 영웅들이 사 가는 무기를 만듭니다.',
+  'Heroes walk to the Forge for weapons (watch their thought bubbles). Wait until a hero shows ✅, or tap any hero to see their details.': '영웅들이 무기를 사러 대장간으로 걸어갑니다 (말풍선을 보세요). 영웅에게 ✅가 뜰 때까지 기다리거나, 영웅을 눌러 상세 정보를 확인하세요.',
+  'Open "Quests" and send your first party. Use "Auto-send", or "Choose party…" for full control over who goes and how.': '"퀘스트"를 열어 첫 파티를 보내세요. "자동 출정"을 쓰거나, "파티 선택…"으로 누가 어떻게 갈지 직접 정할 수 있습니다.',
+  'Tap the 👁 row under "Expeditions" (top right) to watch the fight live. Before the finale you can cast Enchant, send a potion, or recall.': '오른쪽 위 "원정" 아래의 👁 줄을 눌러 전투를 실시간으로 관전하세요. 결전 전에 마법 부여, 포션 전달, 철수를 할 수 있습니다.',
+  'Tap a building to open it, then press "Upgrade" to make it better. The level cap rises with your Guild Rank.': '건물을 눌러 연 다음 "업그레이드"를 눌러 강화하세요. 레벨 상한은 길드 등급과 함께 올라갑니다.',
+  'Open "Upgrades" to see your Guild Rank and its requirements. Goals in the top-right panel pay rewards. Build partner buildings close together for bonuses!': '"업그레이드"를 열어 길드 등급과 조건을 확인하세요. 오른쪽 위 목표 패널을 달성하면 보상을 줍니다. 짝이 되는 건물을 가까이 지으면 보너스가 있습니다!',
+  '✅ Good! Next step…': '✅ 좋아요! 다음 단계…', '🎓 Tutorial complete! Check the goals panel for what to do next.': '🎓 튜토리얼 완료! 다음 할 일은 목표 패널을 확인하세요.', 'Tutorial skipped. You can reopen it in Settings.': '튜토리얼을 건너뛰었습니다. 설정에서 다시 열 수 있습니다.',
+
   'gold': '골드', 'wood': '목재', 'ore': '철광석', 'mana': '마나', 'gear': '장비', 'hero': '영웅', 'heroes': '영웅', 'quest': '퀘스트', 'quests': '퀘스트', 'potion': '포션', 'potions': '포션',
   'Forge': '대장간', 'Lab': '실험실', 'Tavern': '여관', 'Market': '시장', 'Guild': '길드', 'Portal': '차원문', 'req.': '필요', 'Best: floor': '최고 기록 — 층', 'Best:': '최고 기록:',
   'or fight on for rare materials (💎 🐉 🪶). Loot is banked automatically every 5 floors; a wipe-out loses what is unbanked.': '아니면 계속 싸워 희귀 재료(💎 🐉 🪶)를 노리세요. 전리품은 5층마다 자동 저장되며, 전멸하면 저장하지 못한 것을 잃습니다.',

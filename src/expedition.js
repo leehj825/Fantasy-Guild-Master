@@ -205,7 +205,7 @@ export function relicOffer(q, k) {
 export function floorReward(q, k) {
   const r = mulberry(q.seed * 57 + k * 977 + 3), boss = k % 5 === 4, rm = relicMods(q, k);
   const rw = { gold: Math.round((14 + 9 * k) * (boss ? 2 : 1) * (0.9 + 0.2 * r()) * rm.gold), ore: Math.floor(1 + r() * 2.5), wood: r() < 0.5 ? 1 : 0, herbs: Math.floor(r() * 2.5), mana: (boss ? 5 : 0) + rm.mana, mythril: 0, scale: 0, feather: 0, renown: boss ? 1 : 0 };
-  if (k >= 6 && r() < (boss ? 0.7 : 0.18) * rm.rare) rw.mythril = 1 + (boss && k >= 14 ? 1 : 0);
+  if (k >= 6 && r() < (boss ? 0.5 : 0.12) * rm.rare) rw.mythril = 1 + (boss && k >= 14 ? 1 : 0);
   if (boss && k >= 9 && r() < 0.55 * rm.rare) rw.scale = 1;
   if (boss && k >= 14 && r() < 0.4 * rm.rare) rw.feather = 1;
   return rw;

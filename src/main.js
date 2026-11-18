@@ -1,5 +1,6 @@
 import * as THREE from '../vendor/three.module.js';
 import { BUILDINGS, buildBuilding, buildHero, buildStaff, buildGoblin, buildMerchantCart, vox, mat, PROPS } from './models.js';
+import { createTutorial } from './tutorial.js';
 import { tr, trHtml, initLang, setLang, getLang, onLangChange, translateStatic, LANGS } from './i18n.js';
 import { Expedition, genScript, STAGE_X, heroHp, phaseText, newDiveScript, ensureFloors, rebuildDive, diveFloorIndex, diveCheckpoint, rewardText, RELICS, relicMods, relicOffer } from './expedition.js';
 
@@ -244,7 +245,7 @@ const maxLevel = () => [3, 5, 7, 9][G.rank];
 const boardSlots = () => 3 + G.boardLvl + (G.rank >= 2 ? 1 : 0) + (G.rank >= 3 ? 1 : 0);
 const craftSpeed = () => (1 + 0.25 * G.staff.smith) * (G.research.forging ? 1.3 : 1) * (G.research.mythril ? 1.4 : 1);
 const alchSpeed = () => (1 + 0.25 * G.staff.alch) * (G.research.forging ? 1.15 : 1);
-const mealGold = tav => { tav = tav || first('tavern'); return 12 * (1 + 0.15 * G.staff.cook) * (1 + 0.3 * ((tav?.level || 1) - 1)) * (tav ? adj(tav).meal : 1); };
+const mealGold = tav => { tav = tav || first('tavern'); return 9 * (1 + 0.15 * G.staff.cook) * (1 + 0.3 * ((tav?.level || 1) - 1)) * (tav ? adj(tav).meal : 1); };
 const questGoldMul = () => (G.research.charter ? 1.25 : 1);
 const trickleMul = () => (1 + 0.5 * G.staff.porter);
 const warehouseBonus = () => ofType('warehouse').reduce((s, w) => s + 6 + 4 * (w.level - 1), 0);
@@ -277,9 +278,9 @@ const gain = (pos, g) => { G.gold += g; floatText(pos, (g >= 0 ? '+' : '') + Mat
  *  Heroes (state machine)
  * ------------------------------------------------------------------ */
 const CLASSES = {
-  knight: { label: 'Knight', icon: '🗡️', base: 3.0, price: 25, survive: 0.92, quest: 'combat' },
-  ranger: { label: 'Ranger', icon: '🏹', base: 2.5, price: 18, survive: 0.88, quest: 'gather' },
-  wizard: { label: 'Wizard', icon: '🪄', base: 3.5, price: 22, survive: 0.75, quest: 'arcane' },
+  knight: { label: 'Knight', icon: '🗡️', base: 3.0, price: 20, survive: 0.92, quest: 'combat' },
+  ranger: { label: 'Ranger', icon: '🏹', base: 2.5, price: 15, survive: 0.88, quest: 'gather' },
+  wizard: { label: 'Wizard', icon: '🪄', base: 3.5, price: 18, survive: 0.75, quest: 'arcane' },
 };
 const NAMES = ['Aldric', 'Brienne', 'Cael', 'Dara', 'Eldon', 'Fenna', 'Garrick', 'Hilda', 'Ivar', 'Jora', 'Kellan', 'Lyra', 'Mordo', 'Nessa', 'Orin', 'Piper', 'Quill', 'Rurik', 'Sera', 'Thane'];
 const TRAITS = {
@@ -533,9 +534,8 @@ const APPROACH = {
 };
 function makeQuest(o = {}) {
   const type = o.type || pick(['combat', 'gather', 'arcane']);
-  const tier = 1 + G.renown / 6;
   const minH = o.minH || (Math.random() < 0.5 ? 1 : (Math.random() < 0.7 ? 2 : 3));
-  let diff = (2.6 + rnd(0, 1.2) + (minH - 1) * 2.4) * (0.9 + 0.1 * tier) * (1 + 0.08 * G.rank);
+  let diff = (2.6 + rnd(0, 1.2) + (minH - 1) * 2.4) * (1 + 0.5 * Math.sqrt(G.renown / 10)) * (1 + 0.08 * G.rank);   // difficulty grows gently with renown
   const loot = {};
   if (type === 'combat') loot.ore = Math.round(rnd(2, 5) * minH);
   if (type === 'gather') { loot.herbs = Math.round(rnd(2, 5) * minH); loot.wood = Math.round(rnd(2, 4)); }
@@ -545,12 +545,12 @@ function makeQuest(o = {}) {
     mods = []; const chance = G.renown < 3 ? 0.25 : G.renown < 10 ? 0.55 : 0.8, keys = Object.keys(MODS);
     if (Math.random() < chance) mods.push(pick(keys)); if (G.renown >= 10 && Math.random() < 0.3) { const k2 = pick(keys); if (!mods.includes(k2)) mods.push(k2); }
   }
-  let gold = (55 + diff * 28) * rnd(0.9, 1.15), dur = rnd(22, 40) + minH * 6;
+  let gold = (30 + diff * 14) * rnd(0.9, 1.15), dur = rnd(30, 50) + minH * 10;
   if (mods.includes('elite')) { diff *= 1.4; gold *= 1.5; } if (mods.includes('rush')) { dur *= 0.6; gold *= 1.2; } if (mods.includes('bounty')) gold *= 1.6;
   if (mods.includes('hoard')) for (const k of Object.keys(loot)) loot[k] *= 2;
   gold *= (o.goldMul || 1);
   const q = {
-    id: G.nextId++, name: o.name || pick(QNAMES[type]), type, diff, minH, maxH: Math.min(4, minH + 1), dur, gold: Math.round(gold), renown: Math.max(1, Math.round(diff / 2.2)) + (o.renownBonus || 0),
+    id: G.nextId++, name: o.name || pick(QNAMES[type]), type, diff, minH, maxH: Math.min(4, minH + 1), dur, gold: Math.round(gold), renown: (() => { const x = diff / 6 * 40 / (40 + G.renown); return Math.floor(x) + (Math.random() < x - Math.floor(x) ? 1 : 0); })() + (o.renownBonus || 0),   // fractional, with diminishing returns: no runaway renown
     loot, mods, special: !!o.special, state: 'open', heroes: [], t: 0, enchant: false, chance: 0,
   };
   G.quests.push(q); return q;
@@ -812,7 +812,8 @@ function startMerchant() {
   showBanner('merchant', '🛒 A wandering merchant arrived with rare wares!', [['Trade', 'openMerchant', '']]);
 }
 function endMerchant() { G.merchant = null; if (cart) { scene.remove(cart); cart = null; } hideBanner('merchant'); if (modalKind === 'merchant') closeModal(); }
-onLangChange(() => { lastHtml = ''; hudCache = ''; $('royal')._h = null; $('expeds')._h = null; renderModal(true); renderBanner(); updateHUD(); if (watching) updateWatchHUD(); });
+const tutorial = createTutorial({ G, first: t => first(t), toast: m => toast(m) });
+onLangChange(() => { tutorial.render(); lastHtml = ''; hudCache = ''; $('royal')._h = null; $('expeds')._h = null; renderModal(true); renderBanner(); updateHUD(); if (watching) updateWatchHUD(); });
 // ---- orders: Royal Demand and visible bulk Trade Caravans (deliver swords/potions from Forge and Lab stock)
 const ORDER_SRC = { sword: { src: 'forge', icon: '🗡️', label: 'swords' }, potion: { src: 'alchemy', icon: '🧪', label: 'potions' } };
 const stockOf = kind => ofType(ORDER_SRC[kind].src).reduce((n, b) => n + b.stock, 0);
@@ -827,10 +828,10 @@ function spawnCaravan() {
 function endCaravanIfDone() { if (caravan && !G.orders.some(o => o.kind === 'caravan')) { scene.remove(caravan); caravan = null; } }
 function addOrder(kind) {
   const o = { id: G.nextId++, kind, need: {} };
-  if (kind === 'royal') { const n = 5 + Math.floor(G.renown / 8); Object.assign(o, { need: { sword: n }, t: 150, tMax: 150, reward: 150 + n * 40, ren: 5, pen: 3, title: 'Royal Demand', icon: '👑' }); toast(`👑 Royal Demand: ${n} iron swords!`); }
+  if (kind === 'royal') { const n = Math.min(24, 5 + Math.floor(G.renown / 8)); Object.assign(o, { need: { sword: n }, t: 150, tMax: 150, reward: 120 + n * 30, ren: 3, pen: 3, title: 'Royal Demand', icon: '👑' }); toast(`👑 Royal Demand: ${n} iron swords!`); }
   else {
-    const sw = 6 + Math.floor(G.renown / 2), po = first('alchemy') ? 4 + Math.floor(G.renown / 3) : 0; o.need.sword = sw; if (po) o.need.potion = po;
-    Object.assign(o, { t: 260, tMax: 260, reward: Math.round((60 + sw * 38 + po * 32) * (G.flags.pact ? 0.8 : 1)), ren: 3 + Math.floor((sw + po) / 8), pen: 2, title: 'Trade Caravan', icon: '🐪' });
+    const sw = Math.min(30, 5 + Math.floor(G.renown / 4)), po = first('alchemy') ? Math.min(20, 3 + Math.floor(G.renown / 6)) : 0; o.need.sword = sw; if (po) o.need.potion = po;
+    Object.assign(o, { t: 260, tMax: 260, reward: Math.round((60 + sw * 28 + po * 24) * (G.flags.pact ? 0.8 : 1)), ren: 2 + Math.floor((sw + po) / 12), pen: 2, title: 'Trade Caravan', icon: '🐪' });
     spawnCaravan(); toast(`🐪 A trade caravan arrived! Bulk order: ${sw} swords${po ? ` + ${po} potions` : ''}.`);
   }
   G.orders.push(o);
@@ -881,7 +882,7 @@ function updateEconomy(dt) {
   }
   if (first('alchemy')) { t.mana += dt; if (t.mana >= 5) { t.mana = 0; G.mana += 1 + (G.research.arcane ? 1 : 0); } }
   t.market -= dt; if (t.market <= 0) { t.market = rnd(70, 100); tickMarket(); }
-  t.goals -= dt; if (t.goals <= 0) { t.goals = 1; checkGoals(); checkStories(); }
+  t.goals -= dt; if (t.goals <= 0) { t.goals = 1; checkGoals(); checkStories(); tutorial.tick(); }
   // minor facilities
   t.minor = (t.minor || 0) + dt;
   if (t.minor >= 6) {
@@ -902,7 +903,7 @@ function updateEconomy(dt) {
   // spawning heroes
   t.spawn -= dt;
   if (t.spawn <= 0) {
-    t.spawn = Math.max(8, 20 - G.renown * 0.4) / (first('portal') ? 2 : 1);
+    t.spawn = Math.max(18, 45 - G.renown * 0.3) / (first('portal') ? 2 : 1);
     if (ofType('tavern').length && G.heroes.length < popCap()) spawnHero();
   }
   // quests
@@ -937,9 +938,9 @@ const GOALS = [
   ['Build a Guard Tower', () => !!first('tower'), { gold: 400 }], ['Dive to floor 10', () => G.diveBest >= 10, { rare: { mythril: 2 } }],
   ['Raise the guild to a Keep', () => G.rank >= 2, { renown: 5 }], ['Fulfil 5 trade orders', () => G.stats.orders >= 5, { gold: 1500 }],
   ['Win 5 defences', () => G.stats.raidsWon >= 5, { gold: 1500 }], ['Dive to floor 20', () => G.diveBest >= 20, { rare: { scale: 1, feather: 1 } }],
-  ['Complete 50 quests', () => G.questsDone >= 50, { gold: 3000 }], ['Raise the guild to a Fortress', () => G.rank >= 3, { renown: 10 }],
+  ['Complete 50 quests', () => G.questsDone >= 50, { gold: 1500 }], ['Raise the guild to a Fortress', () => G.rank >= 3, { renown: 10 }],
   ['Promote a hero', () => G.stats.promoted >= 1, { gold: 500 }], ['Give a hero a talent', () => G.heroes.some(h => (h.talents || []).length), { gold: 300 }],
-  ['Reach 100 renown', () => G.renown >= 100, { gold: 10000 }],
+  ['Reach 100 renown', () => G.renown >= 100, { gold: 4000 }],
 ];
 const rewardTags = r => Object.entries(r).map(([k, v]) => k === 'gold' ? `💰${v}` : k === 'renown' ? `⭐${v}` : Object.entries(v).map(([rk, rv]) => `${RARE[rk].icon}${rv}`).join('')).join(' ');
 function checkGoals() {
@@ -952,8 +953,8 @@ function checkGoals() {
 const RANKS = [
   { name: 'Outpost', icon: '🏕️', perks: 'Building level cap 3.' },
   { name: 'Hold', icon: '🏰', perks: 'Level cap 5 · +4 beds · Steel gear · Smeltery & Guard Tower · hero promotions', req: { renown: 10, gold: 1200, wood: 40, ore: 30, build: ['tavern', 'forge', 'market'] } },
-  { name: 'Keep', icon: '🏯', perks: 'Level cap 7 · +4 beds · Mythril gear · +1 quest slot', req: { renown: 30, gold: 5000, wood: 100, rare: { mythril: 3 }, dive: 10 } },
-  { name: 'Fortress', icon: '🛡️', perks: 'Level cap 9 · +4 beds · +1 quest slot · tougher raids, richer rewards', req: { renown: 80, gold: 20000, rare: { mythril: 10, scale: 4, feather: 2 }, dive: 20 } },
+  { name: 'Keep', icon: '🏯', perks: 'Level cap 7 · +4 beds · Mythril gear · +1 quest slot', req: { renown: 40, gold: 8000, wood: 150, rare: { mythril: 6 }, dive: 12 } },
+  { name: 'Fortress', icon: '🛡️', perks: 'Level cap 9 · +4 beds · +1 quest slot · tougher raids, richer rewards', req: { renown: 120, gold: 40000, rare: { mythril: 25, scale: 8, feather: 5 }, dive: 25 } },
 ];
 function rankReqs(r) {
   const q = RANKS[r].req, out = []; if (!q) return out;
@@ -1006,7 +1007,7 @@ function updateHUD() {
  * ------------------------------------------------------------------ */
 let modalKind = null, modalArg = null, lastHtml = '';
 const modal = $('modal');
-function openModal(kind, arg) { modalKind = kind; modalArg = arg; modal.classList.remove('hidden'); renderModal(true); }
+function openModal(kind, arg) { if (kind === 'upgrades') G.flags.tutRank = 1; modalKind = kind; modalArg = arg; modal.classList.remove('hidden'); renderModal(true); }
 function closeModal() { modalKind = null; modal.classList.add('hidden'); lastHtml = ''; }
 $('modalClose').onclick = closeModal;
 modal.addEventListener('pointerdown', e => { if (e.target === modal) closeModal(); });
@@ -1081,6 +1082,7 @@ function modalContent() {
     case 'settings': return ['⚙ Settings & Save', `
       <div class="row"><div class="grow"><div class="t">🌐 Language</div><div class="s">English / 한국어</div></div>${Object.entries(LANGS).map(([k, n]) => `<button class="act ${getLang() === k ? '' : 'red'}" style="${getLang() === k ? 'outline:2px solid #fff8' : ''}" data-act="lang" data-l="${k}">${n}</button>`).join('')}</div>
       <div class="row"><div class="grow"><div class="t">💾 Save</div><div class="s">The game autosaves every 15 seconds and when you leave. Last save: ${lastSaved ? Math.round((Date.now() - lastSaved) / 1000) + 's ago' : 'not yet'}.</div></div><button class="act" data-act="save">Save now</button></div>
+      <div class="row"><div class="grow"><div class="t">🎓 Tutorial</div><div class="s">Show the first-run guide again.</div></div><button class="act" data-act="tutorial">Replay</button></div>
       <div class="row"><div class="grow"><div class="t">🗑 New game</div><div class="s">${modalArg === 'confirm' ? '<b style="color:#ff9a9a">This erases your saved guild. Tap again to confirm.</b>' : 'Delete the save and start a fresh guild.'}</div></div><button class="act red" data-act="newgame">${modalArg === 'confirm' ? 'Really erase' : 'New game'}</button></div>
       <div class="s" style="margin-top:8px">Quests keep running for up to 10 minutes while you are away.</div>
       <div class="sec">✝ Hall of the Fallen</div>${G.fallen.length ? [...G.fallen].reverse().slice(0, 12).map(f => `<div class="s">${f.vip ? '⭐ ' : ''}<b>${f.name}</b> — level ${f.level} ${f.cls}, ${f.quests} expeditions; ${f.deed} (day ${f.day})</div>`).join('') : '<div class="s">No heroes have fallen. Yet.</div>'}`];
@@ -1190,6 +1192,7 @@ const ACT = {
   dive() { dispatchDive(); },
   hero(d) { openModal('hero', +d.id); },
   save() { saveGame(false); renderModal(true); },
+  tutorial() { tutorial.restart(); closeModal(); },
   newgame() { if (modalArg !== 'confirm') { modalArg = 'confirm'; return; } try { localStorage.removeItem(SAVE_KEY); } catch (e) { } window.__noSave = true; location.reload(); },
   watch(d) { startWatch(+d.q); },
   alarm() { musterHeroes(); },
@@ -1472,6 +1475,7 @@ function addLog(e) {
   const box = $('watchLog'); box.appendChild(el); while (box.children.length > 7) box.firstChild.remove();
 }
 function startWatch(qid) {
+  G.flags.tutWatched = 1;
   const q = G.quests.find(x => x.id === qid && x.state === 'active'); if (!q || !q.script) return;
   closeModal(); cancelPlacement();
   if (watching) { watching.exp.dispose(); } else watchSaved = { yaw, pitch, viewS, x: camTarget.x, z: camTarget.z };
@@ -1652,11 +1656,14 @@ function frame() {
  * ------------------------------------------------------------------ */
 initLang();
 resize();
-if (!loadGame()) {
+const loaded = loadGame();
+if (!loaded) {
   spawnHero('knight', true); spawnHero('ranger', true);
   genQuest(); genQuest();
   toast('Welcome, Guild Master! Build a Tavern and a Forge to attract & equip heroes.');
 }
+tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
-window.__api = { gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
+window.__api = { tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
