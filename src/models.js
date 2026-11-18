@@ -274,6 +274,8 @@ export const BUILDINGS = {
   alchemy: { name: "Sage's Alchemical Lab",    w: 4, d: 3, cost: 450, renown: 3, icon: '🧪', desc: 'Brews potions from Herbs for Wizards. Generates Mana.' },
   portal:  { name: 'Waystone Portal',          w: 3, d: 3, cost: 700, renown: 6, icon: '🌀', desc: 'Ancient arch. Heroes arrive twice as often and rare VIP heroes are drawn to it. Unlocks the Endless Dive.' },
   warehouse: { name: 'Warehouse',            w: 4, d: 3, cost: 250, renown: 2, icon: '📦', desc: 'Storage hall. Raises the stock limit of every Forge and Lab (+6, +4 per upgrade level). Needed for bulk orders.' },
+  smelter: { name: 'Smeltery',                w: 3, d: 2, cost: 350, renown: 3, rank: 1, icon: '🔩', desc: 'Smelts 2 Iron Ore into 1 Ingot. Steel and Mythril weapons need ingots. Next to a Forge: +25% speed for both.' },
+  tower:   { name: 'Guard Tower',              w: 2, d: 2, cost: 400, renown: 3, rank: 1, icon: '🗼', desc: 'Archers add +6 defense and fight beside your guards when raiders attack.' },
   market:  { name: 'Market Stall',             w: 3, d: 2, cost: 120, renown: 0, icon: '🛒', desc: 'Buy raw materials. Boosts passive gold slightly.' },
   tent:    { name: 'Hero Tent',                w: 2, d: 2, cost: 80,  renown: 0, icon: '⛺', desc: 'Cheap lodging: +3 population capacity.' },
   // decor / minor facilities
@@ -435,6 +437,26 @@ function warehouse() {
   return g;
 }
 
+function smelter() {
+  const g = new THREE.Group();
+  g.add(tbox(2.7, 0.2, 1.9, 'floor', 0, 0, 0), tbox(1.5, 1.3, 1.2, 'stone', -0.5, 0.2, -0.2), vox(0.9, 0.55, 0.3, 0x1c1c20, -0.5, 0.35, 0.42), vox(0.6, 0.35, 0.12, 0xff7a1a, -0.5, 0.42, 0.5, 0xff5a00, 1.6));
+  g.add(tbox(0.7, 2.6, 0.7, 'stone', -0.95, 0.2, -0.45), tbox(0.85, 0.3, 0.85, 'stone', -0.95, 2.8, -0.45), vox(0.4, 0.2, 0.4, 0x222226, -0.95, 3.1, -0.45));
+  g.add(vox(1.0, 0.1, 1.0, WOOD_D, 0.9, 0.2, 0.5), vox(0.9, 0.12, 0.3, 0xb8bcc4, 0.9, 0.3, 0.3), vox(0.9, 0.12, 0.3, 0xc9ccd4, 0.9, 0.42, 0.3), vox(0.9, 0.12, 0.3, 0xb8bcc4, 0.9, 0.3, 0.7), vox(0.9, 0.12, 0.3, 0xe8c04a, 0.9, 0.42, 0.7));
+  g.add(crate(0.4, 1.1, -0.5, 0.2), barrel(0.4, -0.7, 0.2), sph(0.2, 0x2a2a2e, 1.2, 0.2, -0.2), sph(0.16, 0x333338, 1.05, 0.2, -0.4));
+  const l = new THREE.PointLight(0xff8a2a, 1.4, 6); l.position.set(-0.5, 0.9, 0.8); g.add(l);
+  return g;
+}
+function tower() {
+  const g = new THREE.Group();
+  g.add(tbox(1.9, 0.3, 1.9, 'stone', 0, 0, 0), tbox(1.5, 2.6, 1.5, 'stone', 0, 0.3, 0), tbox(1.9, 0.35, 1.9, 'stone', 0, 2.9, 0));
+  for (const [x, z] of [[-0.8, -0.8], [0.8, -0.8], [-0.8, 0.8], [0.8, 0.8], [0, -0.8], [0, 0.8], [-0.8, 0], [0.8, 0]]) g.add(tbox(0.4, 0.4, 0.4, 'stone', x, 3.25, z));
+  g.add(vox(0.16, 0.5, 0.06, 0x14141a, 0, 1.6, 0.76), vox(0.16, 0.5, 0.06, 0x14141a, 0, 2.3, 0.76), vox(0.7, 1.0, 0.06, 0x5a3a1a, 0, 0.3, 0.77), vox(0.7, 0.1, 0.1, 0x3b3b40, 0, 0.9, 0.78));
+  g.add(vox(0.1, 1.3, 0.1, WOOD_D, 0.5, 3.4, 0.5), vox(0.55, 0.4, 0.04, 0xc0392b, 0.78, 4.2, 0.5), cone(0.1, 0.2, 0xe8c04a, 0.5, 4.7, 0.5, 4));
+  g.add(at(makeArcher(), 0.0, 3.25, 0.1));
+  return g;
+}
+function makeArcher() { const a = makeChar(LOOKS.elfHood); a.scale.setScalar(0.55); return a; }
+
 function market() {
   const g = marketStall();
   return g;
@@ -479,6 +501,8 @@ export function buildBuilding(type, variant = 0) {
     case 'portal': return portal();
     case 'hall': return hall();
     case 'warehouse': return warehouse();
+    case 'smelter': return smelter();
+    case 'tower': return tower();
     case 'market': return market();
     case 'tent': return tent(variant);
     case 'garden': return garden();

@@ -107,14 +107,41 @@ const G = {
   staff: { smith: 0, alch: 0, cook: 0, bard: 0, guard: 0, porter: 0 },
   research: {}, outpost: 0, boardLvl: 0, walls: 0,
   buildings: [], heroes: [], quests: [], goblins: [],
-  orders: [], rare: { mythril: 0, scale: 0, feather: 0 }, diveBest: 0, merchant: null, alarm: false, questsDone: 0, nextId: 1,
-  tm: { spawn: 4, quest: 1, wage: 30, trickle: 0, merchant: 100, royal: 160, caravan: 260, raid: 150, tavern: 0, mana: 0 },
+  orders: [], rare: { mythril: 0, scale: 0, feather: 0 }, diveBest: 0, rank: 0, ingots: 0,
+  market: { ore: 1, herbs: 1, wood: 1, news: '' }, goalsDone: {}, stats: { orders: 0, raidsWon: 0, promoted: 0 }, fallen: [], flags: {}, merchant: null, alarm: false, questsDone: 0, nextId: 1,
+  tm: { goals: 1, market: 80, spawn: 4, quest: 1, wage: 30, trickle: 0, merchant: 100, royal: 160, caravan: 260, raid: 150, tavern: 0, mana: 0 },
 };
 window.__G = G;
 
 const occ = new Set(); let occVersion = 0;   // occVersion bumps whenever the walkable grid changes (heroes repath)
 const key = (x, z) => x + ',' + z;
 
+// ---- adjacency: where you build matters
+function adjFor(type, cx, cz, w, d) {
+  const mx = cx + w / 2, mz = cz + d / 2, near = (t, r = 7) => G.buildings.some(o => o.type === t && !(o.cx === cx && o.cz === cz) && Math.hypot(o.cx + o.w / 2 - mx, o.cz + o.d / 2 - mz) <= r);
+  const r = { speed: 1, meal: 1, gold: 1, notes: [] };
+  if (type === 'forge') { if (near('smelter')) { r.speed *= 1.25; r.notes.push('Smeltery nearby: +25% speed'); } if (near('warehouse', 8)) { r.speed *= 1.1; r.notes.push('Warehouse nearby: +10% speed'); } }
+  if (type === 'alchemy') { if (near('garden')) { r.speed *= 1.25; r.notes.push('Herb Garden nearby: +25% speed'); } if (near('warehouse', 8)) { r.speed *= 1.1; r.notes.push('Warehouse nearby: +10% speed'); } }
+  if (type === 'smelter' && near('forge')) { r.speed *= 1.25; r.notes.push('Forge nearby: +25% speed'); }
+  if (type === 'tavern') { if (near('market')) { r.meal *= 1.15; r.notes.push('Market nearby: +15% meal income'); } if (near('campfire', 6)) { r.meal *= 1.1; r.notes.push('Campfire nearby: +10% meal income'); } }
+  if (type === 'market' && near('tavern')) { r.gold *= 1.5; r.notes.push('Busy street (Tavern nearby): +50% passive gold'); }
+  return r;
+}
+const adj = b => adjFor(b.type, b.cx, b.cz, b.w, b.d);
+function previewBonus(type, cx, cz, rot) {   // what building here would do, for the placement hint
+  const [w, d] = footprint(type, rot), out = [], before = G.buildings.map(o => adj(o).notes.join('|'));
+  const mine = adjFor(type, cx, cz, w, d).notes; mine.forEach(n => out.push(`${BUILDINGS[type].name}: ${n}`));
+  const fake = { type, cx, cz, w, d, level: 1 }; G.buildings.push(fake);
+  G.buildings.forEach((o, i) => { if (o === fake) return; const after = adj(o).notes; const bf = (before[i] || '').split('|'); after.filter(n => !bf.includes(n)).forEach(n => out.push(`${BUILDINGS[o.type].name}: ${n}`)); });
+  G.buildings.pop(); return out;
+}
+// ---- crafting grades (Iron/Steel/Mythril weapons, Minor/Greater/Superior potions)
+const GRADE_TIME = [1, 1, 1.3, 1.7];
+const gradeCost = (type, g) => type === 'forge' ? [null, { ore: 1 }, { ingots: 1 }, { ingots: 2, mythril: 1 }][g] : [null, { herbs: 1 }, { herbs: 2 }, { herbs: 3, mana: 1 }][g];
+const canPay = c => Object.entries(c).every(([k, v]) => (k === 'mythril' ? G.rare.mythril : G[k]) >= v);
+const payCost = c => { for (const [k, v] of Object.entries(c)) { if (k === 'mythril') G.rare.mythril -= v; else G[k] -= v; } };
+const costText = c => Object.entries(c).map(([k, v]) => `${v}${{ ore: '⛏️', ingots: '🔩', mythril: '💎', herbs: '🌿', mana: '✨' }[k]}`).join(' ');
+const gradeUnlocked = (b, g) => g === 1 || (g === 2 && b.level >= 3 && G.rank >= 1) || (g === 3 && b.level >= 5 && G.rank >= 2);
 // Decorative forest (instanced) around and inside the grid
 {
   const TREES = 260;
@@ -211,10 +238,12 @@ G.buildings[0].pop = 1; G.buildings[0].group.scale.setScalar(1);
 /* ------------------------------------------------------------------ *
  *  Derived stats
  * ------------------------------------------------------------------ */
-const popCap = () => 4 + ofType('tent').length * 3 + ofType('tavern').length * 4 + G.outpost * 3;
+const popCap = () => 4 + ofType('tent').length * 3 + ofType('tavern').length * 4 + G.outpost * 3 + G.rank * 4;
+const maxLevel = () => [3, 5, 7, 9][G.rank];
+const boardSlots = () => 3 + G.boardLvl + (G.rank >= 2 ? 1 : 0) + (G.rank >= 3 ? 1 : 0);
 const craftSpeed = () => (1 + 0.25 * G.staff.smith) * (G.research.forging ? 1.3 : 1) * (G.research.mythril ? 1.4 : 1);
 const alchSpeed = () => (1 + 0.25 * G.staff.alch) * (G.research.forging ? 1.15 : 1);
-const mealGold = () => 12 * (1 + 0.15 * G.staff.cook) * (1 + 0.3 * ((first('tavern')?.level || 1) - 1));
+const mealGold = tav => { tav = tav || first('tavern'); return 12 * (1 + 0.15 * G.staff.cook) * (1 + 0.3 * ((tav?.level || 1) - 1)) * (tav ? adj(tav).meal : 1); };
 const questGoldMul = () => (G.research.charter ? 1.25 : 1);
 const trickleMul = () => (1 + 0.5 * G.staff.porter);
 const warehouseBonus = () => ofType('warehouse').reduce((s, w) => s + 6 + 4 * (w.level - 1), 0);
@@ -265,7 +294,7 @@ function addStar(h) {   // a spinning golden star marks VIP heroes
   const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.16), new THREE.MeshBasicMaterial({ color: 0xffd24a }));
   star.position.y = h.cls === 'wizard' ? 1.95 : 1.4; h.mesh.add(star); h.mesh.userData.star = star;
 }
-const heroPower = (h, type) => CLASSES[h.cls].base * (1 + 0.2 * (h.level - 1)) * (h.gear ? 1 : 0.5) * (CLASSES[h.cls].quest === type ? 1.3 : 1);
+const heroPower = (h, type) => CLASSES[h.cls].base * (1 + 0.2 * (h.level - 1)) * (h.gear ? 1 + 0.25 * ((h.gearTier || 1) - 1) : 0.5) * (CLASSES[h.cls].quest === type ? 1.3 : 1);
 const heroGroup = new THREE.Group(); scene.add(heroGroup);
 
 function spawnPoint() {
@@ -277,7 +306,7 @@ function createHero(d) {
   const bub = document.createElement('div'); bub.className = 'bub hidden'; worldEl.appendChild(bub);
   const h = {
     id: d.id ?? G.nextId++, cls: d.cls, variant: d.variant, name: d.name, level: d.level ?? 1, xp: d.xp ?? 0, stamina: d.stamina ?? rnd(60, 100), happy: d.happy ?? 100, gear: !!d.gear,
-    quests: d.quests || 0, vip: d.vip || null,
+    quests: d.quests || 0, vip: d.vip || null, gearTier: d.gearTier || 1,
     mesh, pos: mesh.position, bub, state: 'idle', target: null, onArrive: null, timer: 0, onDone: null, cool: 0, phase: Math.random() * 6, vis: true,
   };
   mesh.userData.hid = h.id; G.heroes.push(h); if (h.vip) addStar(h);
@@ -370,7 +399,7 @@ function decide(h) {
     setMood(h, '🍺');
     if (tavern) {
       return visit(h, tavern, 2.5, () => {
-        const g = mealGold() * (traitOf(h) === 'glutton' ? 2 : 1);
+        const g = mealGold(tavern) * (traitOf(h) === 'glutton' ? 2 : 1);
         gain(tavern.door, g);
         h.stamina = 100; h.happy = Math.min(100, h.happy + 30);
       });
@@ -383,8 +412,8 @@ function decide(h) {
     if (shop && shop.stock > 0) {
       return visit(h, shop, 1.8, () => {
         if (shop.stock > 0) {
-          shop.stock--; h.gear = true;
-          gain(shop.door, CLASSES[h.cls].price * (1 + 0.15 * (shop.level - 1)) * (G.research.mythril && h.cls !== 'wizard' ? 1.25 : 1));
+          shop.stock--; h.gear = true; h.gearTier = shop.grade || 1;
+          gain(shop.door, CLASSES[h.cls].price * (1 + 0.15 * (shop.level - 1)) * (1 + 0.6 * (h.gearTier - 1)) * (G.research.mythril && h.cls !== 'wizard' ? 1.25 : 1));
         }
       });
     }
@@ -397,6 +426,8 @@ function decide(h) {
   } else wanderNearHall(h);
 }
 
+const GRADE = { forge: ['', 'Iron', 'Steel', 'Mythril'], alchemy: ['', 'Minor', 'Greater', 'Superior'] };
+const gearName = h => GRADE[h.cls === 'wizard' ? 'alchemy' : 'forge'][h.gearTier || 1];
 const nearCampfire = h => ofType('campfire').some(b => Math.hypot(b.cx + b.w / 2 - h.pos.x, b.cz + b.d / 2 - h.pos.z) < 6);
 function updateHero(h, dt) {
   h.phase += dt * 8;
@@ -598,7 +629,7 @@ function startRaid() {
   toast('Goblins at the perimeter!');
 }
 function defense() {
-  let d = G.staff.guard * (G.research.scales ? 8 : 4) + G.walls * 3 + (G.research.scales ? 6 : 0);
+  let d = G.staff.guard * (G.research.scales ? 8 : 4) + G.walls * 3 + (G.research.scales ? 6 : 0) + ofType('tower').length * 6;
   if (G.alarm) d += G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving').reduce((s, h) => s + CLASSES[h.cls].base * (h.gear ? 1 : 0.6) * 0.8, 0);
   return d;
 }
@@ -657,7 +688,7 @@ function deliverOrder(id) {
   const o = G.orders.find(x => x.id === id); if (!o) return; let moved = 0;
   for (const kind of Object.keys(o.need)) for (const b of ofType(ORDER_SRC[kind].src)) while (o.need[kind] > 0 && b.stock > 0) { b.stock--; o.need[kind]--; moved++; }
   if (Object.values(o.need).every(v => v <= 0)) {
-    G.orders.splice(G.orders.indexOf(o), 1); gain(G.buildings[0].door, o.reward); G.renown += o.ren; endCaravanIfDone();
+    G.orders.splice(G.orders.indexOf(o), 1); gain(G.buildings[0].door, o.reward); G.renown += o.ren; G.stats.orders++; endCaravanIfDone();
     toast(`${o.icon} ${o.title} fulfilled! +${o.reward}g, +${o.ren}⭐`);
   } else if (moved) toast(`Delivered ${moved}. Still needed: ${Object.entries(o.need).filter(([, v]) => v > 0).map(([k, v]) => v + ' ' + ORDER_SRC[k].label).join(', ')}.`);
   else toast('Nothing in stock to deliver yet.');
@@ -686,16 +717,20 @@ function updateEconomy(dt) {
   // production
   for (const b of G.buildings) {
     if (b.type === 'forge' || b.type === 'alchemy') {
-      const isF = b.type === 'forge', res = isF ? 'ore' : 'herbs';
-      b.crafting = false;
-      if (b.stock < stockCap(b) && G[res] > 0) {
+      const isF = b.type === 'forge', g = b.grade || 1, c = gradeCost(b.type, g); b.crafting = false;
+      if (b.stock < stockCap(b) && canPay(c)) {
         b.crafting = true;
-        b.progress += dt * (isF ? craftSpeed() : alchSpeed()) * (1 + 0.3 * (b.level - 1)) / 8;
-        if (b.progress >= 1) { b.progress = 0; G[res]--; b.stock++; floatText(b.door, isF ? '🗡️ +1' : '🧪 +1', '#fff'); }
+        b.progress += dt * (isF ? craftSpeed() : alchSpeed()) * (1 + 0.3 * (b.level - 1)) * adj(b).speed / (8 * GRADE_TIME[g]);
+        if (b.progress >= 1) { b.progress = 0; payCost(c); b.stock++; floatText(b.door, (isF ? '🗡️ +1 ' : '🧪 +1 ') + GRADE[b.type][g], '#fff'); }
       }
+    } else if (b.type === 'smelter') {
+      b.crafting = false; const cap = 20 + 10 * b.level + warehouseBonus();
+      if (G.ingots < cap && G.ore >= 2) { b.crafting = true; b.progress += dt * (1 + 0.3 * (b.level - 1)) * adj(b).speed / 10; if (b.progress >= 1) { b.progress = 0; G.ore -= 2; G.ingots++; floatText(b.door, '🔩 +1', '#fff'); } }
     }
   }
   if (first('alchemy')) { t.mana += dt; if (t.mana >= 5) { t.mana = 0; G.mana += 1 + (G.research.arcane ? 1 : 0); } }
+  t.market -= dt; if (t.market <= 0) { t.market = rnd(70, 100); tickMarket(); }
+  t.goals -= dt; if (t.goals <= 0) { t.goals = 1; checkGoals(); }
   // minor facilities
   t.minor = (t.minor || 0) + dt;
   if (t.minor >= 6) {
@@ -709,7 +744,7 @@ function updateEconomy(dt) {
   if (t.trickle >= 12) { t.trickle = 0; G.ore += Math.random() < 0.7 ? Math.round(1 * (G.research.prospect ? 1.5 : 1)) : 0; G.herbs += Math.random() < 0.6 ? 1 : 0; G.wood += Math.random() < 0.5 ? 1 : 0; if (G.staff.porter) { G.ore += G.staff.porter; G.herbs += G.staff.porter; } }
   // tavern + market passive gold
   t.tavern += dt;
-  if (t.tavern >= 4) { t.tavern = 0; let g = 0; ofType('tavern').forEach(b => g += b.level); g += ofType('market').length * 0.5; if (g > 0) { G.gold += g; } }
+  if (t.tavern >= 4) { t.tavern = 0; let g = 0; ofType('tavern').forEach(b => g += b.level); ofType('market').forEach(b => { g += 0.5 * adj(b).gold; }); if (g > 0) { G.gold += g; } }
   // wages
   t.wage -= dt;
   if (t.wage <= 0) { t.wage = 30; const w = wage(); if (w > 0) { const paid = Math.min(w, G.gold); G.gold -= paid; floatText(G.buildings[0].door, `-${paid} wages`, '#ffa'); } }
@@ -721,7 +756,7 @@ function updateEconomy(dt) {
   }
   // quests
   t.quest -= dt;
-  if (t.quest <= 0) { t.quest = 14; if (G.quests.filter(q => q.state === 'open').length < 3 + G.boardLvl) genQuest(); }
+  if (t.quest <= 0) { t.quest = 14; if (G.quests.filter(q => q.state === 'open').length < boardSlots()) genQuest(); }
   for (const q of [...G.quests]) if (q.state === 'active') { if (q.dive) diveTick(q, dt); else { q.t -= dt; if (q.t <= 0) resolveQuest(q); } }
   // events
   t.merchant -= dt; if (t.merchant <= 0) { t.merchant = rnd(150, 220); if (G.renown >= 2 && !G.merchant) startMerchant(); }
@@ -738,16 +773,61 @@ function updateEconomy(dt) {
 /* ------------------------------------------------------------------ *
  *  HUD, objectives, Royal panel
  * ------------------------------------------------------------------ */
-const OBJ = [
-  ['Build a Tavern', () => !!first('tavern')],
-  ['Build the Forge', () => !!first('forge')],
-  ['Send your first party', () => G.questsDone > 0],
-  ['Reach 3 Renown', () => G.renown >= 3],
-  ["Build the Alchemist's Lab", () => !!first('alchemy')],
-  ['Recruit a Blacksmith', () => G.staff.smith > 0],
-  ['Reach 15 Renown', () => G.renown >= 15],
-  ['Own 6 heroes', () => G.heroes.length >= 6],
+// ---- long-term goal ladder: every goal pays out (gold, renown or rare materials)
+const GOALS = [
+  ['Build a Tavern', () => !!first('tavern'), { gold: 100 }], ['Build the Forge', () => !!first('forge'), { gold: 150 }],
+  ['Send your first party', () => G.questsDone > 0, { gold: 200 }], ['Reach 3 renown', () => G.renown >= 3, { gold: 150 }],
+  ["Build the Alchemist's Lab", () => !!first('alchemy'), { gold: 200 }], ['Recruit a Blacksmith', () => G.staff.smith > 0, { gold: 100 }],
+  ['Complete 10 quests', () => G.questsDone >= 10, { gold: 400 }], ['Reach 10 renown', () => G.renown >= 10, { gold: 300 }],
+  ['Raise the guild to a Hold (Upgrades)', () => G.rank >= 1, { renown: 3 }], ['Build a Smeltery', () => !!first('smelter'), { gold: 300 }],
+  ['Equip a hero with Steel gear', () => G.heroes.some(h => h.gear && (h.gearTier || 1) >= 2), { gold: 400 }], ['Own 8 heroes', () => G.heroes.length >= 8, { gold: 300 }],
+  ['Fulfil a trade order', () => G.stats.orders >= 1, { gold: 300 }], ['Reach 30 renown', () => G.renown >= 30, { gold: 600 }],
+  ['Dive to floor 5', () => G.diveBest >= 5, { gold: 500 }], ['Train a hero to level 5', () => G.heroes.some(h => h.level >= 5), { rare: { mythril: 1 } }],
+  ['Build a Guard Tower', () => !!first('tower'), { gold: 400 }], ['Dive to floor 10', () => G.diveBest >= 10, { rare: { mythril: 2 } }],
+  ['Raise the guild to a Keep', () => G.rank >= 2, { renown: 5 }], ['Fulfil 5 trade orders', () => G.stats.orders >= 5, { gold: 1500 }],
+  ['Win 5 defences', () => G.stats.raidsWon >= 5, { gold: 1500 }], ['Dive to floor 20', () => G.diveBest >= 20, { rare: { scale: 1, feather: 1 } }],
+  ['Complete 50 quests', () => G.questsDone >= 50, { gold: 3000 }], ['Raise the guild to a Fortress', () => G.rank >= 3, { renown: 10 }],
+  ['Reach 100 renown', () => G.renown >= 100, { gold: 10000 }],
 ];
+const rewardTags = r => Object.entries(r).map(([k, v]) => k === 'gold' ? `💰${v}` : k === 'renown' ? `⭐${v}` : Object.entries(v).map(([rk, rv]) => `${RARE[rk].icon}${rv}`).join('')).join(' ');
+function checkGoals() {
+  GOALS.forEach((g, i) => {
+    if (G.goalsDone[i] || !g[1]()) return; G.goalsDone[i] = 1; const r = g[2];
+    if (r.gold) G.gold += r.gold; if (r.renown) G.renown += r.renown; if (r.rare) for (const [k, v] of Object.entries(r.rare)) G.rare[k] += v;
+    toast(`🎯 Goal complete: ${g[0]} — ${rewardTags(r)}`);
+  });
+}
+const RANKS = [
+  { name: 'Outpost', icon: '🏕️', perks: 'Building level cap 3.' },
+  { name: 'Hold', icon: '🏰', perks: 'Level cap 5 · +4 beds · Steel gear · Smeltery & Guard Tower · hero promotions', req: { renown: 10, gold: 1200, wood: 40, ore: 30, build: ['tavern', 'forge', 'market'] } },
+  { name: 'Keep', icon: '🏯', perks: 'Level cap 7 · +4 beds · Mythril gear · +1 quest slot', req: { renown: 30, gold: 5000, wood: 100, rare: { mythril: 3 }, dive: 10 } },
+  { name: 'Fortress', icon: '🛡️', perks: 'Level cap 9 · +4 beds · +1 quest slot · tougher raids, richer rewards', req: { renown: 80, gold: 20000, rare: { mythril: 10, scale: 4, feather: 2 }, dive: 20 } },
+];
+function rankReqs(r) {
+  const q = RANKS[r].req, out = []; if (!q) return out;
+  out.push([G.renown >= q.renown, `⭐ ${q.renown} renown (have ${G.renown})`], [G.gold >= q.gold, `💰 ${q.gold} gold`]);
+  if (q.wood) out.push([G.wood >= q.wood, `🪵 ${q.wood} wood (have ${G.wood})`]); if (q.ore) out.push([G.ore >= q.ore, `⛏️ ${q.ore} ore (have ${G.ore})`]);
+  if (q.rare) for (const [k, v] of Object.entries(q.rare)) out.push([G.rare[k] >= v, `${RARE[k].icon} ${v} ${RARE[k].label} (have ${G.rare[k]})`]);
+  if (q.build) out.push([q.build.every(t => first(t)), `Buildings: ${q.build.map(t => BUILDINGS[t].name).join(', ')}`]);
+  if (q.dive) out.push([G.diveBest >= q.dive, `🌀 Endless Dive floor ${q.dive} (best ${G.diveBest})`]);
+  return out;
+}
+function rankUp() {
+  if (G.rank >= 3) return; const r = G.rank + 1, reqs = rankReqs(r);
+  if (!reqs.every(x => x[0])) return toast('Requirements for the next rank are not met yet.');
+  const q = RANKS[r].req; G.gold -= q.gold; if (q.wood) G.wood -= q.wood; if (q.ore) G.ore -= q.ore; if (q.rare) spendRare(q.rare);
+  G.rank = r; floatText(G.buildings[0].door, `${RANKS[r].icon} ${RANKS[r].name}!`, '#ffd24a'); toast(`${RANKS[r].icon} The guild is now a ${RANKS[r].name}! ${RANKS[r].perks}`);
+}
+// ---- market prices drift and spike; you can buy low and sell high
+const BASE_PRICE = { ore: 8, herbs: 6, wood: 6 };
+function tickMarket() {
+  const m = G.market;
+  for (const k of Object.keys(BASE_PRICE)) m[k] = Math.max(0.5, Math.min(2.2, 1 + (m[k] - 1) * 0.55 + (Math.random() - 0.5) * 0.5));
+  const k = pick(Object.keys(BASE_PRICE)), up = Math.random() < 0.5; m[k] = up ? rnd(1.6, 2.1) : rnd(0.5, 0.65);
+  m.news = `${{ ore: 'Iron Ore', herbs: 'Herbs', wood: 'Pine Wood' }[k]} ${up ? 'is scarce — prices surge!' : 'is plentiful — prices crash!'}`; toast(`🛒 Market: ${m.news}`);
+}
+const buyPrice = k => Math.ceil(BASE_PRICE[k] * G.market[k] * 5), sellPrice = k => Math.floor(BASE_PRICE[k] * 0.55 * G.market[k] * 5);
+const trend = k => G.market[k] > 1.15 ? '<span style="color:#ff9a9a">▲</span>' : G.market[k] < 0.87 ? '<span style="color:#9bff9b">▼</span>' : '▬';
 let hudCache = '';
 function updateHUD() {
   $('hGold').textContent = Math.floor(G.gold).toLocaleString();
@@ -755,12 +835,12 @@ function updateHUD() {
   $('hMana').textContent = G.mana;
   $('hPop').textContent = `${G.heroes.length}/${popCap()}`;
   { const r = G.rare; $('hRare').classList.toggle('hidden', !(r.mythril || r.scale || r.feather)); $('hMyth').textContent = r.mythril; $('hScale').textContent = r.scale; $('hFeather').textContent = r.feather; }
+  $('hIngot').classList.toggle('hidden', !first('smelter') && G.ingots === 0); $('hIng').textContent = G.ingots;
   $('hOre').textContent = G.ore; $('hWood').textContent = G.wood; $('hHerbs').textContent = G.herbs;
   const ex = G.quests.filter(q => q.state === 'active').map(q => { const dv = q.dive, lab = dv ? `Floor ${diveFloorIndex(q.script, q.elapsed) + 1}` : `${Math.ceil(q.t)}s`, pr = dv ? diveProg(q) : 100 - q.t / q.dur * 100; return `<div class="exp" data-act="watch" data-q="${q.id}" title="Watch this expedition live"><span>${dv ? '🌀' : '👁'} ${q.name}</span><span>${lab}</span><div class="bar"><i style="width:${pr}%"></i></div></div>`; }).join('');
   if (ex !== $('expeds')._h) { $('expeds')._h = ex; $('expeds').innerHTML = ex ? '<h4>Expeditions:</h4>' + ex : ''; }
-  const pend = OBJ.filter(o => !o[1]()).slice(0, 3);
-  const done = OBJ.filter(o => o[1]()).slice(-1);
-  const html = [...done, ...pend].map(o => `<li class="${o[1]() ? 'done' : ''}">${o[1]() ? '☑' : '☐'} ${o[0]}</li>`).join('');
+  const open = GOALS.map((g, i) => [g, i]).filter(([, i]) => !G.goalsDone[i]).slice(0, 3), nDone = Object.keys(G.goalsDone).length;
+  const html = `<li class="s">${RANKS[G.rank].icon} <b>${RANKS[G.rank].name}</b> · goals ${nDone}/${GOALS.length}</li>` + open.map(([g]) => `<li>☐ ${g[0]} <span class="s">${rewardTags(g[2])}</span></li>`).join('');
   if (html !== hudCache) { hudCache = html; $('objList').innerHTML = html; }
   const rh = G.orders.map(o => {
     const needs = Object.entries(o.need).filter(([, v]) => v > 0).map(([k, v]) => `${ORDER_SRC[k].icon} ${v}`).join(' + '), avail = Object.keys(o.need).reduce((n, k) => n + (o.need[k] > 0 ? stockOf(k) : 0), 0);
@@ -783,7 +863,7 @@ const RARE = { mythril: { icon: '💎', label: 'Mythril' }, scale: { icon: '🐉
 const hasRare = req => !req || Object.entries(req).every(([k, v]) => G.rare[k] >= v);
 const rareTags = req => req ? Object.entries(req).map(([k, v]) => `<span class="tag" title="${RARE[k].label}">${RARE[k].icon} ${v}${G.rare[k] < v ? ' (have ' + G.rare[k] + ')' : ''}</span>`).join('') : '';
 const spendRare = req => { if (req) for (const [k, v] of Object.entries(req)) G.rare[k] -= v; };
-const upReq = b => (['forge', 'alchemy'].includes(b.type) && b.level >= 4) ? { mythril: 3 } : null;
+const upReq = b => (['forge', 'alchemy'].includes(b.type) && b.level >= 4) ? { mythril: b.level >= 6 ? 5 : 3 } : null;
 
 const TECHS = {
   prospect: ['Prospecting', 'Ore yields from quests and workers +50%.', 200],
@@ -806,8 +886,8 @@ function modalContent() {
   switch (modalKind) {
     case 'build': {
       const row = ([k, t]) => {
-        const locked = G.renown < t.renown, poor = G.gold < t.cost;
-        return `<div class="row"><div style="font-size:30px">${t.icon}</div><div class="grow"><div class="t">${t.name} <span class="tag">${t.w}×${t.d}</span></div><div class="s">${t.desc}</div>${cost(t.cost)}${t.renown ? `<span class="tag">⭐ ${t.renown} req.</span>` : ''}</div>
+        const locked = G.renown < t.renown || G.rank < (t.rank || 0), poor = G.gold < t.cost;
+        return `<div class="row"><div style="font-size:30px">${t.icon}</div><div class="grow"><div class="t">${t.name} <span class="tag">${t.w}×${t.d}</span></div><div class="s">${t.desc}</div>${cost(t.cost)}${t.renown ? `<span class="tag">⭐ ${t.renown} req.</span>` : ''}${t.rank ? `<span class="tag">${RANKS[t.rank].icon} ${RANKS[t.rank].name}</span>` : ''}</div>
         <button class="act" data-act="place" data-k="${k}" ${locked || poor ? 'disabled' : ''}>${locked ? '🔒 Locked' : 'Place'}</button></div>`;
       };
       const all = Object.entries(BUILDINGS).filter(([k]) => k !== 'hall');
@@ -860,13 +940,15 @@ function modalContent() {
       body += `<div class="s" style="margin-top:6px">Experience ${h.xp}/${h.level + 1}</div>${bar(h.xp / (h.level + 1) * 100, '#8fd4ff')}
         <div class="s" style="margin-top:6px">Stamina ${Math.round(h.stamina)}</div>${bar(h.stamina, h.stamina < 45 ? '#e0503a' : '#5be35b')}
         <div class="s" style="margin-top:6px">Happiness ${Math.round(h.happy)}</div>${bar(h.happy, h.happy < 30 ? '#e0503a' : '#f0c040')}
-        <div class="row"><div class="grow"><div class="t">Gear</div><div class="s">${h.gear ? '✔ Equipped — ready for quests' : '✘ Needs ' + (h.cls === 'wizard' ? 'potions from the Alchemical Lab' : 'a weapon from the Forge')}</div></div>
+        <div class="row"><div class="grow"><div class="t">Gear</div><div class="s">${h.gear ? '✔ ' + gearName(h) + ' gear equipped' : '✘ Needs ' + (h.cls === 'wizard' ? 'potions from the Alchemical Lab' : 'a weapon from the Forge')}</div></div>
         <div class="grow"><div class="t">Power</div><div class="s">${heroPower(h, c.quest).toFixed(1)} on ${c.quest} quests</div></div></div>`;
       return [(h.vip ? '⭐ ' : '') + h.name, body];
     }
     case 'upgrades': {
       const c1 = 300 * (G.outpost + 1), c2 = 250 * (G.boardLvl + 1), c3 = 200 * (G.walls + 1);
-      return ['⬆️ Outpost Upgrades', `
+      const nr = G.rank < 3 ? RANKS[G.rank + 1] : null, reqs = nr ? rankReqs(G.rank + 1) : [];
+      const rankHtml = `<div class="row" style="border-color:#ffd24a"><div style="font-size:34px">${RANKS[G.rank].icon}</div><div class="grow"><div class="t">Guild Rank: ${RANKS[G.rank].name}</div><div class="s">${RANKS[G.rank].perks}</div>${nr ? `<div class="s" style="margin-top:6px"><b>Next: ${nr.icon} ${nr.name}</b> — ${nr.perks}</div>` + reqs.map(([ok, t]) => `<div class="s" style="color:${ok ? '#9bff9b' : '#ff9a9a'}">${ok ? '✔' : '✘'} ${t}</div>`).join('') : '<div class="s">The guild has reached its highest rank!</div>'}</div>${nr ? `<button class="act" data-act="rankup" ${reqs.every(x => x[0]) ? '' : 'disabled'}>Promote</button>` : ''}</div>`;
+      return ['⬆️ Guild & Outpost', rankHtml + `
         <div class="row"><div class="grow"><div class="t">Expand Outpost <span class="tag">Lv ${G.outpost}/5</span></div><div class="s">+3 population capacity.</div>${cost(c1)}</div><button class="act" data-act="up" data-k="outpost" ${G.gold < c1 || G.outpost >= 5 ? 'disabled' : ''}>Upgrade</button></div>
         <div class="row"><div class="grow"><div class="t">Quest Board Expansion <span class="tag">Lv ${G.boardLvl}/3</span></div><div class="s">+1 quest slot on the board.</div>${cost(c2)}</div><button class="act" data-act="up" data-k="boardLvl" ${G.gold < c2 || G.boardLvl >= 3 ? 'disabled' : ''}>Upgrade</button></div>
         <div class="row"><div class="grow"><div class="t">Fortify Walls <span class="tag">Lv ${G.walls}/4</span></div><div class="s">+3 defense against monster raids.</div>${cost(c3)}</div><button class="act" data-act="up" data-k="walls" ${G.gold < c3 || G.walls >= 4 ? 'disabled' : ''}>Upgrade</button></div>`];
@@ -876,13 +958,20 @@ function modalContent() {
       const t = BUILDINGS[b.type]; let h = `<div class="s">${t.desc}</div><div class="row"><div class="grow"><div class="t">Level ${b.level}</div>`;
       if (b.type === 'forge') h += `<div class="s">Weapons in stock: <b>${b.stock}/${stockCap(b)}</b> · Iron Ore: ${G.ore}</div><div class="bar"><i style="width:${b.progress * 100}%"></i></div>`;
       if (b.type === 'alchemy') h += `<div class="s">Potions in stock: <b>${b.stock}/${stockCap(b)}</b> · Herbs: ${G.herbs}</div><div class="bar"><i style="width:${b.progress * 100}%"></i></div>`;
+      if (b.type === 'forge' || b.type === 'alchemy') { const g = b.grade || 1; h += `<div class="s" style="margin-top:6px">Crafting grade (switch when stock is empty):</div><div style="display:flex;gap:5px;margin:3px 0">` + [1, 2, 3].map(x => `<button class="act ${g === x ? '' : 'red'}" style="${g === x ? 'outline:2px solid #fff8' : ''}" data-act="grade" data-id="${b.id}" data-g="${x}" ${gradeUnlocked(b, x) ? '' : 'disabled'}>${GRADE[b.type][x]}<br><span style="font-weight:400;font-size:11px">${costText(gradeCost(b.type, x))}</span></button>`).join('') + '</div>'; }
+      if (b.type === 'smelter') h += `<div class="s">Ingots: <b>${G.ingots}</b>/${20 + 10 * b.level + warehouseBonus()} · uses 2 ore each · ore: ${G.ore}</div><div class="bar"><i style="width:${b.progress * 100}%"></i></div>`;
+      { const notes = adj(b).notes; if (notes.length) h += `<div class="s" style="color:#9bff9b;margin-top:4px">${notes.map(n => '✦ ' + n).join('<br>')}</div>`; }
       if (b.type === 'warehouse') h += `<div class="s">This warehouse adds <b>+${6 + 4 * (b.level - 1)}</b> stock to every Forge and Lab · total bonus +${warehouseBonus()}</div>`;
-      if (b.type === 'tavern') h += `<div class="s">Meal price: ${mealGold().toFixed(1)}g · Passive: ${b.level * 0.25}g/s</div>`;
+      if (b.type === 'tavern') h += `<div class="s">Meal price: ${mealGold(b).toFixed(1)}g · Passive: ${b.level * 0.25}g/s</div>`;
       const uc = 150 * b.level + 100;
-      if (['forge', 'alchemy', 'tavern', 'warehouse'].includes(b.type)) h += `</div><button class="act" data-act="upBuilding" data-id="${b.id}" ${G.gold < uc || G.wood < 5 * b.level || b.level >= 5 || !hasRare(upReq(b)) ? 'disabled' : ''}>Upgrade<br>${uc}g + ${5 * b.level}🪵 ${rareTags(upReq(b))}</button></div>`; else h += '</div></div>';
+      if (['forge', 'alchemy', 'tavern', 'warehouse', 'smelter'].includes(b.type)) h += `</div><button class="act" data-act="upBuilding" data-id="${b.id}" ${G.gold < uc || G.wood < 5 * b.level || b.level >= maxLevel() || !hasRare(upReq(b)) ? 'disabled' : ''}>${b.level >= maxLevel() ? (G.rank < 3 ? 'Raise guild rank' : 'Max level') : `Upgrade<br>${uc}g + ${5 * b.level}🪵 ${rareTags(upReq(b))}`}</button></div>`; else h += '</div></div>';
       if (b.type === 'portal') h += `<div class="s">Deepest dive so far: floor <b>${G.diveBest}</b></div><button class="act" data-act="open" data-k="quests" style="margin:6px 0">Open the Endless Dive</button>`;
       if (b.type === 'hall') h += `<button class="act" data-act="open" data-k="quests" style="margin:6px 0">Open Quest Board</button>`;
-      if (b.type === 'market') h += '<div class="sec">Buy Materials</div>' + [['ore', '⛏️ Iron Ore', 8], ['herbs', '🌿 Herbs', 6], ['wood', '🪵 Pine Wood', 6]].map(([k, n, p]) => `<div class="row"><div class="grow"><div class="t">${n} ×5</div>${cost(p * 5)}<span class="tag">have ${G[k]}</span></div><button class="act" data-act="buy" data-k="${k}" data-p="${p * 5}" ${G.gold < p * 5 ? 'disabled' : ''}>Buy</button></div>`).join('');
+      if (b.type === 'market') {
+        h += `<div class="s" style="margin-top:6px">${G.market.news ? '📰 ' + G.market.news : 'Prices drift over time — buy low, sell high.'}</div><div class="sec">Trade (lots of 5)</div>`;
+        h += Object.keys(BASE_PRICE).map(k => { const n = { ore: '⛏️ Iron Ore', herbs: '🌿 Herbs', wood: '🪵 Pine Wood' }[k]; return `<div class="row"><div class="grow"><div class="t">${n} ${trend(k)} <span class="tag">×${G.market[k].toFixed(2)}</span></div><div class="s">have ${G[k]} · buy ${buyPrice(k)}g · sell ${sellPrice(k)}g</div></div><button class="act" data-act="buy" data-k="${k}" ${G.gold < buyPrice(k) ? 'disabled' : ''}>Buy</button><button class="act red" data-act="sell" data-k="${k}" ${G[k] < 5 ? 'disabled' : ''}>Sell</button></div>`; }).join('');
+        if (first('smelter') || G.ingots) h += `<div class="row"><div class="grow"><div class="t">🔩 Ingots</div><div class="s">have ${G.ingots} · sell 70g per 5</div></div><button class="act red" data-act="sell" data-k="ingots" ${G.ingots < 5 ? 'disabled' : ''}>Sell</button></div>`;
+      }
       return [t.icon + ' ' + t.name, h];
     }
     case 'merchant': {
@@ -925,9 +1014,12 @@ const ACT = {
     const k = d.k, c = { outpost: 300 * (G.outpost + 1), boardLvl: 250 * (G.boardLvl + 1), walls: 200 * (G.walls + 1) }[k];
     if (G.gold >= c) { G.gold -= c; G[k]++; }
   },
-  upBuilding(d) { const b = G.buildings.find(x => x.id === +d.id), c = 150 * b.level + 100; if (b && b.level < 5 && G.gold >= c && G.wood >= 5 * b.level && hasRare(upReq(b))) { G.gold -= c; G.wood -= 5 * b.level; spendRare(upReq(b)); b.level++; b.pop = 0.6; toast(`${BUILDINGS[b.type].name} upgraded to level ${b.level}!`); } },
+  rankup() { rankUp(); },
+  grade(d) { const b = G.buildings.find(x => x.id === +d.id), g = +d.g; if (!b || !gradeUnlocked(b, g)) return toast('Not unlocked yet.'); if (b.stock > 0 && (b.grade || 1) !== g) return toast('Use up the current stock before switching grade.'); b.grade = g; b.progress = 0; toast(`${BUILDINGS[b.type].name} now makes ${GRADE[b.type][g]} ${b.type === 'forge' ? 'weapons' : 'potions'}.`); },
+  sell(d) { const k = d.k; if (k === 'ingots') { if (G.ingots >= 5) { G.ingots -= 5; G.gold += 5 * 14; } return; } if (G[k] >= 5) { G.gold += sellPrice(k); G[k] -= 5; } },
+  upBuilding(d) { const b = G.buildings.find(x => x.id === +d.id), c = 150 * b.level + 100; if (b && b.level < maxLevel() && G.gold >= c && G.wood >= 5 * b.level && hasRare(upReq(b))) { G.gold -= c; G.wood -= 5 * b.level; spendRare(upReq(b)); b.level++; b.pop = 0.6; toast(`${BUILDINGS[b.type].name} upgraded to level ${b.level}!`); } },
   open(d) { openModal(d.k); },
-  buy(d) { const p = +d.p; if (G.gold >= p) { G.gold -= p; G[d.k] += 5; } },
+  buy(d) { const p = buyPrice(d.k); if (G.gold >= p) { G.gold -= p; G[d.k] += 5; } },
   mbuy(d) {
     const p = +d.p, n = +d.n; if (G.gold < p) return; G.gold -= p;
     if (d.k === 'arcane') { G.rare.scale++; toast('🐉 You acquired a Dragon Scale!'); } else G[d.k] += n;
@@ -984,6 +1076,7 @@ function moveGhost(cx, cz) {
   const ok = canPlace(placing, cx, cz, ghostRot) && G.gold >= t.cost;
   ghost.userData.mats.forEach((m, i) => m.color.setHex(i === 1 ? (ok ? 0xffffff : 0xff6060) : (ok ? 0xffd24a : 0xff4040)));
   ghost.userData.ok = ok; $('placeOk').disabled = !ok;
+  const bonus = previewBonus(placing, cx, cz, ghostRot); $('placeHint').innerHTML = bonus.length ? '✦ Here: ' + bonus.join(' · ') : 'Drag the golden plot (or tap the ground) to move it · rotate with ⟲ ⟳ · place buildings near partners for bonuses';
 }
 function rotateGhost(dir) {
   if (!placing) return;
@@ -1113,15 +1206,15 @@ function syncStaff() {
  *  Save / load (localStorage autosave)
  * ------------------------------------------------------------------ */
 const SAVE_KEY = 'fantasy-guild-master-save-v1';
-const SCALARS = ['gold', 'renown', 'mana', 'ore', 'wood', 'herbs', 'time', 'speed', 'outpost', 'boardLvl', 'walls', 'questsDone', 'nextId', 'diveBest'];
+const SCALARS = ['gold', 'renown', 'mana', 'ore', 'wood', 'herbs', 'time', 'speed', 'outpost', 'boardLvl', 'walls', 'questsDone', 'nextId', 'diveBest', 'rank', 'ingots'];
 let lastSaved = 0;
 function serialize() {
   const g = {}; SCALARS.forEach(k => { g[k] = G[k]; });
-  Object.assign(g, { staff: G.staff, research: G.research, tm: G.tm, orders: G.orders, rare: G.rare });
+  Object.assign(g, { staff: G.staff, research: G.research, tm: G.tm, orders: G.orders, rare: G.rare, market: G.market, goalsDone: G.goalsDone, stats: G.stats, fallen: G.fallen, flags: G.flags });
   return {
     v: 1, savedAt: Date.now(), g,
     buildings: G.buildings.map(b => ({ type: b.type, cx: b.cx, cz: b.cz, rot: b.rot || 0, level: b.level, stock: b.stock, progress: b.progress })),
-    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, quests: h.quests, vip: h.vip, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
+    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, quests: h.quests, vip: h.vip, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
     quests: G.quests.map(q => { const o = {}; for (const [k, v] of Object.entries(q)) if (k !== 'heroes' && k !== 'script') o[k] = v; o.heroIds = (q.heroes || []).map(h => h.id); return o; }),
     extra: serializeExtra(),
   };
@@ -1138,7 +1231,7 @@ function loadGame() {
   if (!d || d.v !== 1) return false;
   try {
     SCALARS.forEach(k => { if (d.g[k] !== undefined) G[k] = d.g[k]; });
-    Object.assign(G.rare, d.g.rare || {}); Object.assign(G.staff, d.g.staff); G.research = d.g.research || {}; Object.assign(G.tm, d.g.tm);
+    Object.assign(G.rare, d.g.rare || {}); Object.assign(G.market, d.g.market || {}); G.goalsDone = d.g.goalsDone || {}; Object.assign(G.stats, d.g.stats || {}); G.fallen = d.g.fallen || []; G.flags = d.g.flags || {}; Object.assign(G.staff, d.g.staff); G.research = d.g.research || {}; Object.assign(G.tm, d.g.tm);
     G.orders = d.g.orders || (d.g.royal ? [{ id: G.nextId++, kind: 'royal', need: { sword: d.g.royal.need }, t: d.g.royal.t, tMax: 150, reward: d.g.royal.reward, ren: d.g.royal.ren, pen: 3, title: 'Royal Demand', icon: '👑' }] : []);
     if (G.orders.some(o => o.kind === 'caravan')) spawnCaravan();
     const nextId = G.nextId;
@@ -1367,4 +1460,4 @@ if (!loadGame()) {
 }
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
-window.__api = { dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__api = { maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
