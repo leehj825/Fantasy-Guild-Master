@@ -116,6 +116,24 @@ const BUILD = {
 };
 
 const PROG = {
+  'Iron Vanguard': '강철 선봉대', "Ranger's Path": '레인저의 길', 'Arcane Circle': '비전 결사', 'Guild Specialization': '길드 전문화', '(permanent · needs Guild Rank Hold)': '(영구 · 길드 등급 \'요새\' 필요)', 'Declare': '선언', 'Specialization:': '전문화:',
+  'Masters of the front line. Iron spikes and shields adorn the hall.': '최전선의 달인들. 길드 홀을 철 가시와 방패가 장식합니다.', '+10% success on combat quests · Knights +10% power · Forge +15% speed': '전투 퀘스트 성공 +10% · 기사 전투력 +10% · 대장간 속도 +15%',
+  'Scholars of the unseen. Floating crystals and glowing runes surround the hall.': '보이지 않는 것의 학자들. 떠다니는 수정과 빛나는 룬이 길드 홀을 감쌉니다.', '+10% success on arcane quests · Wizards +10% power · Lab +15% speed · +1 Mana regen': '비전 퀘스트 성공 +10% · 마법사 전투력 +10% · 실험실 속도 +15% · 마나 재생 +1',
+  'Wardens of the wild. Living vines and leaf banners cover the hall.': '야생의 수호자들. 살아있는 덩굴과 잎사귀 깃발이 길드 홀을 덮습니다.', '+10% success on gather quests · Rangers +10% power · +10% loot · stamina lasts 10% longer': '채집 퀘스트 성공 +10% · 레인저 전투력 +10% · 전리품 +10% · 스태미나 10% 오래 지속',
+  'Choose a guild specialization': '길드 전문화 선택하기',
+  'The Master Smith': '명장 대장장이', 'A famed smith from the southern cities arrives, offering to teach your forge crew her secret quenching methods. She wants payment, of course.': '남쪽 도시의 유명한 대장장이가 찾아와 비법 담금질 기술을 대장간 일꾼들에게 가르쳐 주겠다고 합니다. 물론 대가를 원합니다.',
+  'Pay 600g for lessons': '강습비 600골드 지불', 'Forge crafting speed +10% permanently.': '대장간 제작 속도 영구 +10%.', 'Politely decline': '정중히 거절',
+  'Fever in the Barracks': '병영의 열병', "A fever spreads through the heroes' quarters. Several look pale and exhausted. A healer says remedies could stop it — if you have potions to spare.": '영웅들의 숙소에 열병이 퍼지고 있습니다. 여럿이 창백하고 지쳐 보입니다. 치료사는 여분의 포션이 있다면 약을 지어 막을 수 있다고 합니다.',
+  'Brew remedies (3 potions)': '치료제 제조 (포션 3개)', 'Needs 3 potions in stock. Heroes recover, +1 renown.': '재고 포션 3개 필요. 영웅이 회복하고 명성 +1.', 'Let it run its course': '자연히 낫도록 두기', 'Heroes lose happiness, −1 renown.': '영웅의 행복도가 떨어지고 명성 −1.',
+  'A Travelling Bard': '떠돌이 음유시인', 'A cheerful bard strolls into the tavern with a lute and a dozen new songs. The heroes are already crowding around.': '쾌활한 음유시인이 류트와 새로운 노래 열댓 곡을 들고 여관에 들어섭니다. 영웅들이 벌써 주변에 몰려듭니다.',
+  'Let him play tonight (−60g)': '오늘 밤 연주하게 하기 (−60골드)', 'All heroes gain happiness.': '모든 영웅의 행복도가 오릅니다.', 'Hire him for good (−200g)': '정식 고용 (−200골드)', 'Adds a Bard to your staff (heroes lose happiness slower).': '음유시인을 직원으로 추가합니다 (영웅 행복도가 천천히 줄어듦).',
+  'A Tattered Treasure Map': '너덜너덜한 보물지도', 'A drunk sailor trades you a tattered map for a pint. It marks a cove full of buried loot — or perhaps a trap.': '술 취한 선원이 맥주 한 잔에 너덜너덜한 지도를 넘깁니다. 보물이 묻힌 만을 표시한 것 같지만 함정일 수도 있습니다.',
+  'Follow the map': '지도를 따라가기', 'Posts a special quest with rich loot.': '풍부한 전리품이 걸린 특별 퀘스트를 게시합니다.', 'Sell it to a collector (+250g)': '수집가에게 팔기 (+250골드)', 'The Buried Cove': '묻힌 만',
+  'The Royal Tax Collector': '왕실 세금 징수관', 'A stern collector arrives with a ledger. The crown is raising funds, and your guild has grown rich in the eyes of the court.': '엄격한 징수관이 장부를 들고 찾아옵니다. 왕실이 자금을 모으고 있고, 궁정의 눈에는 길드가 부유해 보입니다.',
+  'Pay the tax (−500g)': '세금 납부 (−500골드)', '+2 renown for loyalty.': '충성의 대가로 명성 +2.', 'Slip him a bribe (−150g)': '뇌물 건네기 (−150골드)', 'He looks the other way.': '그가 못 본 척합니다.', 'Refuse to pay': '납부 거부', '−3 renown.': '명성 −3.',
+  'The Haunted Watchtower': '유령 나오는 망루', 'Guards report a pale figure pacing the old watchtower at night. Your heroes refuse to patrol there. A priest offers to put the spirit to rest.': '경비병들이 밤마다 낡은 망루를 서성이는 창백한 형체를 보았다고 합니다. 영웅들은 그곳 순찰을 거부합니다. 사제가 영혼을 달래 주겠다고 합니다.',
+  'Hire the priest (−300g, 5 mana)': '사제 고용 (−300골드, 마나 5)', 'The grateful spirit leaves a Mythril shard.': '고마워한 영혼이 미스릴 조각을 남깁니다.', 'Ignore the rumours': '소문 무시', 'Heroes lose some happiness.': '영웅의 행복도가 조금 떨어집니다.',
+
   'Map': '지도', 'World Map': '월드맵', '🗺 World Map': '🗺 월드맵', 'Expand Territory': '영토 확장', 'Territory': '영토', 'Travel here': '이곳으로 이동', 'Active': '활성', '✔ Active': '✔ 활성', 'Mastery': '숙련도',
   'Choose where your quests are posted. Region mastery grows as you complete quests there and unlocks permanent bonuses.': '퀘스트가 올라올 지역을 고르세요. 그 지역에서 퀘스트를 완수할수록 숙련도가 오르고 영구 보너스가 해금됩니다.',
   'Clears forest and opens +4 tiles of buildable land on every side.': '숲을 개간해 사방으로 건설 가능한 땅을 4칸씩 넓힙니다.', 'Quests done here:': '이곳에서 완수한 퀘스트:', 'Mastery bonus:': '숙련도 보너스:', 'next level at': '다음 레벨까지', 'Needs Guild Rank': '필요 길드 등급:',

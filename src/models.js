@@ -493,6 +493,27 @@ function training() {
   return g;
 }
 
+// Guild Hall decoration that changes with the chosen specialization
+export function factionDecor(kind) {
+  const g = new THREE.Group();
+  if (kind === 'vanguard') {
+    for (let i = -4; i <= 4; i++) g.add(cone(0.1, 0.5, 0x9aa0a8, i * 0.5, 4.5, 0, 4));            // iron spikes along the ridge
+    for (const x of [-1.6, 1.6]) { g.add(vox(0.5, 0.6, 0.06, 0x8a8f98, x, 0.55, 2.05), vox(0.3, 0.4, 0.04, 0xc0392b, x, 0.65, 2.1)); }
+    g.add(rot(vox(0.08, 0.9, 0.05, 0xdfe3ea, -0.35, 2.7, 1.74), 0, 0, 0.7), rot(vox(0.08, 0.9, 0.05, 0xdfe3ea, -0.35, 2.7, 1.74), 0, 0, -0.7), vox(0.3, 0.3, 0.05, 0xc0392b, -0.35, 2.7, 1.7));
+    g.add(vox(0.9, 0.12, 0.3, 0x55585f, 2.3, 0, 2.3), vox(0.12, 1.0, 0.12, 0x55585f, 2.3, 0.12, 2.3));
+  } else if (kind === 'arcane') {
+    g.userData.spin = [];
+    for (let i = 0; i < 4; i++) { const c = new THREE.Mesh(new THREE.OctahedronGeometry(0.3), new THREE.MeshBasicMaterial({ color: [0xb070ff, 0x55e0ff, 0xff70c0, 0x7affd0][i] })); c.position.set([-2, 2, -2, 2][i], 3.6 + (i % 2) * 0.5, [1.6, 1.6, -1.2, -1.2][i]); g.add(c); g.userData.spin.push(c); }
+    const ring = new THREE.Mesh(new THREE.RingGeometry(1.4, 1.7, 40), new THREE.MeshBasicMaterial({ color: 0xb070ff, transparent: true, opacity: 0.7, side: THREE.DoubleSide })); ring.rotation.x = -Math.PI / 2; ring.position.set(0, 0.09, 3.0); g.add(ring);
+    for (const x of [-0.9, 0.9]) g.add(vox(0.12, 0.7, 0.04, 0xb070ff, x, 0.4, 2.08, 0xb070ff, 1));
+  } else if (kind === 'rangers') {
+    for (const x of [-1.6, -0.5, 0.7, 1.7]) { g.add(vox(0.1, 1.2 + (x > 0 ? 0.3 : 0), 0.08, 0x3f7a2c, x, 0.5, 2.03)); g.add(vox(0.3, 0.14, 0.08, 0x5aa03a, x + 0.12, 1.0, 2.06), vox(0.26, 0.12, 0.08, 0x4f9a3f, x - 0.12, 0.7, 2.06)); }
+    g.add(vox(1.0, 0.8, 0.06, 0x3f7a2c, 0, 3.0, 1.72), vox(0.4, 0.4, 0.05, 0xe8c04a, 0, 3.2, 1.76));
+    for (const [x, z] of [[2.3, 2.0], [-2.4, 2.2]]) { g.add(cone(0.5, 1.3, 0x2f7a32, x, 0.4, z, 6), vox(0.14, 0.4, 0.14, 0x6b4a2a, x, 0, z)); }
+  }
+  return g;
+}
+
 export function buildBuilding(type, variant = 0) {
   switch (type) {
     case 'tavern': return tavern();

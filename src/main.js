@@ -1,5 +1,5 @@
 import * as THREE from '../vendor/three.module.js';
-import { BUILDINGS, buildBuilding, buildHero, buildStaff, buildGoblin, buildMerchantCart, vox, mat, PROPS } from './models.js';
+import { factionDecor, BUILDINGS, buildBuilding, buildHero, buildStaff, buildGoblin, buildMerchantCart, vox, mat, PROPS } from './models.js';
 import { createTutorial } from './tutorial.js';
 import { sfx, unlock, setPref, getPrefs, setMusicMood, audioState } from './audio.js';
 import { tr, trHtml, initLang, setLang, getLang, onLangChange, translateStatic, LANGS } from './i18n.js';
@@ -254,8 +254,8 @@ G.buildings[0].pop = 1; G.buildings[0].group.scale.setScalar(1);
 const popCap = () => 4 + ofType('tent').length * 3 + ofType('tavern').length * 4 + G.outpost * 3 + G.rank * 4 + 2 * regionPerk('greenwood');
 const maxLevel = () => [3, 5, 7, 9][G.rank];
 const boardSlots = () => 3 + G.boardLvl + (G.rank >= 2 ? 1 : 0) + (G.rank >= 3 ? 1 : 0);
-const craftSpeed = () => (1 + 0.25 * G.staff.smith) * (G.research.forging ? 1.3 : 1) * (G.research.mythril ? 1.4 : 1) * (1 + 0.1 * regionPerk('stonepeak'));
-const alchSpeed = () => (1 + 0.25 * G.staff.alch) * (G.research.forging ? 1.15 : 1) * (1 + 0.1 * regionPerk('ashen'));
+const craftSpeed = () => (1 + 0.25 * G.staff.smith) * (G.research.forging ? 1.3 : 1) * (G.research.mythril ? 1.4 : 1) * (1 + 0.1 * regionPerk('stonepeak')) * (G.flags.faction === 'vanguard' ? 1.15 : 1) * (G.flags.smithTaught ? 1.1 : 1);
+const alchSpeed = () => (1 + 0.25 * G.staff.alch) * (G.research.forging ? 1.15 : 1) * (1 + 0.1 * regionPerk('ashen')) * (G.flags.faction === 'arcane' ? 1.15 : 1);
 const mealGold = tav => { tav = tav || first('tavern'); return 9 * (1 + 0.15 * G.staff.cook) * (1 + 0.3 * ((tav?.level || 1) - 1)) * (tav ? adj(tav).meal : 1); };
 const questGoldMul = () => (G.research.charter ? 1.25 : 1);
 const trickleMul = () => (1 + 0.5 * G.staff.porter);
@@ -342,7 +342,19 @@ function bondInfo(party) {
   return { d, notes };
 }
 function memorialize(h, deed) { sfx('die'); G.fallen.push({ name: h.name, cls: heroLabel(h), level: h.level, quests: h.quests || 0, vip: !!h.vip, deed, day: Math.floor(G.time / 60) }); if (G.fallen.length > 40) G.fallen.shift(); }
-const heroPower = (h, type) => { const m = heroMods(h); return CLASSES[h.cls].base * (1 + 0.2 * (h.level - 1)) * (h.gear ? 1 + 0.25 * ((h.gearTier || 1) - 1) : 0.5) * (CLASSES[h.cls].quest === type ? 1.3 : 1) * m.pw * (m.pwType[type] || 1); };
+// ---- guild specialization (light faction): perks plus a different-looking Guild Hall
+const FACTIONS = {
+  vanguard: { name: 'Iron Vanguard', icon: '⚔️', type: 'combat', cls: 'knight', desc: 'Masters of the front line. Iron spikes and shields adorn the hall.', perk: '+10% success on combat quests · Knights +10% power · Forge +15% speed' },
+  arcane: { name: 'Arcane Circle', icon: '🔮', type: 'arcane', cls: 'wizard', desc: 'Scholars of the unseen. Floating crystals and glowing runes surround the hall.', perk: '+10% success on arcane quests · Wizards +10% power · Lab +15% speed · +1 Mana regen' },
+  rangers: { name: "Ranger's Path", icon: '🏹', type: 'gather', cls: 'ranger', desc: 'Wardens of the wild. Living vines and leaf banners cover the hall.', perk: '+10% success on gather quests · Rangers +10% power · +10% loot · stamina lasts 10% longer' },
+};
+function factionOf() { return FACTIONS[G.flags.faction]; }
+let hallDecor = null;
+function applyFactionLook() {
+  const hall = G.buildings[0]; if (!hall) return; if (hallDecor) { hall.group.remove(hallDecor); hallDecor = null; }
+  if (factionOf()) { hallDecor = factionDecor(G.flags.faction); stripLights(hallDecor); hall.group.add(hallDecor); }
+}
+const heroPower = (h, type) => { const m = heroMods(h); return CLASSES[h.cls].base * (1 + 0.2 * (h.level - 1)) * (h.gear ? 1 + 0.25 * ((h.gearTier || 1) - 1) : 0.5) * (CLASSES[h.cls].quest === type ? 1.3 : 1) * m.pw * (m.pwType[type] || 1) * (factionOf() && factionOf().cls === h.cls ? 1.1 : 1); };
 const heroGroup = new THREE.Group(); scene.add(heroGroup);
 
 function spawnPoint() {
@@ -483,7 +495,7 @@ function updateHero(h, dt) {
   h.phase += dt * 8;
   if (h.state === 'quest') return;
   const decay = Math.pow(0.7, G.staff.bard);
-  h.stamina = Math.max(0, h.stamina - 0.7 * (traitOf(h) === 'glutton' ? 1.4 : 1) * (1 - Math.min(0.6, heroMods(h).decay)) * dt);
+  h.stamina = Math.max(0, h.stamina - 0.7 * (traitOf(h) === 'glutton' ? 1.4 : 1) * (1 - Math.min(0.6, heroMods(h).decay + (G.flags.faction === 'rangers' ? 0.1 : 0))) * dt);
   if (h.mesh.userData.star) h.mesh.userData.star.rotation.y += dt * 2.5;
   const needy = h.stamina < 45 || !h.gear;
   h.happy = Math.max(0, Math.min(100, h.happy + (needy ? -0.35 * decay : 0.15) * dt));
@@ -608,6 +620,7 @@ function chanceFor(q, party, o = false) {
   let c = P / (q.diff * 1.25);
   if (G.research.valor) c += 0.1;
   for (const h of party) { const t = traitOf(h); if (t === 'lucky') c += 0.08; if (t === 'clumsy') c -= 0.10; }
+  if (factionOf() && factionOf().type === q.type) c += 0.10;
   c += modPenalty(q, party, o)[0] + (APPROACH[o.approach || 'standard'].chance) + bondInfo(party).d + party.reduce((n, h) => n + heroMods(h).succ, 0);
   if (o.enchant) c += G.research.arcane ? 0.3 : 0.2;
   return Math.max(0.03, Math.min(0.97, c));
@@ -653,7 +666,7 @@ function resolveQuest(q) {
     if (q.mods && q.mods.includes('elite') && Math.random() < 0.35) { G.rare.mythril++; toast('💀 The elite foe dropped a Mythril shard!'); }
     gain(hp, g); G.renown += q.renown;
     floatText(hp.clone().add(new THREE.Vector3(0, 0.6, 0)), `+${q.renown} ⭐`, '#ffd24a');
-    const lootBonus = q.heroes.reduce((n, h) => n + heroMods(h).loot, 0), oreMul = (G.research.prospect ? 1.5 : 1) * (1 + 0.2 * q.party.filter(x => x.trait === 'clumsy').length) * (1 + lootBonus);
+    const lootBonus = q.heroes.reduce((n, h) => n + heroMods(h).loot, 0), oreMul = (G.research.prospect ? 1.5 : 1) * (1 + 0.2 * q.party.filter(x => x.trait === 'clumsy').length) * (1 + lootBonus + (G.flags.faction === 'rangers' ? 0.1 : 0));
     G.mana += q.heroes.reduce((n, h) => n + heroMods(h).mana, 0);
     if (q.loot.ore) G.ore += Math.round(q.loot.ore * oreMul);
     if (q.loot.herbs) G.herbs += Math.round(q.loot.herbs * oreMul / (G.research.prospect ? 1.5 : 1));
@@ -697,6 +710,25 @@ const STORIES = [
   { id: 'dragon', when: () => G.renown >= 40 && G.rank >= 2, title: "The Dragon's Shadow", text: 'A shadow crosses the sun. Scouts report a young dragon nesting in the northern peaks. Heroes whisper of glory — and of ash.', choices: [
     { label: 'Hunt the dragon', hint: 'Posts a legendary Elite quest with a huge reward.', fx: () => { makeQuest({ type: 'combat', mods: ['elite', 'hoard', 'bounty'], minH: 3, name: 'Slay the Young Dragon', special: true, goldMul: 2, renownBonus: 6 }); toast('📖 A legendary quest was posted!'); } },
     { label: 'Pay tribute (−2000g)', hint: 'Receive a Dragon Scale and keep the peace.', ok: () => G.gold >= 2000, fx: () => { G.gold -= 2000; G.rare.scale++; } }] },
+  { id: 'smith', when: () => (first('forge')?.level || 0) >= 3 && G.questsDone >= 12, title: 'The Master Smith', text: 'A famed smith from the southern cities arrives, offering to teach your forge crew her secret quenching methods. She wants payment, of course.', choices: [
+    { label: 'Pay 600g for lessons', hint: 'Forge crafting speed +10% permanently.', ok: () => G.gold >= 600, fx: () => { G.gold -= 600; G.flags.smithTaught = 1; } },
+    { label: 'Politely decline', fx: () => { } }] },
+  { id: 'plague', when: () => G.heroes.length >= 8 && G.questsDone >= 15, title: 'Fever in the Barracks', text: 'A fever spreads through the heroes\' quarters. Several look pale and exhausted. A healer says remedies could stop it — if you have potions to spare.', choices: [
+    { label: 'Brew remedies (3 potions)', hint: 'Needs 3 potions in stock. Heroes recover, +1 renown.', ok: () => ofType('alchemy').reduce((n, b) => n + b.stock, 0) >= 3, fx: () => { let need = 3; for (const b of ofType('alchemy')) { const t = Math.min(b.stock, need); b.stock -= t; need -= t; } G.heroes.forEach(h => { h.happy = Math.min(100, h.happy + 20); h.stamina = 100; }); G.renown++; } },
+    { label: 'Let it run its course', hint: 'Heroes lose happiness, −1 renown.', fx: () => { G.heroes.forEach(h => { h.happy = Math.max(10, h.happy - 40); }); G.renown = Math.max(0, G.renown - 1); } }] },
+  { id: 'bard', when: () => G.renown >= 6 && !!first('tavern'), title: 'A Travelling Bard', text: 'A cheerful bard strolls into the tavern with a lute and a dozen new songs. The heroes are already crowding around.', choices: [
+    { label: 'Let him play tonight (−60g)', hint: 'All heroes gain happiness.', ok: () => G.gold >= 60, fx: () => { G.gold -= 60; G.heroes.forEach(h => { h.happy = Math.min(100, h.happy + 25); }); } },
+    { label: 'Hire him for good (−200g)', hint: 'Adds a Bard to your staff (heroes lose happiness slower).', ok: () => G.gold >= 200 && G.staff.bard < 3, fx: () => { G.gold -= 200; G.staff.bard++; } }] },
+  { id: 'treasuremap', when: () => G.questsDone >= 20, title: 'A Tattered Treasure Map', text: 'A drunk sailor trades you a tattered map for a pint. It marks a cove full of buried loot — or perhaps a trap.', choices: [
+    { label: 'Follow the map', hint: 'Posts a special quest with rich loot.', fx: () => { makeQuest({ type: 'gather', mods: ['hoard', 'bounty'], minH: 2, name: 'The Buried Cove', special: true }); toast('📖 A special quest was posted on the board!'); } },
+    { label: 'Sell it to a collector (+250g)', fx: () => { G.gold += 250; } }] },
+  { id: 'tax', when: () => G.renown >= 25, title: 'The Royal Tax Collector', text: 'A stern collector arrives with a ledger. The crown is raising funds, and your guild has grown rich in the eyes of the court.', choices: [
+    { label: 'Pay the tax (−500g)', hint: '+2 renown for loyalty.', ok: () => G.gold >= 500, fx: () => { G.gold -= 500; G.renown += 2; } },
+    { label: 'Slip him a bribe (−150g)', hint: 'He looks the other way.', ok: () => G.gold >= 150, fx: () => { G.gold -= 150; } },
+    { label: 'Refuse to pay', hint: '−3 renown.', fx: () => { G.renown = Math.max(0, G.renown - 3); } }] },
+  { id: 'ghost', when: () => G.renown >= 30 && G.rank >= 2, title: 'The Haunted Watchtower', text: 'Guards report a pale figure pacing the old watchtower at night. Your heroes refuse to patrol there. A priest offers to put the spirit to rest.', choices: [
+    { label: 'Hire the priest (−300g, 5 mana)', hint: 'The grateful spirit leaves a Mythril shard.', ok: () => G.gold >= 300 && G.mana >= 5, fx: () => { G.gold -= 300; G.mana -= 5; G.rare.mythril++; } },
+    { label: 'Ignore the rumours', hint: 'Heroes lose some happiness.', fx: () => { G.heroes.forEach(h => { h.happy = Math.max(10, h.happy - 10); }); } }] },
 ];
 function checkStories() {
   if (G.flags.pending) return;
@@ -910,7 +942,7 @@ function updateEconomy(dt) {
       if (G.ingots < cap && G.ore >= 2) { b.crafting = true; b.progress += dt * (1 + 0.3 * (b.level - 1)) * adj(b).speed / 10; if (b.progress >= 1) { b.progress = 0; G.ore -= 2; G.ingots++; floatText(b.door, '🔩 +1', '#fff'); } }
     }
   }
-  if (first('alchemy')) { t.mana += dt; if (t.mana >= 5) { t.mana = 0; G.mana += 1 + (G.research.arcane ? 1 : 0) + regionPerk('ruins'); } }
+  if (first('alchemy')) { t.mana += dt; if (t.mana >= 5) { t.mana = 0; G.mana += 1 + (G.research.arcane ? 1 : 0) + regionPerk('ruins') + (G.flags.faction === 'arcane' ? 1 : 0); } }
   t.market -= dt; if (t.market <= 0) { t.market = rnd(70, 100); tickMarket(); }
   t.goals -= dt; if (t.goals <= 0) { t.goals = 1; checkGoals(); checkStories(); tutorial.tick(); }
   // minor facilities
@@ -969,7 +1001,7 @@ const GOALS = [
   ['Raise the guild to a Keep', () => G.rank >= 2, { renown: 5 }], ['Fulfil 5 trade orders', () => G.stats.orders >= 5, { gold: 1500 }],
   ['Win 5 defences', () => G.stats.raidsWon >= 5, { gold: 1500 }], ['Dive to floor 20', () => G.diveBest >= 20, { rare: { scale: 1, feather: 1 } }],
   ['Complete 50 quests', () => G.questsDone >= 50, { gold: 1500 }], ['Raise the guild to a Fortress', () => G.rank >= 3, { renown: 10 }],
-  ['Expand your territory', () => G.land >= 1, { gold: 600 }], ['Reach mastery 3 in a region', () => Object.keys(REGIONS).some(r => regionLevel(r) >= 3), { rare: { mythril: 2 } }],
+  ['Choose a guild specialization', () => !!G.flags.faction, { gold: 500 }], ['Expand your territory', () => G.land >= 1, { gold: 600 }], ['Reach mastery 3 in a region', () => Object.keys(REGIONS).some(r => regionLevel(r) >= 3), { rare: { mythril: 2 } }],
   ['Promote a hero', () => G.stats.promoted >= 1, { gold: 500 }], ['Give a hero a talent', () => G.heroes.some(h => (h.talents || []).length), { gold: 300 }],
   ['Reach 100 renown', () => G.renown >= 100, { gold: 4000 }],
 ];
@@ -1173,7 +1205,10 @@ function modalContent() {
       const rankHtml = `<div class="row" style="border-color:#ffd24a"><div style="font-size:34px">${RANKS[G.rank].icon}</div><div class="grow"><div class="t">Guild Rank: ${RANKS[G.rank].name}</div><div class="s">${RANKS[G.rank].perks}</div>${nr ? `<div class="s" style="margin-top:6px"><b>Next: ${nr.icon} ${nr.name}</b> — ${nr.perks}</div>` + reqs.map(([ok, t]) => `<div class="s" style="color:${ok ? '#9bff9b' : '#ff9a9a'}">${ok ? '✔' : '✘'} ${t}</div>`).join('') : '<div class="s">The guild has reached its highest rank!</div>'}</div>${nr ? `<button class="act" data-act="rankup" ${reqs.every(x => x[0]) ? '' : 'disabled'}>Promote</button>` : ''}</div>`;
       const lc = [1500, 4000, 10000][G.land], lw = [60, 120, 200][G.land], lok = G.land < 3 && G.rank >= G.land + 1 && G.gold >= lc && G.wood >= lw;
       const landHtml = `<div class="row"><div style="font-size:30px">🌾</div><div class="grow"><div class="t">Expand Territory <span class="tag">Lv ${G.land}/3</span></div><div class="s">Clears forest and opens +4 tiles of buildable land on every side.${G.land < 3 ? ` Needs Guild Rank ${RANKS[G.land + 1].name}.` : ''}</div>${G.land < 3 ? cost(lc) + `<span class="tag">🪵 ${lw}</span>` : ''}</div><button class="act" data-act="land" ${lok ? '' : 'disabled'}>${G.land >= 3 ? 'Max' : 'Expand'}</button></div>`;
-      return ['⬆️ Guild & Outpost', rankHtml + landHtml + `
+      let facHtml;
+      if (factionOf()) { const F = factionOf(); facHtml = `<div class="row" style="border-color:#b070ff"><div style="font-size:30px">${F.icon}</div><div class="grow"><div class="t">Specialization: ${F.name}</div><div class="s">${F.perk}</div></div></div>`; }
+      else facHtml = `<div class="sec">Guild Specialization <span class="s">(permanent · needs Guild Rank Hold)</span></div>` + Object.entries(FACTIONS).map(([k, F]) => `<div class="row"><div style="font-size:30px">${F.icon}</div><div class="grow"><div class="t">${F.name}</div><div class="s">${F.desc}</div><div class="s" style="color:#9bff9b">${F.perk}</div>${cost(2000)}</div><button class="act" data-act="faction" data-f="${k}" ${G.rank >= 1 && G.gold >= 2000 ? '' : 'disabled'}>Declare</button></div>`).join('');
+      return ['⬆️ Guild & Outpost', rankHtml + facHtml + landHtml + `
         <div class="row"><div class="grow"><div class="t">Expand Outpost <span class="tag">Lv ${G.outpost}/5</span></div><div class="s">+3 population capacity.</div>${cost(c1)}</div><button class="act" data-act="up" data-k="outpost" ${G.gold < c1 || G.outpost >= 5 ? 'disabled' : ''}>Upgrade</button></div>
         <div class="row"><div class="grow"><div class="t">Quest Board Expansion <span class="tag">Lv ${G.boardLvl}/3</span></div><div class="s">+1 quest slot on the board.</div>${cost(c2)}</div><button class="act" data-act="up" data-k="boardLvl" ${G.gold < c2 || G.boardLvl >= 3 ? 'disabled' : ''}>Upgrade</button></div>
         <div class="row"><div class="grow"><div class="t">Fortify Walls <span class="tag">Lv ${G.walls}/4</span></div><div class="s">+3 defense against monster raids.</div>${cost(c3)}</div><button class="act" data-act="up" data-k="walls" ${G.gold < c3 || G.walls >= 4 ? 'disabled' : ''}>Upgrade</button></div>`];
@@ -1220,6 +1255,7 @@ function renderModal(force) {
 }
 
 const ACT = {
+  faction(d) { const F = FACTIONS[d.f]; if (!F || factionOf() || G.rank < 1 || G.gold < 2000) return toast('Not enough gold, wood, or guild rank.'); G.gold -= 2000; G.flags.faction = d.f; applyFactionLook(); sfx('goal'); toast(`${F.icon} The guild declares itself the ${F.name}! ${F.perk}`); },
   land() { const lc = [1500, 4000, 10000][G.land], lw = [60, 120, 200][G.land]; if (G.land >= 3 || G.rank < G.land + 1 || G.gold < lc || G.wood < lw) return toast('Not enough gold, wood, or guild rank.'); G.gold -= lc; G.wood -= lw; G.land++; applyLand(); occVersion++; sfx('build'); toast(`🌾 Territory expanded! Buildable land is now ${24 + 8 * G.land}×${24 + 8 * G.land}.`); },
   region(d) { const R = REGIONS[d.r]; if (R && R.unlock()) { G.region = d.r; toast(`🗺 Quests will now come from ${R.name}.`); } },
   sfxtoggle() { setPref('sfx', !getPrefs().sfx); unlock(); sfx('chime'); },
@@ -1482,7 +1518,7 @@ function loadGame() {
   if (!d || d.v !== 1) return false;
   try {
     SCALARS.forEach(k => { if (d.g[k] !== undefined) G[k] = d.g[k]; });
-    Object.assign(G.rare, d.g.rare || {}); Object.assign(G.market, d.g.market || {}); G.goalsDone = d.g.goalsDone || {}; Object.assign(G.stats, d.g.stats || {}); G.fallen = d.g.fallen || []; G.flags = d.g.flags || {}; G.region = d.g.region || 'greenwood'; G.regions = d.g.regions || {}; applyLand(); Object.assign(G.staff, d.g.staff); G.research = d.g.research || {}; Object.assign(G.tm, d.g.tm);
+    Object.assign(G.rare, d.g.rare || {}); Object.assign(G.market, d.g.market || {}); G.goalsDone = d.g.goalsDone || {}; Object.assign(G.stats, d.g.stats || {}); G.fallen = d.g.fallen || []; G.flags = d.g.flags || {}; G.region = d.g.region || 'greenwood'; G.regions = d.g.regions || {}; applyLand(); applyFactionLook(); Object.assign(G.staff, d.g.staff); G.research = d.g.research || {}; Object.assign(G.tm, d.g.tm);
     G.orders = d.g.orders || (d.g.royal ? [{ id: G.nextId++, kind: 'royal', need: { sword: d.g.royal.need }, t: d.g.royal.t, tMax: 150, reward: d.g.royal.reward, ren: d.g.royal.ren, pen: 3, title: 'Royal Demand', icon: '👑' }] : []);
     if (G.orders.some(o => o.kind === 'caravan')) spawnCaravan();
     const nextId = G.nextId;
@@ -1644,6 +1680,7 @@ function frame() {
     if (b.pop < 1) { b.pop = Math.min(1, b.pop + rdt * 3); const s = b.pop; b.group.scale.setScalar(Math.max(0.01, 1 - Math.pow(1 - s, 2) + Math.sin(s * Math.PI) * 0.1)); }
     const f = b.group.userData.flicker; if (f) f.intensity = 1.4 + Math.sin(performance.now() / 90) * 0.25 + Math.random() * 0.2;
   }
+  if (hallDecor && hallDecor.userData.spin) hallDecor.userData.spin.forEach((c, i) => { c.rotation.y += rdt * 1.5; c.position.y += Math.sin(performance.now() / 500 + i) * 0.004; });
   if (cart) cart.position.y = Math.sin(performance.now() / 300) * 0.02;
   const now = performance.now() / 1000;
   for (const b of G.buildings) {
@@ -1719,4 +1756,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__api = { REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__api = { FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
