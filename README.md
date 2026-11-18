@@ -17,13 +17,13 @@ English and 한국어 (Korean). Pick a language in ⚙ Settings; it is remembere
 
 ## Controls
 - Camera: left-drag pans · right-drag (or Shift-drag) orbits and tilts · wheel zooms · two fingers on touch: pinch = zoom, twist = rotate, drag up/down = tilt
-- Keys: ←/→ rotate · ↑/↓ tilt · +/− zoom · `V` toggles perspective 3D · `Home` resets · on-screen camera buttons bottom-left
+- Keys: ←/→ rotate · ↑/↓ tilt · +/− zoom · `Home` resets · on-screen camera buttons bottom-left
 - Click a building: open its menu
 - Toolbar (or keys `B` `Q` `R` `T` `U`): Build, Quests, Map, Recruit, Research, Upgrades
 - Placement: click to place, right-click / `Esc` to cancel
 
 ## What's in
-- Orthographic isometric camera, sun with shadow mapping, flickering forge / cauldron / lantern point lights, InstancedMesh forest
+- Perspective 3D camera, sun with shadow mapping, flickering forge / cauldron / lantern point lights, InstancedMesh forest
 - Procedural low-poly models (`src/models.js`) modelled on the concept art: timber tavern, stone forge, alchemy lab, waystone portal, tents, market stall, carts, crates, training dummies, racks, flasks, planters, anvils, lanterns, giant mushrooms, standing stones; knights, elf rangers, wizards, dwarves, villagers, guards
 - Hero state machine (idle → hungry → tavern → needs gear → shop → ready → quest), classes with distinct needs
 - Crafting (forge / lab), quest board with party dispatch and mana enchanting, staff & wages, research, outpost upgrades
@@ -39,6 +39,7 @@ English and 한국어 (Korean). Pick a language in ⚙ Settings; it is remembere
 - **Pressure:** raids scale with renown and rank, arrive as a watchable defence battle (guards, Guard Towers, mustered heroes), and every 4th raid is a warchief. Losing costs gold, stock and renown.
 - **Dive relics:** pick 1 of 3 relics at every checkpoint (Iron Skin, Vampiric Blades, Gold Magnet, ...).
 - **Hero depth:** promotions (Paladin / Warden / Archmage), a talent choice at levels 3 and 6, friendships and rivalries that change party odds, and a Hall of the Fallen.
+- **Rigged characters:** people use the 15-joint rig and motion clips from the model_check library (`src/rigchar.js`, `src/clips.js`): idle, walk, run, sword slashes, bow, bolt/fire magic, heal/bless, flinch and fall. Melee heroes run up to the enemy to strike and run back. Pick Rigged blocky / Rigged rounded / Classic in ⚙ Settings. `rigtest.html` compares the styles.
 - **Tutorial:** a seven-step guide card for new guilds (skip or restart it in ⚙ Settings).
 - **Sound:** all effects and ambient/battle music are synthesised with WebAudio (no audio files); toggle in ⚙ Settings.
 - **Territory + world map:** buy land to expand the base (the pathfinding grid grows with it) and unlock Greenwood, Stonepeak, Ashen Ruins; each region has its own enemies, loot weights and levelling perk.

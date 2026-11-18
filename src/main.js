@@ -1,5 +1,6 @@
 import * as THREE from '../vendor/three.module.js';
-import { factionDecor, BUILDINGS, buildBuilding, buildHero, buildStaff, buildGoblin, buildMerchantCart, vox, mat, PROPS } from './models.js';
+import { factionDecor, BUILDINGS, buildBuilding, buildHero, buildStaff, buildGoblin, buildMerchantCart, vox, mat, PROPS, setCharMaker } from './models.js';
+import { makeRigChar, autoAnim } from './rigchar.js';
 import { createTutorial } from './tutorial.js';
 import { sfx, unlock, setPref, getPrefs, setMusicMood, audioState } from './audio.js';
 import { tr, trHtml, initLang, setLang, getLang, onLangChange, translateStatic, LANGS } from './i18n.js';
@@ -21,14 +22,18 @@ const stripLights = o => { if (!LOWFX) return; const ls = []; o.traverse(c => { 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x2f7a32);
 
-// Free 3D camera: orbit (yaw/pitch), pan, zoom, optional perspective. Orthographic isometric by default.
+// Character style: 'classic' (old box figures), 'voxel' or 'round' (rigged bodies that play motion clips). Changing it reloads the page.
+const STYLE_KEY = 'fantasy-guild-master-charstyle', CHAR_STYLES = { voxel: 'Rigged · blocky', round: 'Rigged · rounded', classic: 'Classic' };
+let charStyle = 'voxel'; try { const v = localStorage.getItem(STYLE_KEY); if (CHAR_STYLES[v]) charStyle = v; } catch (e) { /* default */ }
+if (charStyle !== 'classic') setCharMaker(look => makeRigChar(look, charStyle));
+
+// Free 3D perspective camera: orbit (yaw/pitch), pan, zoom.
 const VIEW0 = { yaw: Math.PI / 4, pitch: Math.atan(1 / Math.SQRT2), zoom: 10 };   // true isometric angles
 let watching = null, viewFly = null;   // expedition watch mode state
-let yaw = VIEW0.yaw, pitch = VIEW0.pitch, viewS = VIEW0.zoom, perspective = false;
+let yaw = VIEW0.yaw, pitch = VIEW0.pitch, viewS = VIEW0.zoom;
 const FOV = 38;
-const orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -300, 500);
 const perspCam = new THREE.PerspectiveCamera(FOV, 1, 0.5, 400);
-let camera = orthoCam;
+const camera = perspCam;
 const camTarget = new THREE.Vector3(N / 2 + 1, 0, N / 2 + 1);
 const clampView = () => {
   pitch = Math.max(0.28, Math.min(1.42, pitch)); viewS = Math.max(3.5, Math.min(24, viewS));
@@ -38,14 +43,8 @@ function updateCamera() {
   clampView();
   const a = innerWidth / innerHeight;
   const dir = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
-  camera = perspective ? perspCam : orthoCam;
-  if (perspective) {
-    const dist = viewS / Math.tan(THREE.MathUtils.degToRad(FOV / 2));
-    perspCam.aspect = a; perspCam.position.copy(camTarget).addScaledVector(dir, dist);
-  } else {
-    orthoCam.left = -viewS * a; orthoCam.right = viewS * a; orthoCam.top = viewS; orthoCam.bottom = -viewS;
-    orthoCam.position.copy(camTarget).addScaledVector(dir, 80);
-  }
+  const dist = viewS / Math.tan(THREE.MathUtils.degToRad(FOV / 2));
+  perspCam.aspect = a; perspCam.position.copy(camTarget).addScaledVector(dir, dist);
   camera.lookAt(camTarget); camera.updateProjectionMatrix(); camera.updateMatrixWorld();
 }
 // ground-plane pan along the current view axes (px -> world)
@@ -57,7 +56,6 @@ function panBy(dx, dy) {
 function rotateBy(dyaw, dpitch) { yaw += dyaw; pitch += dpitch; updateCamera(); }
 function zoomBy(f) { viewS *= f; updateCamera(); }
 function resetView() { yaw = VIEW0.yaw; pitch = VIEW0.pitch; viewS = VIEW0.zoom; camTarget.set(N / 2 + 1, 0, N / 2 + 1); updateCamera(); }
-function togglePerspective() { perspective = !perspective; $('camPersp').classList.toggle('on', perspective); updateCamera(); }
 function resize() { renderer.setSize(innerWidth, innerHeight, false); updateCamera(); }
 addEventListener('resize', resize);
 
@@ -527,9 +525,11 @@ function stepToward(h, dt, speed, tgt, stopDist = 0.05) {
   const s = Math.min(d - stopDist, speed * dt);
   h.pos.x += dx / d * s; h.pos.z += dz / d * s;
   h.mesh.rotation.y = Math.atan2(dx, dz);
-  h.mesh.position.y = Math.abs(Math.sin(h.phase)) * 0.06;
-  const sw = Math.sin(h.phase) * 0.6; const L = h.mesh.userData.legs; L[0].rotation.x = sw; L[1].rotation.x = -sw;
-  const A = h.mesh.userData.arms; if (A) { A[0].rotation.x = -sw * 0.7; A[1].rotation.x = sw * 0.7; }
+  if (!h.mesh.userData.anim) {
+    h.mesh.position.y = Math.abs(Math.sin(h.phase)) * 0.06;
+    const sw = Math.sin(h.phase) * 0.6; const L = h.mesh.userData.legs; L[0].rotation.x = sw; L[1].rotation.x = -sw;
+    const A = h.mesh.userData.arms; if (A) { A[0].rotation.x = -sw * 0.7; A[1].rotation.x = sw * 0.7; }
+  }
   return d - s <= stopDist + 1e-3;
 }
 
@@ -1145,6 +1145,7 @@ function modalContent() {
     case 'settings': return ['⚙ Settings & Save', `
       <div class="row"><div class="grow"><div class="t">🔊 Sound</div><div class="s">Procedural sound effects and music (no downloads).</div></div><button class="act ${getPrefs().sfx ? '' : 'red'}" data-act="sfxtoggle">Effects: ${getPrefs().sfx ? 'On' : 'Off'}</button><button class="act ${getPrefs().music ? '' : 'red'}" data-act="musictoggle">Music: ${getPrefs().music ? 'On' : 'Off'}</button></div>
       <div class="row"><div class="grow"><div class="t">🌐 Language</div><div class="s">English / 한국어</div></div>${Object.entries(LANGS).map(([k, n]) => `<button class="act ${getLang() === k ? '' : 'red'}" style="${getLang() === k ? 'outline:2px solid #fff8' : ''}" data-act="lang" data-l="${k}">${n}</button>`).join('')}</div>
+      <div class="row"><div class="grow"><div class="t">🧍 Characters</div><div class="s">Body style. Rigged bodies use motion-capture clips (walk, run, sword, bow, magic, heal). Changing it reloads the game (progress is saved).</div></div>${Object.entries(CHAR_STYLES).map(([k, n]) => `<button class="act ${charStyle === k ? '' : 'red'}" style="${charStyle === k ? 'outline:2px solid #fff8' : ''}" data-act="cstyle" data-s="${k}">${n}</button>`).join('')}</div>
       <div class="row"><div class="grow"><div class="t">💾 Save</div><div class="s">The game autosaves every 15 seconds and when you leave. Last save: ${lastSaved ? Math.round((Date.now() - lastSaved) / 1000) + 's ago' : 'not yet'}.</div></div><button class="act" data-act="save">Save now</button></div>
       <div class="row"><div class="grow"><div class="t">🎓 Tutorial</div><div class="s">Show the first-run guide again.</div></div><button class="act" data-act="tutorial">Replay</button></div>
       <div class="row"><div class="grow"><div class="t">🗑 New game</div><div class="s">${modalArg === 'confirm' ? '<b style="color:#ff9a9a">This erases your saved guild. Tap again to confirm.</b>' : 'Delete the save and start a fresh guild.'}</div></div><button class="act red" data-act="newgame">${modalArg === 'confirm' ? 'Really erase' : 'New game'}</button></div>
@@ -1258,6 +1259,7 @@ const ACT = {
   faction(d) { const F = FACTIONS[d.f]; if (!F || factionOf() || G.rank < 1 || G.gold < 2000) return toast('Not enough gold, wood, or guild rank.'); G.gold -= 2000; G.flags.faction = d.f; applyFactionLook(); sfx('goal'); toast(`${F.icon} The guild declares itself the ${F.name}! ${F.perk}`); },
   land() { const lc = [1500, 4000, 10000][G.land], lw = [60, 120, 200][G.land]; if (G.land >= 3 || G.rank < G.land + 1 || G.gold < lc || G.wood < lw) return toast('Not enough gold, wood, or guild rank.'); G.gold -= lc; G.wood -= lw; G.land++; applyLand(); occVersion++; sfx('build'); toast(`🌾 Territory expanded! Buildable land is now ${24 + 8 * G.land}×${24 + 8 * G.land}.`); },
   region(d) { const R = REGIONS[d.r]; if (R && R.unlock()) { G.region = d.r; toast(`🗺 Quests will now come from ${R.name}.`); } },
+  cstyle(d) { if (!CHAR_STYLES[d.s] || d.s === charStyle) return; try { saveGame(); localStorage.setItem(STYLE_KEY, d.s); } catch (e) { /* ignore */ } location.reload(); },
   sfxtoggle() { setPref('sfx', !getPrefs().sfx); unlock(); sfx('chime'); },
   musictoggle() { setPref('music', !getPrefs().music); unlock(); },
   lang(d) { setLang(d.l); },
@@ -1450,7 +1452,6 @@ addEventListener('keydown', e => {
   if (e.key === '+' || e.key === '=') return zoomBy(0.88);
   if (e.key === '-' || e.key === '_') return zoomBy(1.14);
   if (e.key === 'Home' || e.key === '0') return resetView();
-  if (e.key.toLowerCase() === 'v') return togglePerspective();
   const k = watching ? null : { b: 'build', q: 'quests', m: 'map', r: 'recruit', t: 'research', u: 'upgrades' }[e.key.toLowerCase()]; if (k) openModal(k);
 });
 // on-screen camera controls
@@ -1464,7 +1465,7 @@ addEventListener('keydown', e => {
   hold('camLeft', () => rotateBy(0.06, 0)); hold('camRight', () => rotateBy(-0.06, 0));
   hold('camUp', () => rotateBy(0, 0.04)); hold('camDown', () => rotateBy(0, -0.04));
   hold('camIn', () => zoomBy(0.96)); hold('camOut', () => zoomBy(1.05));
-  $('camPersp').onclick = togglePerspective; $('camReset').onclick = resetView;
+  $('camReset').onclick = resetView;
 }
 
 /* ------------------------------------------------------------------ *
@@ -1675,6 +1676,7 @@ function frame() {
   updateEconomy(dt);
   G.heroes.slice().forEach(h => updateHero(h, dt));
   updateGoblins(dt);
+  if (charStyle !== 'classic') { heroGroup.children.forEach(m => autoAnim(m, rdt)); staffMeshes.forEach(x => autoAnim(x.mesh, rdt)); G.goblins.forEach(x => autoAnim(x.mesh, rdt)); }
   // animation: building pop-in, light flicker
   for (const b of G.buildings) {
     if (b.pop < 1) { b.pop = Math.min(1, b.pop + rdt * 3); const s = b.pop; b.group.scale.setScalar(Math.max(0.01, 1 - Math.pow(1 - s, 2) + Math.sin(s * Math.PI) * 0.1)); }
