@@ -17,13 +17,13 @@ English and 한국어 (Korean). Pick a language in ⚙ Settings; it is remembere
 
 ## Controls
 - Camera: left-drag pans · right-drag (or Shift-drag) orbits and tilts · wheel zooms · two fingers on touch: pinch = zoom, twist = rotate, drag up/down = tilt
-- Keys: ←/→ rotate · ↑/↓ tilt · +/− zoom · `V` toggles perspective 3D · `Home` resets · on-screen camera buttons bottom-left
+- Keys: ←/→ rotate · ↑/↓ tilt · +/− zoom · `Home` resets · on-screen camera buttons bottom-left
 - Click a building: open its menu
 - Toolbar (or keys `B` `Q` `R` `T` `U`): Build, Quests, Map, Recruit, Research, Upgrades
 - Placement: click to place, right-click / `Esc` to cancel
 
 ## What's in
-- Orthographic isometric camera, sun with shadow mapping, flickering forge / cauldron / lantern point lights, InstancedMesh forest
+- Perspective 3D camera, sun with shadow mapping, flickering forge / cauldron / lantern point lights, InstancedMesh forest
 - Procedural low-poly models (`src/models.js`) modelled on the concept art: timber tavern, stone forge, alchemy lab, waystone portal, tents, market stall, carts, crates, training dummies, racks, flasks, planters, anvils, lanterns, giant mushrooms, standing stones; knights, elf rangers, wizards, dwarves, villagers, guards
 - Hero state machine (idle → hungry → tavern → needs gear → shop → ready → quest), classes with distinct needs
 - Crafting (forge / lab), quest board with party dispatch and mana enchanting, staff & wages, research, outpost upgrades

@@ -21,14 +21,13 @@ const stripLights = o => { if (!LOWFX) return; const ls = []; o.traverse(c => { 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x2f7a32);
 
-// Free 3D camera: orbit (yaw/pitch), pan, zoom, optional perspective. Orthographic isometric by default.
+// Free 3D perspective camera: orbit (yaw/pitch), pan, zoom.
 const VIEW0 = { yaw: Math.PI / 4, pitch: Math.atan(1 / Math.SQRT2), zoom: 10 };   // true isometric angles
 let watching = null, viewFly = null;   // expedition watch mode state
-let yaw = VIEW0.yaw, pitch = VIEW0.pitch, viewS = VIEW0.zoom, perspective = false;
+let yaw = VIEW0.yaw, pitch = VIEW0.pitch, viewS = VIEW0.zoom;
 const FOV = 38;
-const orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -300, 500);
 const perspCam = new THREE.PerspectiveCamera(FOV, 1, 0.5, 400);
-let camera = orthoCam;
+const camera = perspCam;
 const camTarget = new THREE.Vector3(N / 2 + 1, 0, N / 2 + 1);
 const clampView = () => {
   pitch = Math.max(0.28, Math.min(1.42, pitch)); viewS = Math.max(3.5, Math.min(24, viewS));
@@ -38,14 +37,8 @@ function updateCamera() {
   clampView();
   const a = innerWidth / innerHeight;
   const dir = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
-  camera = perspective ? perspCam : orthoCam;
-  if (perspective) {
-    const dist = viewS / Math.tan(THREE.MathUtils.degToRad(FOV / 2));
-    perspCam.aspect = a; perspCam.position.copy(camTarget).addScaledVector(dir, dist);
-  } else {
-    orthoCam.left = -viewS * a; orthoCam.right = viewS * a; orthoCam.top = viewS; orthoCam.bottom = -viewS;
-    orthoCam.position.copy(camTarget).addScaledVector(dir, 80);
-  }
+  const dist = viewS / Math.tan(THREE.MathUtils.degToRad(FOV / 2));
+  perspCam.aspect = a; perspCam.position.copy(camTarget).addScaledVector(dir, dist);
   camera.lookAt(camTarget); camera.updateProjectionMatrix(); camera.updateMatrixWorld();
 }
 // ground-plane pan along the current view axes (px -> world)
@@ -57,7 +50,6 @@ function panBy(dx, dy) {
 function rotateBy(dyaw, dpitch) { yaw += dyaw; pitch += dpitch; updateCamera(); }
 function zoomBy(f) { viewS *= f; updateCamera(); }
 function resetView() { yaw = VIEW0.yaw; pitch = VIEW0.pitch; viewS = VIEW0.zoom; camTarget.set(N / 2 + 1, 0, N / 2 + 1); updateCamera(); }
-function togglePerspective() { perspective = !perspective; $('camPersp').classList.toggle('on', perspective); updateCamera(); }
 function resize() { renderer.setSize(innerWidth, innerHeight, false); updateCamera(); }
 addEventListener('resize', resize);
 
@@ -1450,7 +1442,6 @@ addEventListener('keydown', e => {
   if (e.key === '+' || e.key === '=') return zoomBy(0.88);
   if (e.key === '-' || e.key === '_') return zoomBy(1.14);
   if (e.key === 'Home' || e.key === '0') return resetView();
-  if (e.key.toLowerCase() === 'v') return togglePerspective();
   const k = watching ? null : { b: 'build', q: 'quests', m: 'map', r: 'recruit', t: 'research', u: 'upgrades' }[e.key.toLowerCase()]; if (k) openModal(k);
 });
 // on-screen camera controls
@@ -1464,7 +1455,7 @@ addEventListener('keydown', e => {
   hold('camLeft', () => rotateBy(0.06, 0)); hold('camRight', () => rotateBy(-0.06, 0));
   hold('camUp', () => rotateBy(0, 0.04)); hold('camDown', () => rotateBy(0, -0.04));
   hold('camIn', () => zoomBy(0.96)); hold('camOut', () => zoomBy(1.05));
-  $('camPersp').onclick = togglePerspective; $('camReset').onclick = resetView;
+  $('camReset').onclick = resetView;
 }
 
 /* ------------------------------------------------------------------ *
