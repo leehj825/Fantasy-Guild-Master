@@ -89,6 +89,7 @@ const ENCOUNTERS = {
   gather: [(m) => ['bandit', Math.min(4, 1 + m)], (m, p) => ['wolf', p > 2 ? 3 : 2], () => ['chief', 1, ['bandit']]],
   arcane: [(m) => ['wisp', Math.min(4, 1 + m)], (m, p) => ['imp', p > 2 ? 3 : 2], () => ['golem', 1, []]],
 };
+ENCOUNTERS.defense = ENCOUNTERS.combat;
 const ENC_NAMES = { goblin: 'Goblin Raiders', wolf: 'Dire Wolves', ogre: 'Ogre Warchief', bandit: 'Bandit Ambush', chief: 'Bandit Chief', wisp: 'Wisp Swarm', imp: 'Imp Pack', golem: 'Ancient Golem' };
 export const themeFor = q => q.type === 'arcane' ? 'ruins' : (q.type === 'combat' && q.seed % 2 ? 'cave' : 'forest');
 
@@ -180,12 +181,32 @@ export const diveCheckpoint = k => (k + 1) % 5 === 0;
 export function newDiveScript(q) {
   return { dive: true, dur: Infinity, n: q.party.length, theme: 'cave', win: [], enemies: [], encs: [], heroes: q.party.map(() => ({ dies: false, D: Infinity })), events: [], floors: [], endT: Infinity, wiped: false, rev: 0, evSeq: 0 };
 }
+export const RELICS = {
+  ironskin: { icon: '🛡️', name: 'Iron Skin', desc: 'Take 15% less damage.', dmg: 0.85 },
+  vampiric: { icon: '🩸', name: 'Vampiric Blades', desc: 'Heroes recover +8% HP after every floor.', regen: 0.08 },
+  magnet: { icon: '🧲', name: 'Gold Magnet', desc: '+50% gold from floors.', gold: 1.5 },
+  lucky: { icon: '🍀', name: 'Lucky Charm', desc: '+60% chance of rare drops.', rare: 1.6 },
+  berserk: { icon: '🔥', name: 'Berserker Rune', desc: 'Enemies hit 25% harder, but floors pay +40% gold.', dmg: 1.25, gold: 1.4 },
+  healer: { icon: '🧪', name: "Healer's Kit", desc: 'Potions heal 25% more.', heal: 1.25 },
+  wellspring: { icon: '✨', name: 'Mana Wellspring', desc: '+3 Mana after every floor.', mana: 3 },
+  evasion: { icon: '💨', name: 'Wind Cloak', desc: 'Take 20% less damage, but earn 15% less gold.', dmg: 0.8, gold: 0.85 },
+};
+export function relicMods(q, k) {
+  const m = { dmg: 1, gold: 1, rare: 1, regen: 0, heal: 1, mana: 0 };
+  for (const r of q.relics || []) { if (r.from > k) continue; const d = RELICS[r.id]; m.dmg *= d.dmg || 1; m.gold *= d.gold || 1; m.rare *= d.rare || 1; m.regen += d.regen || 0; m.heal *= d.heal || 1; m.mana += d.mana || 0; }
+  return m;
+}
+export function relicOffer(q, k) {
+  const r = mulberry(q.seed * 91 + k * 311 + 5), own = (q.relics || []).map(x => x.id), pool = Object.keys(RELICS).filter(id => !own.includes(id)), out = [];
+  while (out.length < 3 && pool.length) out.push(pool.splice(Math.floor(r() * pool.length), 1)[0]);
+  return out;
+}
 export function floorReward(q, k) {
-  const r = mulberry(q.seed * 57 + k * 977 + 3), boss = k % 5 === 4;
-  const rw = { gold: Math.round((14 + 9 * k) * (boss ? 2 : 1) * (0.9 + 0.2 * r())), ore: Math.floor(1 + r() * 2.5), wood: r() < 0.5 ? 1 : 0, herbs: Math.floor(r() * 2.5), mana: boss ? 5 : 0, mythril: 0, scale: 0, feather: 0, renown: boss ? 1 : 0 };
-  if (k >= 6 && r() < (boss ? 0.7 : 0.18)) rw.mythril = 1 + (boss && k >= 14 ? 1 : 0);
-  if (boss && k >= 9 && r() < 0.55) rw.scale = 1;
-  if (boss && k >= 14 && r() < 0.4) rw.feather = 1;
+  const r = mulberry(q.seed * 57 + k * 977 + 3), boss = k % 5 === 4, rm = relicMods(q, k);
+  const rw = { gold: Math.round((14 + 9 * k) * (boss ? 2 : 1) * (0.9 + 0.2 * r()) * rm.gold), ore: Math.floor(1 + r() * 2.5), wood: r() < 0.5 ? 1 : 0, herbs: Math.floor(r() * 2.5), mana: (boss ? 5 : 0) + rm.mana, mythril: 0, scale: 0, feather: 0, renown: boss ? 1 : 0 };
+  if (k >= 6 && r() < (boss ? 0.7 : 0.18) * rm.rare) rw.mythril = 1 + (boss && k >= 14 ? 1 : 0);
+  if (boss && k >= 9 && r() < 0.55 * rm.rare) rw.scale = 1;
+  if (boss && k >= 14 && r() < 0.4 * rm.rare) rw.feather = 1;
   return rw;
 }
 export function rewardText(rw) {
@@ -249,10 +270,11 @@ function genFloor(q, S) {
   const r = mulberry(q.seed * 31 + k * 7919 + 11), boss = k % 5 === 4, len = k === 0 ? 17 : (boss ? 18 : 13);
   const s = prev ? prev.e : 0, e = s + len, a = s + (k === 0 ? 6.5 : 0.2 * len), b = e - 0.12 * len;
   const alive = party.map((_, h) => !S.heroes[h].dies);
-  const hp0 = party.map((_, h) => !alive[h] ? 0 : (prev ? Math.min(1, floorHpAt(q, prev, h, prev.e) + 0.05) : 1));
+  const rm = relicMods(q, k);
+  const hp0 = party.map((_, h) => !alive[h] ? 0 : (prev ? Math.min(1, floorHpAt(q, prev, h, prev.e) + 0.05 + rm.regen) : 1));
   const P = party.reduce((sum, p, h) => alive[h] ? sum + (p.power || 3) : sum, 0);
   const Dk = 2.5 * Math.pow(1.12, k) * (boss ? 1.5 : 1), ward = (q.enchants || []).some(x => k >= x.floor && k < x.floor + 3);
-  const per = 0.07 * Math.pow(Dk / Math.max(1, P), 1.5) * (ward ? 0.6 : 1);
+  const per = 0.07 * Math.pow(Dk / Math.max(1, P), 1.5) * (ward ? 0.6 : 1) * rm.dmg;
   const dmg = party.map((_, h) => alive[h] ? clamp(per * (0.75 + 0.5 * r()), 0, 0.95) : 0);
   const f = { k, s, e, a, b, boss, hp0, dmg, ward, lost: false, reward: floorReward(q, k) };
   S.floors.push(f); S.win.push({ s, e, a, b });

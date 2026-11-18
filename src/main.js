@@ -1,6 +1,6 @@
 import * as THREE from '../vendor/three.module.js';
 import { BUILDINGS, buildBuilding, buildHero, buildStaff, buildGoblin, buildMerchantCart, vox, mat, PROPS } from './models.js';
-import { Expedition, genScript, STAGE_X, heroHp, phaseText, newDiveScript, ensureFloors, rebuildDive, diveFloorIndex, diveCheckpoint, rewardText } from './expedition.js';
+import { Expedition, genScript, STAGE_X, heroHp, phaseText, newDiveScript, ensureFloors, rebuildDive, diveFloorIndex, diveCheckpoint, rewardText, RELICS, relicMods, relicOffer } from './expedition.js';
 
 /* ------------------------------------------------------------------ *
  *  Setup: renderer, isometric ortho camera, lights, terrain
@@ -294,7 +294,42 @@ function addStar(h) {   // a spinning golden star marks VIP heroes
   const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.16), new THREE.MeshBasicMaterial({ color: 0xffd24a }));
   star.position.y = h.cls === 'wizard' ? 1.95 : 1.4; h.mesh.add(star); h.mesh.userData.star = star;
 }
-const heroPower = (h, type) => CLASSES[h.cls].base * (1 + 0.2 * (h.level - 1)) * (h.gear ? 1 + 0.25 * ((h.gearTier || 1) - 1) : 0.5) * (CLASSES[h.cls].quest === type ? 1.3 : 1);
+const PROMO = {
+  knight: { name: 'Paladin', icon: '⚜️', pw: 1.3, survive: 0.1, desc: '+30% power, far fewer casualties.' },
+  ranger: { name: 'Warden', icon: '🦅', pw: 1.3, loot: 0.25, desc: '+30% power, +25% loot.' },
+  wizard: { name: 'Archmage', icon: '🔮', pw: 1.35, mana: 3, desc: '+35% power, +3 Mana after each success.' },
+};
+const TALENTS = {
+  knight: [[['shield', 'Shield Wall', 'Far fewer casualties.', { survive: 0.15 }], ['cleave', 'Cleave', '+15% power on combat quests.', { pwType: { combat: 1.15 } }]], [['ironwill', 'Iron Will', 'Stamina drains 30% slower.', { decay: 0.3 }], ['warlord', 'Warlord', '+15% power everywhere.', { pw: 1.15 }]]],
+  ranger: [[['forager', 'Forager', '+25% loot from quests.', { loot: 0.25 }], ['sharp', 'Sharpshooter', '+20% power on gather quests.', { pwType: { gather: 1.2 } }]], [['swift', 'Swift Feet', 'Stamina drains 30% slower.', { decay: 0.3 }], ['eagle', 'Eagle Eye', '+4% party success chance.', { succ: 0.04 }]]],
+  wizard: [[['focus', 'Arcane Focus', '+20% power on arcane quests.', { pwType: { arcane: 1.2 } }], ['siphon', 'Mana Siphon', '+2 Mana after each successful quest.', { mana: 2 }]], [['friend', "Alchemist's Friend", '+4% party success chance.', { succ: 0.04 }], ['glass', 'Glass Cannon', '+25% power, but more casualties.', { pw: 1.25, survive: -0.1 }]]],
+};
+const talentSlots = h => (h.level >= 3 ? 1 : 0) + (h.level >= 6 ? 1 : 0);
+const talentDef = (cls, id) => TALENTS[cls].flat().find(t => t[0] === id);
+function heroMods(h) {
+  const m = { pw: 1, pwType: {}, survive: 0, loot: 0, mana: 0, decay: 0, succ: 0 };
+  if (h.promo) { const P = PROMO[h.cls]; m.pw *= P.pw; m.survive += P.survive || 0; m.loot += P.loot || 0; m.mana += P.mana || 0; }
+  for (const id of h.talents || []) { const t = talentDef(h.cls, id); if (!t) continue; const f = t[3]; if (f.pw) m.pw *= f.pw; if (f.pwType) for (const k of Object.keys(f.pwType)) m.pwType[k] = (m.pwType[k] || 1) * f.pwType[k]; m.survive += f.survive || 0; m.loot += f.loot || 0; m.mana += f.mana || 0; m.decay += f.decay || 0; m.succ += f.succ || 0; }
+  return m;
+}
+const survBonus = h => (traitOf(h) === 'brave' ? 0.35 : 0) + heroMods(h).survive;
+const heroLabel = h => h.promo ? PROMO[h.cls].name : CLASSES[h.cls].label;
+function gainXp(h, n) {
+  h.xp += n;
+  while (h.xp >= h.level + 1) { h.xp -= h.level + 1; h.level++; floatText(h.pos, `⬆ ${h.name} Lv${h.level}`, '#9bff9b'); if (h.level === 3 || h.level === 6) toast(`✨ ${h.name} can choose a new talent! (tap the hero)`); }
+}
+function addPromoGear(h) { h.mesh.add(vox(0.46, 0.5, 0.05, 0xe8c04a, 0, 0.3, -0.2), vox(0.1, 0.1, 0.06, 0xc0392b, 0, 0.62, -0.23)); }
+function assignBonds(h) {   // friendships and rivalries make party choice matter
+  h.bonds = h.bonds || {}; const others = G.heroes.filter(x => x !== h).sort(() => Math.random() - 0.5).slice(0, 2);
+  for (const o of others) { const r = Math.random(), kind = r < 0.28 ? 'friend' : r < 0.42 ? 'rival' : null; if (kind) { h.bonds[o.id] = kind; o.bonds = o.bonds || {}; o.bonds[h.id] = kind; } }
+}
+function bondInfo(party) {
+  let d = 0; const notes = [];
+  for (let i = 0; i < party.length; i++) for (let j = i + 1; j < party.length; j++) { const k = (party[i].bonds || {})[party[j].id]; if (k === 'friend') { d += 0.04; notes.push(`🤝 ${party[i].name} & ${party[j].name} (+4%)`); } else if (k === 'rival') { d -= 0.05; notes.push(`⚡ ${party[i].name} & ${party[j].name} (−5%)`); } }
+  return { d, notes };
+}
+function memorialize(h, deed) { G.fallen.push({ name: h.name, cls: heroLabel(h), level: h.level, quests: h.quests || 0, vip: !!h.vip, deed, day: Math.floor(G.time / 60) }); if (G.fallen.length > 40) G.fallen.shift(); }
+const heroPower = (h, type) => { const m = heroMods(h); return CLASSES[h.cls].base * (1 + 0.2 * (h.level - 1)) * (h.gear ? 1 + 0.25 * ((h.gearTier || 1) - 1) : 0.5) * (CLASSES[h.cls].quest === type ? 1.3 : 1) * m.pw * (m.pwType[type] || 1); };
 const heroGroup = new THREE.Group(); scene.add(heroGroup);
 
 function spawnPoint() {
@@ -306,10 +341,10 @@ function createHero(d) {
   const bub = document.createElement('div'); bub.className = 'bub hidden'; worldEl.appendChild(bub);
   const h = {
     id: d.id ?? G.nextId++, cls: d.cls, variant: d.variant, name: d.name, level: d.level ?? 1, xp: d.xp ?? 0, stamina: d.stamina ?? rnd(60, 100), happy: d.happy ?? 100, gear: !!d.gear,
-    quests: d.quests || 0, vip: d.vip || null, gearTier: d.gearTier || 1,
+    quests: d.quests || 0, vip: d.vip || null, gearTier: d.gearTier || 1, promo: !!d.promo, talents: d.talents || [], bonds: d.bonds || {},
     mesh, pos: mesh.position, bub, state: 'idle', target: null, onArrive: null, timer: 0, onDone: null, cool: 0, phase: Math.random() * 6, vis: true,
   };
-  mesh.userData.hid = h.id; G.heroes.push(h); if (h.vip) addStar(h);
+  mesh.userData.hid = h.id; G.heroes.push(h); if (h.vip) addStar(h); if (h.promo) addPromoGear(h); if (d.bonds === undefined) assignBonds(h);
   return h;
 }
 function spawnHero(cls, atHall = false) {
@@ -433,7 +468,7 @@ function updateHero(h, dt) {
   h.phase += dt * 8;
   if (h.state === 'quest') return;
   const decay = Math.pow(0.7, G.staff.bard);
-  h.stamina = Math.max(0, h.stamina - 0.7 * (traitOf(h) === 'glutton' ? 1.4 : 1) * dt);
+  h.stamina = Math.max(0, h.stamina - 0.7 * (traitOf(h) === 'glutton' ? 1.4 : 1) * (1 - Math.min(0.6, heroMods(h).decay)) * dt);
   if (h.mesh.userData.star) h.mesh.userData.star.rotation.y += dt * 2.5;
   const needy = h.stamina < 45 || !h.gear;
   h.happy = Math.max(0, Math.min(100, h.happy + (needy ? -0.35 * decay : 0.15) * dt));
@@ -444,10 +479,6 @@ function updateHero(h, dt) {
   }
   if (h.happy <= 0 && h.state !== 'busy') {
     setLeave(h); setMood(h, '💢'); toast(`${h.name} the ${CLASSES[h.cls].label} got fed up and left.`); return;
-  }
-  if (G.alarm && G.goblins.length) {
-    const c = G.goblins[0].mesh.position;
-    stepToward(h, dt, 4.2, c, 3.2); setMood(h, '⚔️'); return;
   }
   if (h.state === 'walking') {
     if (stepPath(h, dt, 2.4)) { h.target = null; const f = h.onArrive; h.onArrive = null; if (f) f(); }
@@ -548,7 +579,7 @@ function chanceFor(q, party, o = false) {
   let c = P / (q.diff * 1.25);
   if (G.research.valor) c += 0.1;
   for (const h of party) { const t = traitOf(h); if (t === 'lucky') c += 0.08; if (t === 'clumsy') c -= 0.10; }
-  c += modPenalty(q, party, o)[0] + (APPROACH[o.approach || 'standard'].chance);
+  c += modPenalty(q, party, o)[0] + (APPROACH[o.approach || 'standard'].chance) + bondInfo(party).d + party.reduce((n, h) => n + heroMods(h).succ, 0);
   if (o.enchant) c += G.research.arcane ? 0.3 : 0.2;
   return Math.max(0.03, Math.min(0.97, c));
 }
@@ -565,7 +596,7 @@ function dispatch(qid, enchant, partyOverride, extra = {}) {
   // the outcome is rolled now so the expedition can be watched live without ever contradicting the result
   q.party = party.map(h => heroSnap(h));
   q.seed = (Math.random() * 1e9) | 0; q.ok = Math.random() < q.chance; q.heals = [];
-  q.deaths = party.filter(h => Math.random() > CLASSES[h.cls].survive + 0.15 + ap.survive + (traitOf(h) === 'brave' ? 0.35 : 0)).map(h => h.id);
+  q.deaths = party.filter(h => Math.random() > CLASSES[h.cls].survive + 0.15 + ap.survive + survBonus(h)).map(h => h.id);
   q.script = genScript(q);
   party.forEach(h => { h.state = 'quest'; h.mesh.visible = false; setMood(h, null); h.onDone = null; });
   toast(`Party of ${party.length} dispatched: ${q.name}`);
@@ -581,9 +612,9 @@ function resolveQuest(q) {
     if (!G.heroes.includes(h)) return;
     h.state = 'idle'; h.cool = 0; h.stamina = Math.max(20, h.stamina - 25);
     h.pos.set(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1)); h.mesh.visible = true; h.target = null;
-    if (!ok && q.deaths.includes(h.id)) { if (h.vip) G.renown = Math.max(0, G.renown - 1); removeHero(h, h.vip ? `☠ ${h.name} — a legend of the guild — has fallen!` : `${h.name} the ${CLASSES[h.cls].label} fell in battle...`); return; }
+    if (!ok && q.deaths.includes(h.id)) { memorialize(h, `fell on "${q.name}"`); if (h.vip) G.renown = Math.max(0, G.renown - 1); removeHero(h, h.vip ? `☠ ${h.name} — a legend of the guild — has fallen!` : `${h.name} the ${CLASSES[h.cls].label} fell in battle...`); return; }
     h.quests = (h.quests || 0) + 1;
-    if (ok) { h.xp += traitOf(h) === 'scholar' ? 2 : 1; while (h.xp >= h.level + 1) { h.xp -= h.level + 1; h.level++; floatText(h.pos, `⬆ ${h.name} Lv${h.level}`, '#9bff9b'); } }
+    if (ok) gainXp(h, traitOf(h) === 'scholar' ? 2 : 1);
     if (Math.random() < (ok ? 0.5 : 1)) h.gear = false;
     h.happy = Math.min(100, h.happy + (ok ? 20 : -10));
     alive.push(h);
@@ -593,7 +624,8 @@ function resolveQuest(q) {
     if (q.mods && q.mods.includes('elite') && Math.random() < 0.35) { G.rare.mythril++; toast('💀 The elite foe dropped a Mythril shard!'); }
     gain(hp, g); G.renown += q.renown;
     floatText(hp.clone().add(new THREE.Vector3(0, 0.6, 0)), `+${q.renown} ⭐`, '#ffd24a');
-    const oreMul = (G.research.prospect ? 1.5 : 1) * (1 + 0.2 * q.party.filter(x => x.trait === 'clumsy').length);
+    const lootBonus = q.heroes.reduce((n, h) => n + heroMods(h).loot, 0), oreMul = (G.research.prospect ? 1.5 : 1) * (1 + 0.2 * q.party.filter(x => x.trait === 'clumsy').length) * (1 + lootBonus);
+    G.mana += q.heroes.reduce((n, h) => n + heroMods(h).mana, 0);
     if (q.loot.ore) G.ore += Math.round(q.loot.ore * oreMul);
     if (q.loot.herbs) G.herbs += Math.round(q.loot.herbs * oreMul / (G.research.prospect ? 1.5 : 1));
     if (q.loot.wood) G.wood += Math.round(q.loot.wood * oreMul / (G.research.prospect ? 1.5 : 1));
@@ -659,10 +691,15 @@ function dispatchDive() {
   if (G.quests.some(q => q.dive)) return toast('A party is already inside the dungeon.');
   const r = readyHeroes().sort((a, b) => heroPower(b, 'combat') - heroPower(a, 'combat')).slice(0, 4);
   if (r.length < 2) return toast('The dive needs at least 2 geared, rested heroes.');
-  const q = { id: G.nextId++, name: 'Endless Dive', type: 'dive', dive: true, state: 'active', heroes: r, party: r.map(heroSnap), seed: (Math.random() * 1e9) | 0, heals: [], enchants: [], elapsed: 0, cleared: 0, pending: newPending(), dur: 1e9, t: 1e9, chance: 0.5, minH: 2, maxH: 4, diff: 0, loot: {}, enchant: false, gold: 0, renown: 0 };
+  const q = { id: G.nextId++, name: 'Endless Dive', type: 'dive', dive: true, state: 'active', heroes: r, party: r.map(heroSnap), seed: (Math.random() * 1e9) | 0, heals: [], enchants: [], relics: [], offer: null, elapsed: 0, cleared: 0, pending: newPending(), dur: 1e9, t: 1e9, chance: 0.5, minH: 2, maxH: 4, diff: 0, loot: {}, enchant: false, gold: 0, renown: 0 };
   q.script = newDiveScript(q); ensureFloors(q, 0); G.quests.push(q);
   r.forEach(h => { h.state = 'quest'; h.mesh.visible = false; setMood(h, null); h.onDone = null; });
   toast(`🌀 ${r.length} heroes step through the portal… Recall to bank your loot!`); renderModal(true);
+}
+function pickRelic(q, i, auto) {
+  const id = q.offer && q.offer[i]; if (!id) return;
+  const T = q.elapsed, next = diveFloorIndex(q.script, T) + 1; q.relics = q.relics || []; q.relics.push({ id, from: next }); q.offer = null;
+  rebuildDive(q, T); toast(`${auto ? 'Relic claimed automatically' : 'Relic chosen'}: ${RELICS[id].icon} ${RELICS[id].name} — ${RELICS[id].desc}`);
 }
 function bankPending(q) {
   const p = q.pending, pm = G.research.prospect ? 1.5 : 1, txt = rewardText(p);
@@ -675,7 +712,12 @@ function diveTick(q, dt) {
   while (q.cleared < S.floors.length && S.floors[q.cleared].e <= q.elapsed && !S.floors[q.cleared].lost) {
     const f = S.floors[q.cleared]; for (const k of Object.keys(q.pending)) q.pending[k] += f.reward[k] || 0;
     q.cleared++; G.diveBest = Math.max(G.diveBest, q.cleared);
-    if (diveCheckpoint(f.k)) toast(`🏁 Checkpoint — floor ${f.k + 1}! Banked: ${bankPending(q)}`);
+    if (diveCheckpoint(f.k)) {
+      toast(`🏁 Checkpoint — floor ${f.k + 1}! Banked: ${bankPending(q)}`);
+      if (q.offer) pickRelic(q, 0, true);   // an unchosen offer is taken automatically
+      q.offer = relicOffer(q, f.k);
+      if (q.offer.length) { toast('🎁 A relic awaits — choose one!'); if (!modalKind) openModal('relic'); }
+    }
   }
   if (S.wiped && q.elapsed >= S.endT) resolveDive(q, 'wiped');
 }
@@ -690,9 +732,8 @@ function resolveDive(q, mode) {
     if (!G.heroes.includes(h)) return;
     const i = q.party.findIndex(pp => pp.id === h.id), H = S.heroes[i];
     h.state = 'idle'; h.cool = 0; h.target = null; h.mesh.visible = true; h.pos.set(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1));
-    if (H.dies && H.D <= T) { if (h.vip) G.renown = Math.max(0, G.renown - 1); removeHero(h, h.vip ? `☠ ${h.name} — a legend of the guild — fell on floor ${diveFloorIndex(S, H.D) + 1}!` : `${h.name} fell on floor ${diveFloorIndex(S, H.D) + 1} of the dive.`); return; }
-    h.quests = (h.quests || 0) + 1; h.xp += Math.floor(q.cleared / 3) * (traitOf(h) === 'scholar' ? 2 : 1);
-    while (h.xp >= h.level + 1) { h.xp -= h.level + 1; h.level++; floatText(h.pos, `⬆ ${h.name} Lv${h.level}`, '#9bff9b'); }
+    if (H.dies && H.D <= T) { memorialize(h, `fell on floor ${diveFloorIndex(S, H.D) + 1} of the Endless Dive`); if (h.vip) G.renown = Math.max(0, G.renown - 1); removeHero(h, h.vip ? `☠ ${h.name} — a legend of the guild — fell on floor ${diveFloorIndex(S, H.D) + 1}!` : `${h.name} fell on floor ${diveFloorIndex(S, H.D) + 1} of the dive.`); return; }
+    h.quests = (h.quests || 0) + 1; gainXp(h, Math.floor(q.cleared / 3) * (traitOf(h) === 'scholar' ? 2 : 1));
     h.stamina = Math.max(15, h.stamina - 25 - q.cleared); h.happy = Math.min(100, h.happy + 10); if (Math.random() < 0.7) h.gear = false;
   });
   toast(text); renderModal(true);
@@ -701,44 +742,66 @@ function resolveDive(q, mode) {
 /* ------------------------------------------------------------------ *
  *  Events: monster incursion, wandering merchant, royal demand
  * ------------------------------------------------------------------ */
+const DEFENDER_NAMES = ['Guard', 'Sentry', 'Warden', 'Lookout'];
+function raidThreat(q) { return q.raidCount * 3.5 * (1 + 0.1 * G.rank) * (q.bossRaid ? 1.8 : 1); }
+function defenderParty(muster) {
+  const p = [], guards = G.staff.guard, towers = ofType('tower').length;
+  for (let i = 0; i < Math.min(2, guards); i++) p.push({ id: -(i + 1), name: `${DEFENDER_NAMES[i]}`, cls: 'knight', level: 1 + G.walls, variant: 0, power: 3 * (G.research.scales ? 2 : 1), trait: null, vip: false });
+  for (let i = 0; i < Math.min(2, towers); i++) p.push({ id: -(10 + i), name: 'Tower Archer', cls: 'ranger', level: 2, variant: 1, power: 4, trait: null, vip: false });
+  if (!p.length) p.push({ id: -99, name: 'Militia', cls: 'knight', level: 1, variant: 2, power: 1.5, trait: null, vip: false });
+  const heroes = muster ? G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving').sort((a, b) => heroPower(b, 'combat') - heroPower(a, 'combat')).slice(0, 3) : [];
+  return { party: [...p, ...heroes.map(heroSnap)], heroes };
+}
+function raidQuest() { return G.quests.find(q => q.defense); }
 function startRaid() {
-  const count = 2 + Math.floor(G.renown / 6);
-  const side = Math.random() < 0.5;
-  for (let i = 0; i < count; i++) {
+  if (raidQuest()) return;
+  G.flags.raidN = (G.flags.raidN || 0) + 1;
+  const bossRaid = G.flags.raidN % 4 === 0, count = 2 + Math.floor(G.renown / 6) + G.rank * 2, side = Math.random() < 0.5;
+  for (let i = 0; i < Math.min(count, 8); i++) {
     const m = buildGoblin();
     m.position.set(side ? 1.5 + rnd(0, 1.5) : 1.5 + rnd(0, 3), 0, side ? 4 + rnd(0, 3) + i : 1.5 + rnd(0, 1.5));
-    scene.add(m);
-    G.goblins.push({ mesh: m, phase: rnd(0, 6) });
+    scene.add(m); G.goblins.push({ mesh: m, phase: rnd(0, 6) });
   }
-  G.alarm = false;
-  showBanner('raid', `👹 Monster incursion! ${count} goblins approach!`, [['Sound the Alarm', 'alarm', 'red']]);
-  toast('Goblins at the perimeter!');
+  const { party } = defenderParty(false);
+  const q = { id: G.nextId++, name: bossRaid ? 'Warchief Raid at the Gates' : 'Raid at the Gates', type: 'defense', defense: true, state: 'active', heroes: [], party, raidCount: count, bossRaid, minH: Math.max(1, Math.min(3, count - 1)), maxH: 4, dur: 28, t: 28, gold: 0, renown: 0, loot: {}, mods: [], heals: [], deaths: [], enchant: false, seed: (Math.random() * 1e9) | 0, special: true };
+  q.chance = Math.max(0.05, Math.min(0.97, defense(false) / raidThreat(q))); q.ok = Math.random() < q.chance; q.script = genScript(q); G.quests.push(q); G.alarm = false;
+  showBanner('raid', `👹 ${bossRaid ? 'WARCHIEF RAID' : 'Raid'}! ${count} raiders at the gates — odds ${Math.round(q.chance * 100)}%`, [['Muster heroes', 'alarm', 'red'], ['Watch', 'watchRaid', '']]);
+  toast(bossRaid ? '🐗 A warchief leads the raiders!' : 'Raiders at the perimeter!');
 }
-function defense() {
+function defense(muster) {
   let d = G.staff.guard * (G.research.scales ? 8 : 4) + G.walls * 3 + (G.research.scales ? 6 : 0) + ofType('tower').length * 6;
-  if (G.alarm) d += G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving').reduce((s, h) => s + CLASSES[h.cls].base * (h.gear ? 1 : 0.6) * 0.8, 0);
+  if (muster) d += G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving').sort((a, b) => heroPower(b, 'combat') - heroPower(a, 'combat')).slice(0, 3).reduce((s, h) => s + CLASSES[h.cls].base * (h.gear ? 1 : 0.6) * 1.1, 0);
   return d;
+}
+function musterHeroes() {
+  const q = raidQuest(); if (!q || q.mustered) return toast(q ? 'The heroes are already fighting!' : 'No raid right now.');
+  const { party, heroes } = defenderParty(true); if (!heroes.length) return toast('No free heroes to muster.');
+  q.mustered = true; q.party = party; q.heroes = heroes; heroes.forEach(h => { h.state = 'quest'; h.mesh.visible = false; setMood(h, null); h.onDone = null; });
+  const nc = Math.max(0.05, Math.min(0.97, defense(true) / raidThreat(q))); const gain = nc - q.chance; q.chance = nc;
+  if (!q.ok && gain > 0 && Math.random() < gain / (1 - (nc - gain))) q.ok = true;
+  q.script = genScript(q); hideBanner('raid'); showBanner('raid', `🔔 Heroes mustered — odds ${Math.round(nc * 100)}%`, [['Watch', 'watchRaid', '']]);
+  toast(`🔔 ${heroes.length} heroes join the defence! Odds ${Math.round(nc * 100)}%`);
+}
+function resolveDefense(q) {
+  const ok = q.ok, cp = G.goblins.length ? G.goblins[0].mesh.position.clone() : new THREE.Vector3(HALL.cx + 2.5, 0, HALL.cz + 3);
+  const loot = Math.round(35 * q.raidCount * (q.bossRaid ? 3 : 1) * (1 + 0.1 * G.rank)), ren = 1 + (q.bossRaid ? 3 : 0);
+  if (ok) { gain(cp, loot); G.renown += ren; G.stats.raidsWon++; if (q.bossRaid) { G.rare.mythril += 1; q.endText = `🛡️ The warchief falls! +${loot}g, +${ren}⭐, 1 💎`; } else q.endText = `🛡️ The raid is repelled! +${loot}g, +${ren}⭐`; }
+  else {
+    const lost = Math.min(Math.round(G.gold * (q.bossRaid ? 0.3 : 0.2) + 20), 300 + 500 * (G.rank + 1) + 15 * G.renown); G.gold = Math.max(0, G.gold - lost); G.renown = Math.max(0, G.renown - 2);
+    ofType('forge').concat(ofType('alchemy')).forEach(b => { b.stock = Math.floor(b.stock * 0.75); });
+    floatText(cp, `-${lost} Gold`, '#ff7a7a'); q.endText = `👹 The raiders broke through! Lost ${lost}g, some stock, and 2 ⭐. Build towers and hire guards!`;
+  }
+  onQuestEnd(q, ok); q.state = 'done'; G.quests.splice(G.quests.indexOf(q), 1);
+  q.heroes.forEach(h => { if (!G.heroes.includes(h)) return; h.state = 'idle'; h.cool = 0; h.target = null; h.mesh.visible = true; h.pos.set(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1)); h.stamina = Math.max(20, h.stamina - 12); });
+  G.goblins.forEach(g => scene.remove(g.mesh)); G.goblins = []; G.alarm = false; hideBanner('raid'); toast(q.endText); renderModal(true);
 }
 function updateGoblins(dt) {
   if (!G.goblins.length) return;
   const target = new THREE.Vector3(HALL.cx + 2.5, 0, HALL.cz + 2);
-  let close = false;
   for (const g of G.goblins) {
     const p = g.mesh.position, dx = target.x - p.x, dz = target.z - p.z, d = Math.hypot(dx, dz);
     g.phase += dt * 9;
-    if (d > 5.5) { p.x += dx / d * 1.5 * dt; p.z += dz / d * 1.5 * dt; g.mesh.rotation.y = Math.atan2(dx, dz); p.y = Math.abs(Math.sin(g.phase)) * 0.05; } else close = true;
-  }
-  if (close) {
-    const threat = G.goblins.length * 3.5, def = defense();
-    const cp = G.goblins[0].mesh.position.clone();
-    if (def >= threat) {
-      const loot = 35 * G.goblins.length; gain(cp, loot); G.renown += 1;
-      toast(`🛡️ The goblins were driven off! +${loot}g, +1⭐`);
-    } else {
-      const lost = Math.round(G.gold * 0.2 + 20); G.gold = Math.max(0, G.gold - lost);
-      floatText(cp, `-${lost} Gold`, '#ff7a7a'); toast(`👹 The goblins raided the guild! Lost ${lost}g. Hire guards or sound the alarm sooner.`);
-    }
-    G.goblins.forEach(g => scene.remove(g.mesh)); G.goblins = []; G.alarm = false; hideBanner('raid');
+    if (d > 6.5) { p.x += dx / d * 1.2 * dt; p.z += dz / d * 1.2 * dt; g.mesh.rotation.y = Math.atan2(dx, dz); p.y = Math.abs(Math.sin(g.phase)) * 0.05; }
   }
 }
 let cart = null;
@@ -823,7 +886,7 @@ function updateEconomy(dt) {
     t.minor = 0;
     G.herbs += ofType('garden').length;
     G.mana += ofType('stones').length;
-    if (ofType('training').length) { const idle = G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving'); if (idle.length) { const h = pick(idle); h.xp += 0.5 * ofType('training').length; if (h.xp >= h.level + 1) { h.xp = 0; h.level++; floatText(h.pos, `⬆ ${h.name} Lv${h.level}`, '#9bff9b'); } } }
+    if (ofType('training').length) { const idle = G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving'); if (idle.length) { const h = pick(idle); gainXp(h, 0.5 * ofType('training').length); } }
   }
   // passive trickle: workers gather basic materials
   t.trickle += dt;
@@ -843,11 +906,11 @@ function updateEconomy(dt) {
   // quests
   t.quest -= dt;
   if (t.quest <= 0) { t.quest = 14; if (G.quests.filter(q => q.state === 'open').length < boardSlots()) genQuest(); }
-  for (const q of [...G.quests]) if (q.state === 'active') { if (q.dive) diveTick(q, dt); else { q.t -= dt; if (q.t <= 0) resolveQuest(q); } }
+  for (const q of [...G.quests]) if (q.state === 'active') { if (q.dive) diveTick(q, dt); else { q.t -= dt; if (q.t <= 0) (q.defense ? resolveDefense(q) : resolveQuest(q)); } }
   // events
   t.merchant -= dt; if (t.merchant <= 0) { t.merchant = rnd(150, 220); if (G.renown >= 2 && !G.merchant) startMerchant(); }
   if (G.merchant) { G.merchant.t -= dt; if (G.merchant.t <= 0) endMerchant(); }
-  t.raid -= dt; if (t.raid <= 0) { t.raid = rnd(120, 190) * (G.flags.hostile ? 0.7 : 1); if (G.renown >= 3 && !G.goblins.length) startRaid(); }
+  t.raid -= dt; if (t.raid <= 0) { t.raid = rnd(100, 160) * (1 - 0.08 * G.rank) * (G.flags.hostile ? 0.7 : 1); if (G.renown >= 3 && !raidQuest()) startRaid(); }
   t.royal -= dt; if (t.royal <= 0) { t.royal = rnd(200, 280); if (G.renown >= 4 && first('forge') && !G.orders.some(o => o.kind === 'royal')) addOrder('royal'); }
   t.caravan = (t.caravan ?? 260) - dt; if (t.caravan <= 0) { t.caravan = rnd(300, 420); if (G.renown >= 5 && first('forge') && !G.orders.some(o => o.kind === 'caravan')) addOrder('caravan'); }
   for (const o of [...G.orders]) {
@@ -873,6 +936,7 @@ const GOALS = [
   ['Raise the guild to a Keep', () => G.rank >= 2, { renown: 5 }], ['Fulfil 5 trade orders', () => G.stats.orders >= 5, { gold: 1500 }],
   ['Win 5 defences', () => G.stats.raidsWon >= 5, { gold: 1500 }], ['Dive to floor 20', () => G.diveBest >= 20, { rare: { scale: 1, feather: 1 } }],
   ['Complete 50 quests', () => G.questsDone >= 50, { gold: 3000 }], ['Raise the guild to a Fortress', () => G.rank >= 3, { renown: 10 }],
+  ['Promote a hero', () => G.stats.promoted >= 1, { gold: 500 }], ['Give a hero a talent', () => G.heroes.some(h => (h.talents || []).length), { gold: 300 }],
   ['Reach 100 renown', () => G.renown >= 100, { gold: 10000 }],
 ];
 const rewardTags = r => Object.entries(r).map(([k, v]) => k === 'gold' ? `💰${v}` : k === 'renown' ? `⭐${v}` : Object.entries(v).map(([rk, rv]) => `${RARE[rk].icon}${rv}`).join('')).join(' ');
@@ -989,7 +1053,7 @@ function modalContent() {
       }
       h += '<div class="sec">Active Expeditions</div>' + (act.map(q => q.dive
         ? `<div class="row"><div class="grow"><div class="t">🌀 Endless Dive — floor ${diveFloorIndex(q.script, q.elapsed) + 1}</div><div class="s">${q.heroes.map(x => x.name).join(', ')} · at risk: ${rewardText(q.pending)}</div><div class="bar"><i style="width:${diveProg(q)}%"></i></div></div><div style="text-align:center"><button class="act" data-act="watch" data-q="${q.id}">👁 Watch</button></div></div>`
-        : `<div class="row"><div class="grow"><div class="t">${q.name}</div><div class="s">${q.heroes.map(x => x.name).join(', ')} · success ${Math.round(q.chance * 100)}%</div><div class="bar"><i style="width:${100 - q.t / q.dur * 100}%"></i></div></div><div style="text-align:center">${Math.ceil(q.t)}s<br><button class="act" data-act="watch" data-q="${q.id}">👁 Watch</button></div></div>`).join('') || '<div class="s">None.</div>');
+        : `<div class="row"><div class="grow"><div class="t">${q.name}</div><div class="s">${(q.party || q.heroes).map(x => x.name).join(', ')} · success ${Math.round(q.chance * 100)}%</div><div class="bar"><i style="width:${100 - q.t / q.dur * 100}%"></i></div></div><div style="text-align:center">${Math.ceil(q.t)}s<br><button class="act" data-act="watch" data-q="${q.id}">👁 Watch</button></div></div>`).join('') || '<div class="s">None.</div>');
       h += '<div class="sec">Quest Board</div>' + (open.map(q => {
         const party = bestParty(q), ok = party.length >= q.minH, c = Math.round(chanceFor(q, party, { potion: false }) * 100), notes = ok ? modPenalty(q, party)[1] : [];
         const loot = Object.entries(q.loot).map(([k, v]) => ({ ore: '⛏️', herbs: '🌿', wood: '🪵', arcane: '✨' }[k]) + v).join(' ');
@@ -1000,7 +1064,7 @@ function modalContent() {
           <div style="display:flex;flex-direction:column;gap:4px"><button class="act" data-act="dispatch" data-q="${q.id}" ${ok ? '' : 'disabled'}>Auto-send</button>
           <button class="act" data-act="pick" data-q="${q.id}" ${readyHeroes().length ? '' : 'disabled'}>Choose party…</button></div></div>`;
       }).join('') || '<div class="s">No quests posted right now — new ones appear regularly.</div>');
-      h += '<div class="sec">Roster <span class="s">(tap a hero for details)</span></div>' + (G.heroes.map(x => `<div class="s" data-act="hero" data-id="${x.id}" style="cursor:pointer">${x.vip ? '⭐ ' : ''}${CLASSES[x.cls].icon} ${x.name} · Lv${x.level} ${CLASSES[x.cls].label} · 🔋${Math.round(x.stamina)} · 😊${Math.round(x.happy)} · ${x.gear ? 'geared' : 'needs gear'}${x.state === 'quest' ? ' · on quest' : ''}</div>`).join('') || '<div class="s">No heroes yet. Build a Tavern to attract them!</div>');
+      h += '<div class="sec">Roster <span class="s">(tap a hero for details)</span></div>' + (G.heroes.map(x => `<div class="s" data-act="hero" data-id="${x.id}" style="cursor:pointer">${x.vip ? '⭐ ' : ''}${x.promo ? PROMO[x.cls].icon : CLASSES[x.cls].icon} ${x.name}${(x.talents || []).length < talentSlots(x) ? ' ✨' : ''} · Lv${x.level} ${heroLabel(x)} · 🔋${Math.round(x.stamina)} · 😊${Math.round(x.happy)} · ${x.gear ? 'geared' : 'needs gear'}${x.state === 'quest' ? ' · on quest' : ''}</div>`).join('') || '<div class="s">No heroes yet. Build a Tavern to attract them!</div>');
       return ['📜 Quest Board & Guild Hall', h];
     }
     case 'recruit': {
@@ -1015,7 +1079,12 @@ function modalContent() {
     case 'settings': return ['⚙ Settings & Save', `
       <div class="row"><div class="grow"><div class="t">💾 Save</div><div class="s">The game autosaves every 15 seconds and when you leave. Last save: ${lastSaved ? Math.round((Date.now() - lastSaved) / 1000) + 's ago' : 'not yet'}.</div></div><button class="act" data-act="save">Save now</button></div>
       <div class="row"><div class="grow"><div class="t">🗑 New game</div><div class="s">${modalArg === 'confirm' ? '<b style="color:#ff9a9a">This erases your saved guild. Tap again to confirm.</b>' : 'Delete the save and start a fresh guild.'}</div></div><button class="act red" data-act="newgame">${modalArg === 'confirm' ? 'Really erase' : 'New game'}</button></div>
-      <div class="s" style="margin-top:8px">Quests keep running for up to 10 minutes while you are away.</div>`];
+      <div class="s" style="margin-top:8px">Quests keep running for up to 10 minutes while you are away.</div>
+      <div class="sec">✝ Hall of the Fallen</div>${G.fallen.length ? [...G.fallen].reverse().slice(0, 12).map(f => `<div class="s">${f.vip ? '⭐ ' : ''}<b>${f.name}</b> — level ${f.level} ${f.cls}, ${f.quests} expeditions; ${f.deed} (day ${f.day})</div>`).join('') : '<div class="s">No heroes have fallen. Yet.</div>'}`];
+    case 'relic': {
+      const q = G.quests.find(x => x.dive && x.offer); if (!q) return ['🎁 Relics', '<div class="s">No relic is waiting.</div>'];
+      return ['🎁 Choose a relic (floor ' + q.cleared + ' reached)', '<div class="s">Relics last for the rest of this dive. Pick one before the next checkpoint (or it is chosen for you).</div>' + q.offer.map((id, i) => `<div class="row" style="border-color:#b070ff"><div style="font-size:30px">${RELICS[id].icon}</div><div class="grow"><div class="t">${RELICS[id].name}</div><div class="s">${RELICS[id].desc}</div></div><button class="act" data-act="relicpick" data-i="${i}">Take</button></div>`).join('') + ((q.relics || []).length ? `<div class="s" style="margin-top:8px">Owned: ${q.relics.map(r => RELICS[r.id].icon + ' ' + RELICS[r.id].name).join(', ')}</div>` : '')];
+    }
     case 'party': {
       const st = modalArg, q = G.quests.find(x => x.id === st.qid); if (!q || q.state !== 'open') return ['Party', '<div class="s">This quest is no longer available.</div>'];
       const rd = readyHeroes().sort((a, b) => heroPower(b, q.type) - heroPower(a, q.type)), party = st.sel.map(id => G.heroes.find(x => x.id === id)).filter(Boolean), ap = APPROACH[st.approach];
@@ -1025,7 +1094,7 @@ function modalContent() {
       h += `<div class="sec">Approach</div><div style="display:flex;gap:5px">` + Object.entries(APPROACH).map(([k, a]) => `<button class="act ${st.approach === k ? '' : 'red'}" style="flex:1;${st.approach === k ? 'outline:2px solid #fff8' : ''}" data-act="papp" data-a="${k}">${a.icon} ${a.label}<br><span style="font-weight:400;font-size:10px">${a.desc}</span></button>`).join('') + '</div>';
       h += `<div style="display:flex;gap:6px;margin-top:6px"><button class="act ${st.enchant ? '' : 'red'}" data-act="pench" ${G.mana < 5 && !st.enchant ? 'disabled' : ''}>✨ Enchant (5 mana) ${st.enchant ? '✔' : ''}</button><button class="act ${st.potion ? '' : 'red'}" data-act="ppot" ${lab < 1 && !st.potion ? 'disabled' : ''}>🧪 Bring a potion (${lab}) ${st.potion ? '✔' : ''}</button></div>`;
       h += `<div class="sec">Ready heroes <span class="s">(pick ${q.minH}–${q.maxH})</span></div>` + (rd.map(x => `<div class="row" data-act="psel" data-id="${x.id}" style="cursor:pointer;${st.sel.includes(x.id) ? 'border-color:#ffd24a;background:#ffd24a22' : ''}"><div style="font-size:24px">${st.sel.includes(x.id) ? '☑' : '☐'} ${CLASSES[x.cls].icon}</div><div class="grow"><div class="t">${x.vip ? '⭐ ' : ''}${x.name} <span class="tag">Lv${x.level}</span>${x.vip ? `<span class="tag">${TRAITS[x.vip.trait].icon} ${TRAITS[x.vip.trait].label}</span>` : ''}<span class="tag">${gearName(x)} gear</span></div><div class="s">Power ${heroPower(x, q.type).toFixed(1)} on ${q.type} · 🔋${Math.round(x.stamina)}</div></div></div>`).join('') || '<div class="s">No geared, rested heroes available.</div>');
-      h += `<div class="row" style="margin-top:10px;border-color:#ffd24a"><div class="grow"><div class="t">Success chance: <b style="font-size:18px">${c}%</b></div><div class="s">${party.length ? `${party.length} hero(es) · reward ~${Math.round(q.gold * questGoldMul() * ap.gold)}g · ${Math.round(q.dur * ap.dur)}s` : 'Select heroes above'}${notes.length ? `<br><span style="color:#ffb86a">Missing: ${notes.join(', ')}</span>` : ''}</div></div><button class="act" data-act="pgo" ${party.length >= q.minH && party.length <= q.maxH ? '' : 'disabled'}>Send party</button></div>`;
+      h += `<div class="row" style="margin-top:10px;border-color:#ffd24a"><div class="grow"><div class="t">Success chance: <b style="font-size:18px">${c}%</b></div><div class="s">${party.length ? `${party.length} hero(es) · reward ~${Math.round(q.gold * questGoldMul() * ap.gold)}g · ${Math.round(q.dur * ap.dur)}s` : 'Select heroes above'}${notes.length ? `<br><span style="color:#ffb86a">Missing: ${notes.join(', ')}</span>` : ''}${bondInfo(party).notes.length ? `<br>${bondInfo(party).notes.join(' · ')}` : ''}</div></div><button class="act" data-act="pgo" ${party.length >= q.minH && party.length <= q.maxH ? '' : 'disabled'}>Send party</button></div>`;
       return ['🧭 Choose a party — ' + q.name, h];
     }
     case 'story': {
@@ -1037,7 +1106,14 @@ function modalContent() {
       const c = CLASSES[h.cls], tr = h.vip ? TRAITS[h.vip.trait] : null, aq = G.quests.find(q => q.state === 'active' && q.heroes.includes(h));
       const bar = (v, col) => `<div class="bar"><i style="width:${Math.max(0, Math.min(100, v))}%;${col ? 'background:' + col : ''}"></i></div>`;
       const stateTxt = { idle: 'Idle', walking: 'Walking', busy: 'Busy', waiting: 'Waiting around', quest: 'On an expedition', leaving: 'Leaving the guild' }[h.state] || h.state;
-      let body = `<div class="row"><div style="font-size:34px">${c.icon}</div><div class="grow"><div class="t">${h.vip ? '⭐ ' : ''}${h.name}</div><div class="s">Level ${h.level} ${c.label} · ${stateTxt}${h.quests ? ' · ' + h.quests + ' expeditions' : ''}</div></div>${aq ? `<button class="act" data-act="watch" data-q="${aq.id}">👁 Watch</button>` : ''}</div>`;
+      let body = `<div class="row"><div style="font-size:34px">${c.icon}</div><div class="grow"><div class="t">${h.vip ? '⭐ ' : ''}${h.name}</div><div class="s">Level ${h.level} ${heroLabel(h)} · ${stateTxt}${h.quests ? ' · ' + h.quests + ' expeditions' : ''}</div></div>${aq ? `<button class="act" data-act="watch" data-q="${aq.id}">👁 Watch</button>` : ''}</div>`;
+      const P = PROMO[h.cls], hm = heroMods(h), pend = (h.talents || []).length < talentSlots(h);
+      if (h.promo) body += `<div class="row" style="border-color:#e8c04a"><div style="font-size:30px">${P.icon}</div><div class="grow"><div class="t">${P.name}</div><div class="s">${P.desc}</div></div></div>`;
+      else body += `<div class="row"><div style="font-size:30px">${P.icon}</div><div class="grow"><div class="t">Promotion: ${P.name}</div><div class="s">${P.desc} Needs level 5 and Guild Rank Hold.</div>${cost(500)}</div><button class="act" data-act="promote" data-id="${h.id}" ${G.rank >= 1 && h.level >= 5 && G.gold >= 500 ? '' : 'disabled'}>Promote</button></div>`;
+      if ((h.talents || []).length) body += `<div class="s">Talents: ${(h.talents || []).map(id => { const t = talentDef(h.cls, id); return t ? `<span class="tag" title="${t[2]}">${t[1]}</span>` : ''; }).join('')}</div>`;
+      if (pend) { const tier = TALENTS[h.cls][(h.talents || []).length]; body += `<div class="sec">✨ Choose a talent</div>` + tier.map(t => `<div class="row" style="border-color:#8fd4ff"><div class="grow"><div class="t">${t[1]}</div><div class="s">${t[2]}</div></div><button class="act" data-act="talent" data-id="${h.id}" data-t="${t[0]}">Learn</button></div>`).join(''); }
+      const bondNames = Object.entries(h.bonds || {}).map(([id, k]) => [G.heroes.find(x => x.id === +id), k]).filter(([x]) => x);
+      if (bondNames.length) body += `<div class="s" style="margin-top:6px">${bondNames.map(([x, k]) => (k === 'friend' ? '🤝 Friends with ' : '⚡ Rival of ') + x.name).join(' · ')} <span style="opacity:.7">(same party: +4% / −5%)</span></div>`;
       if (tr) body += `<div class="row" style="border-color:#ffd24a"><div style="font-size:30px">${tr.icon}</div><div class="grow"><div class="t">VIP trait: ${tr.label}</div><div class="s">${tr.desc}</div></div></div>`;
       body += `<div class="s" style="margin-top:6px">Experience ${h.xp}/${h.level + 1}</div>${bar(h.xp / (h.level + 1) * 100, '#8fd4ff')}
         <div class="s" style="margin-top:6px">Stamina ${Math.round(h.stamina)}</div>${bar(h.stamina, h.stamina < 45 ? '#e0503a' : '#5be35b')}
@@ -1097,6 +1173,8 @@ function renderModal(force) {
 }
 
 const ACT = {
+  relicpick(d) { const q = G.quests.find(x => x.dive && x.offer); if (q) { pickRelic(q, +d.i, false); closeModal(); } },
+  relic() { openModal('relic'); },
   pick(d) { openModal('party', { qid: +d.q, sel: [], approach: 'standard', enchant: false, potion: false }); },
   psel(d) { const st = modalArg, q = G.quests.find(x => x.id === st.qid), id = +d.id; if (!q) return; if (st.sel.includes(id)) st.sel = st.sel.filter(x => x !== id); else if (st.sel.length >= q.maxH) toast(`At most ${q.maxH} heroes on this quest.`); else st.sel.push(id); },
   papp(d) { modalArg.approach = d.a; },
@@ -1110,7 +1188,8 @@ const ACT = {
   save() { saveGame(false); renderModal(true); },
   newgame() { if (modalArg !== 'confirm') { modalArg = 'confirm'; return; } try { localStorage.removeItem(SAVE_KEY); } catch (e) { } window.__noSave = true; location.reload(); },
   watch(d) { startWatch(+d.q); },
-  alarm() { G.alarm = true; toast('🔔 Alarm sounded! Heroes rush to defend!'); hideBanner('raid'); showBanner('raid', '🔔 Alarm sounded — heroes are defending!', []); },
+  alarm() { musterHeroes(); },
+  watchRaid() { const q = raidQuest(); if (q) startWatch(q.id); },
   openMerchant() { openModal('merchant'); },
   deliver(d) { deliverOrder(+d.id); },
   place(d) { startPlacement(d.k); closeModal(); },
@@ -1127,6 +1206,8 @@ const ACT = {
   rankup() { rankUp(); },
   grade(d) { const b = G.buildings.find(x => x.id === +d.id), g = +d.g; if (!b || !gradeUnlocked(b, g)) return toast('Not unlocked yet.'); if (b.stock > 0 && (b.grade || 1) !== g) return toast('Use up the current stock before switching grade.'); b.grade = g; b.progress = 0; toast(`${BUILDINGS[b.type].name} now makes ${GRADE[b.type][g]} ${b.type === 'forge' ? 'weapons' : 'potions'}.`); },
   sell(d) { const k = d.k; if (k === 'ingots') { if (G.ingots >= 5) { G.ingots -= 5; G.gold += 5 * 14; } return; } if (G[k] >= 5) { G.gold += sellPrice(k); G[k] -= 5; } },
+  promote(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h || h.promo || G.rank < 1 || h.level < 5 || G.gold < 500) return; G.gold -= 500; h.promo = true; G.stats.promoted++; addPromoGear(h); floatText(h.pos, `${PROMO[h.cls].icon} ${PROMO[h.cls].name}!`, '#ffd24a'); toast(`${PROMO[h.cls].icon} ${h.name} is promoted to ${PROMO[h.cls].name}!`); },
+  talent(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h || (h.talents || []).length >= talentSlots(h)) return; const tier = TALENTS[h.cls][(h.talents || []).length]; if (!tier.some(t => t[0] === d.t)) return; (h.talents = h.talents || []).push(d.t); toast(`✨ ${h.name} learns ${talentDef(h.cls, d.t)[1]}!`); },
   upBuilding(d) { const b = G.buildings.find(x => x.id === +d.id), c = 150 * b.level + 100; if (b && b.level < maxLevel() && G.gold >= c && G.wood >= 5 * b.level && hasRare(upReq(b))) { G.gold -= c; G.wood -= 5 * b.level; spendRare(upReq(b)); b.level++; b.pop = 0.6; toast(`${BUILDINGS[b.type].name} upgraded to level ${b.level}!`); } },
   open(d) { openModal(d.k); },
   buy(d) { const p = buyPrice(d.k); if (G.gold >= p) { G.gold -= p; G[d.k] += 5; } },
@@ -1324,7 +1405,7 @@ function serialize() {
   return {
     v: 1, savedAt: Date.now(), g,
     buildings: G.buildings.map(b => ({ type: b.type, cx: b.cx, cz: b.cz, rot: b.rot || 0, level: b.level, stock: b.stock, progress: b.progress })),
-    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, quests: h.quests, vip: h.vip, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
+    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, promo: h.promo, talents: h.talents, bonds: h.bonds, quests: h.quests, vip: h.vip, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
     quests: G.quests.map(q => { const o = {}; for (const [k, v] of Object.entries(q)) if (k !== 'heroes' && k !== 'script') o[k] = v; o.heroIds = (q.heroes || []).map(h => h.id); return o; }),
     extra: serializeExtra(),
   };
@@ -1440,13 +1521,14 @@ function watchPotion() {
   if (!canIntervene(q)) return toast(q.dive ? 'The party has already fallen.' : 'Too late — the finale has begun!');
   if (!lab) return toast('No potions in stock. Brew more at the Alchemical Lab.');
   lab.stock--;
-  if (q.dive) { q.heals.push({ t: q.elapsed, amt: G.research.feather ? 0.5 : 0.35 }); rebuildDive(q, q.elapsed); toast('🧪 Healing potions delivered to the party!'); }
+  if (q.dive) { q.heals.push({ t: q.elapsed, amt: (G.research.feather ? 0.5 : 0.35) * relicMods(q, diveFloorIndex(q.script, q.elapsed)).heal }); rebuildDive(q, q.elapsed); toast('🧪 Healing potions delivered to the party!'); }
   else { q.heals.push({ t: q.dur - q.t, amt: G.research.feather ? 0.5 : 0.35 }); boostQuest(q, 0.08); toast(`🧪 Healing potions delivered! Success chance now ${Math.round(q.chance * 100)}%`); }
   updateWatchHUD();
 }
 function watchRecall() {
   const w = watching, q = w?.q; if (!q || w.finish) return;
   if (w.recallArm <= 0) { w.recallArm = 3; return updateWatchHUD(); }
+  if (q.defense) { w.recallArm = 0; return toast('You cannot flee — defend the guild!'); }
   if (q.dive) return resolveDive(q, 'recalled');
   const i = G.quests.indexOf(q); if (i >= 0) G.quests.splice(i, 1); q.state = 'done';
   q.heroes.forEach(h => { if (!G.heroes.includes(h)) return; h.state = 'idle'; h.cool = 0; h.target = null; h.stamina = Math.max(20, h.stamina - 10); h.happy = Math.max(0, h.happy - 8); h.pos.set(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1)); h.mesh.visible = true; });
@@ -1454,12 +1536,13 @@ function watchRecall() {
 }
 function updateWatchHUD() {
   const w = watching; if (!w) return; const q = w.q, S = q.script, T = nowT(w), dv = !!q.dive;
-  $('wName').textContent = dv ? `Endless Dungeon — floor ${diveFloorIndex(S, T) + 1} · best ${G.diveBest}` : `${w.exp.name} — ${q.name}`;
+  $('wRelic').classList.toggle('hidden', !(dv && q.offer)); $('wName').textContent = dv ? `Endless Dungeon — floor ${diveFloorIndex(S, T) + 1} · best ${G.diveBest} ${(q.relics || []).map(r => RELICS[r.id].icon).join('')}` : `${w.exp.name} — ${q.name}`;
   $('wPhase').textContent = w.finish ? w.finish.text : phaseText(S, T);
   $('wProg').style.width = (dv ? (diveFloor({ script: S, elapsed: T }) ? Math.min(100, (T - diveFloor({ script: S, elapsed: T }).s) / (diveFloor({ script: S, elapsed: T }).e - diveFloor({ script: S, elapsed: T }).s) * 100) : 0) : T / q.dur * 100) + '%';
   $('watchBar').classList.toggle('dive', dv);
   $('wParty').innerHTML = q.party.map((p, h) => { const hp = heroHp(q, S, h, T), dead = S.heroes[h].dies && T >= S.heroes[h].D; return `<div class="chip ${dead ? 'dead' : ''}"><span>${dead ? '☠' : CLASSES[p.cls].icon} ${p.name}</span><b><i style="width:${hp * 100}%;background:${hp > 0.5 ? '#5be35b' : hp > 0.25 ? '#f0c040' : '#e0503a'}"></i></b></div>`; }).join('');
   const ci = canIntervene(q), lab = first('alchemy');
+  $('wRecall').classList.toggle('hidden', !!q.defense);
   const potions = ofType('alchemy').reduce((n, b) => n + b.stock, 0), nextF = dv ? diveFloorIndex(S, T) + 1 : 0, warded = dv && (q.enchants || []).some(x => x.floor + 3 > nextF);
   $('wEnchant').disabled = !ci || G.mana < 5 || (dv ? warded : !!(q.enchant || q.enchantedMid)); $('wEnchant').textContent = dv ? (warded ? '✨ Ward active' : '✨ Ward (5)') : `✨ Enchant (5) · ${Math.round(q.chance * 100)}%`;
   $('wPotion').disabled = !ci || potions < 1; $('wPotion').textContent = `🧪 Potion (${potions})`;
@@ -1474,7 +1557,7 @@ $('wBack').onclick = endWatch; $('pipFrame').onclick = endWatch;
 $('wFollow').onclick = () => { if (watching) { watching.follow = !watching.follow; updateWatchHUD(); } };
 $('wPipBtn').onclick = () => { if (watching) { watching.pip = !watching.pip; updateWatchHUD(); } };
 $('wSpeed').onclick = () => $('speedBtn').click();
-$('wEnchant').onclick = watchEnchant; $('wPotion').onclick = watchPotion; $('wRecall').onclick = watchRecall;
+$('wRelic').onclick = () => openModal('relic'); $('wEnchant').onclick = watchEnchant; $('wPotion').onclick = watchPotion; $('wRecall').onclick = watchRecall;
 function renderPip() {
   const w = watching; if (!w || w.exiting || !w.pip || !watchSaved) return;
   const r = $('pipFrame').getBoundingClientRect(); if (r.width < 10) return;
@@ -1571,4 +1654,4 @@ if (!loadGame()) {
 }
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
-window.__api = { makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__api = { gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
