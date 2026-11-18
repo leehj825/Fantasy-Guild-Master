@@ -1,5 +1,6 @@
 import * as THREE from '../vendor/three.module.js';
 import { BUILDINGS, buildBuilding, buildHero, buildStaff, buildGoblin, buildMerchantCart, vox, mat, PROPS } from './models.js';
+import { Expedition, genScript, STAGE_X, heroHp, phaseText } from './expedition.js';
 
 /* ------------------------------------------------------------------ *
  *  Setup: renderer, isometric ortho camera, lights, terrain
@@ -19,6 +20,7 @@ scene.background = new THREE.Color(0x2f7a32);
 
 // Free 3D camera: orbit (yaw/pitch), pan, zoom, optional perspective. Orthographic isometric by default.
 const VIEW0 = { yaw: Math.PI / 4, pitch: Math.atan(1 / Math.SQRT2), zoom: 10 };   // true isometric angles
+let watching = null, viewFly = null;   // expedition watch mode state
 let yaw = VIEW0.yaw, pitch = VIEW0.pitch, viewS = VIEW0.zoom, perspective = false;
 const FOV = 38;
 const orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -300, 500);
@@ -27,7 +29,7 @@ let camera = orthoCam;
 const camTarget = new THREE.Vector3(N / 2 + 1, 0, N / 2 + 1);
 const clampView = () => {
   pitch = Math.max(0.28, Math.min(1.42, pitch)); viewS = Math.max(3.5, Math.min(24, viewS));
-  camTarget.x = Math.max(2, Math.min(N - 2, camTarget.x)); camTarget.z = Math.max(2, Math.min(N - 2, camTarget.z));
+  if (!watching) { camTarget.x = Math.max(2, Math.min(N - 2, camTarget.x)); camTarget.z = Math.max(2, Math.min(N - 2, camTarget.z)); }
 };
 function updateCamera() {
   clampView();
@@ -45,6 +47,7 @@ function updateCamera() {
 }
 // ground-plane pan along the current view axes (px -> world)
 function panBy(dx, dy) {
+  if (watching) watching.follow = false;
   const u = 2 * viewS / innerHeight, rx = Math.cos(yaw), rz = -Math.sin(yaw), ux = -Math.sin(yaw), uz = -Math.cos(yaw), k = u / Math.sin(pitch);
   camTarget.x += -dx * u * rx + dy * k * ux; camTarget.z += -dx * u * rz + dy * k * uz; updateCamera();
 }
@@ -55,7 +58,7 @@ function togglePerspective() { perspective = !perspective; $('camPersp').classLi
 function resize() { renderer.setSize(innerWidth, innerHeight, false); updateCamera(); }
 addEventListener('resize', resize);
 
-scene.add(new THREE.AmbientLight(0xcfe3ff, 0.75));
+const ambient = new THREE.AmbientLight(0xcfe3ff, 0.75); scene.add(ambient);
 scene.add(new THREE.HemisphereLight(0xbfe6ff, 0x4a7a3a, 0.35));
 const sun = new THREE.DirectionalLight(0xfff1d0, 1.05);
 sun.position.set(N / 2 + 18, 30, N / 2 + 8);
@@ -261,12 +264,12 @@ function spawnHero(cls, atHall = false) {
     if (first('alchemy')) opts.push('wizard', 'wizard');
     cls = pick(opts);
   }
-  const mesh = buildHero(cls, Math.floor(Math.random() * 2));
+  const variant = Math.floor(Math.random() * 3), mesh = buildHero(cls, variant);
   const p = atHall ? new THREE.Vector3(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1.2)) : spawnPoint();
   mesh.position.copy(p); heroGroup.add(mesh);
   const bub = document.createElement('div'); bub.className = 'bub hidden'; worldEl.appendChild(bub);
   const h = {
-    id: G.nextId++, cls, name: pick(NAMES), level: 1, xp: 0, stamina: rnd(60, 100), happy: 100, gear: false,
+    id: G.nextId++, cls, variant, name: pick(NAMES), level: 1, xp: 0, stamina: rnd(60, 100), happy: 100, gear: false,
     mesh, pos: mesh.position, bub, state: 'idle', target: null, onArrive: null, timer: 0, onDone: null, cool: 0, phase: Math.random() * 6, vis: true,
   };
   G.heroes.push(h);
@@ -408,12 +411,18 @@ function dispatch(qid, enchant) {
   if (party.length < q.minH) return toast(`Need ${q.minH} ready hero(es) with gear and stamina.`);
   if (enchant) { if (G.mana < 5) return toast('Not enough Mana.'); G.mana -= 5; }
   q.enchant = enchant; q.chance = chanceFor(q, party, enchant); q.heroes = party; q.state = 'active'; q.t = q.dur;
+  // the outcome is rolled now so the expedition can be watched live without ever contradicting the result
+  q.party = party.map(h => ({ id: h.id, name: h.name, cls: h.cls, level: h.level, variant: h.variant || 0 }));
+  q.seed = (Math.random() * 1e9) | 0; q.ok = Math.random() < q.chance; q.heals = [];
+  q.deaths = party.filter(h => Math.random() > CLASSES[h.cls].survive + 0.15).map(h => h.id);
+  q.script = genScript(q);
   party.forEach(h => { h.state = 'quest'; h.mesh.visible = false; setMood(h, null); h.onDone = null; });
   toast(`Party of ${party.length} dispatched: ${q.name}`);
   renderModal(true);
 }
 function resolveQuest(q) {
-  const ok = Math.random() < q.chance;
+  const ok = q.ok;
+  onQuestEnd(q, ok);
   const hp = new THREE.Vector3(HALL.cx + 2.5, 0, HALL.cz + 5);
   q.state = 'done'; G.quests.splice(G.quests.indexOf(q), 1);
   const alive = [];
@@ -421,7 +430,7 @@ function resolveQuest(q) {
     if (!G.heroes.includes(h)) return;
     h.state = 'idle'; h.cool = 0; h.stamina = Math.max(20, h.stamina - 25);
     h.pos.set(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1)); h.mesh.visible = true; h.target = null;
-    if (!ok && Math.random() > CLASSES[h.cls].survive + 0.15) { removeHero(h, `${h.name} the ${CLASSES[h.cls].label} fell in battle...`); return; }
+    if (!ok && q.deaths.includes(h.id)) { removeHero(h, `${h.name} the ${CLASSES[h.cls].label} fell in battle...`); return; }
     if (ok) { h.xp++; if (h.xp >= h.level + 1) { h.xp = 0; h.level++; floatText(h.pos, `⬆ ${h.name} Lv${h.level}`, '#9bff9b'); } }
     if (Math.random() < (ok ? 0.5 : 1)) h.gear = false;
     h.happy = Math.min(100, h.happy + (ok ? 20 : -10));
@@ -592,7 +601,7 @@ function updateHUD() {
   $('hMana').textContent = G.mana;
   $('hPop').textContent = `${G.heroes.length}/${popCap()}`;
   $('hOre').textContent = G.ore; $('hWood').textContent = G.wood; $('hHerbs').textContent = G.herbs;
-  const ex = G.quests.filter(q => q.state === 'active').map(q => `<div class="exp"><span>⚔️ ${q.name}</span><span>${Math.ceil(q.t)}s</span><div class="bar"><i style="width:${100 - q.t / q.dur * 100}%"></i></div></div>`).join('');
+  const ex = G.quests.filter(q => q.state === 'active').map(q => `<div class="exp" data-act="watch" data-q="${q.id}" title="Watch this expedition live"><span>👁 ${q.name}</span><span>${Math.ceil(q.t)}s</span><div class="bar"><i style="width:${100 - q.t / q.dur * 100}%"></i></div></div>`).join('');
   if (ex !== $('expeds')._h) { $('expeds')._h = ex; $('expeds').innerHTML = ex ? '<h4>Expeditions:</h4>' + ex : ''; }
   const pend = OBJ.filter(o => !o[1]()).slice(0, 3);
   const done = OBJ.filter(o => o[1]()).slice(-1);
@@ -643,7 +652,7 @@ function modalContent() {
       const rd = readyHeroes();
       const open = G.quests.filter(q => q.state === 'open'), act = G.quests.filter(q => q.state === 'active');
       let h = `<div class="s">Ready heroes (geared & rested): <b>${rd.length}</b> / ${G.heroes.length}</div>`;
-      h += '<div class="sec">Active Expeditions</div>' + (act.map(q => `<div class="row"><div class="grow"><div class="t">${q.name}</div><div class="s">${q.heroes.map(x => x.name).join(', ')} · success ${Math.round(q.chance * 100)}%</div><div class="bar"><i style="width:${100 - q.t / q.dur * 100}%"></i></div></div><div>${Math.ceil(q.t)}s</div></div>`).join('') || '<div class="s">None.</div>');
+      h += '<div class="sec">Active Expeditions</div>' + (act.map(q => `<div class="row"><div class="grow"><div class="t">${q.name}</div><div class="s">${q.heroes.map(x => x.name).join(', ')} · success ${Math.round(q.chance * 100)}%</div><div class="bar"><i style="width:${100 - q.t / q.dur * 100}%"></i></div></div><div style="text-align:center">${Math.ceil(q.t)}s<br><button class="act" data-act="watch" data-q="${q.id}">👁 Watch</button></div></div>`).join('') || '<div class="s">None.</div>');
       h += '<div class="sec">Quest Board</div>' + (open.map(q => {
         const party = bestParty(q), ok = party.length >= q.minH, c = Math.round(chanceFor(q, party, false) * 100), ce = Math.round(chanceFor(q, party, true) * 100);
         const loot = Object.entries(q.loot).map(([k, v]) => ({ ore: '⛏️', herbs: '🌿', wood: '🪵', arcane: '✨' }[k]) + v).join(' ');
@@ -693,8 +702,12 @@ function modalContent() {
   }
   return ['', ''];
 }
+let modalPressing = false;   // never swap the window's contents while a press is in progress (it would swallow the tap)
+modal.addEventListener('pointerdown', () => { modalPressing = true; }, true);
+addEventListener('pointerup', () => { modalPressing = false; }, true); addEventListener('pointercancel', () => { modalPressing = false; }, true);
 function renderModal(force) {
   if (!modalKind) return;
+  if (modalPressing && !force) return;
   const [title, body] = modalContent();
   const html = title + '||' + body;
   if (!force && html === lastHtml) return;
@@ -702,6 +715,7 @@ function renderModal(force) {
 }
 
 const ACT = {
+  watch(d) { startWatch(+d.q); },
   alarm() { G.alarm = true; toast('🔔 Alarm sounded! Heroes rush to defend!'); hideBanner('raid'); showBanner('raid', '🔔 Alarm sounded — heroes are defending!', []); },
   openMerchant() { openModal('merchant'); },
   deliver() {
@@ -845,6 +859,7 @@ canvas.addEventListener('pointerup', e => {
   if (d.btn === 2) return cancelPlacement();
   if (d.btn === 1 || d.mode === 'pan') return;
   if (placing) { const p = groundAt(e.clientX, e.clientY); if (p) { const [cx, cz] = cellFor(p.x, p.z); moveGhost(cx, cz); } return; }
+  if (watching) return;
   ptr.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ptr, camera);
   const hit = ray.intersectObjects(bGroup.children, true)[0];
   if (hit) { let o = hit.object; while (o && o.userData.bid === undefined) o = o.parent; if (o) openModal('building', o.userData.bid); }
@@ -852,7 +867,7 @@ canvas.addEventListener('pointerup', e => {
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('wheel', e => { e.preventDefault(); if (e.shiftKey || e.ctrlKey) rotateBy(-e.deltaX * 0.004 - e.deltaY * 0.004, 0); else zoomBy(1 + Math.sign(e.deltaY) * 0.1); }, { passive: false });
 addEventListener('keydown', e => {
-  if (e.key === 'Escape') { cancelPlacement(); closeModal(); return; }
+  if (e.key === 'Escape') { if (watching && !modalKind) return endWatch(); cancelPlacement(); closeModal(); return; }
   if (modalKind) return;
   if (placing) { const k = e.key.toLowerCase(); if (k === 'r') return rotateGhost(e.shiftKey ? -1 : 1); if (e.key === 'Enter') return confirmPlacement(); }
   const step = e.shiftKey ? 0.25 : 0.12;
@@ -864,7 +879,7 @@ addEventListener('keydown', e => {
   if (e.key === '-' || e.key === '_') return zoomBy(1.14);
   if (e.key === 'Home' || e.key === '0') return resetView();
   if (e.key.toLowerCase() === 'v') return togglePerspective();
-  const k = { b: 'build', q: 'quests', r: 'recruit', t: 'research', u: 'upgrades' }[e.key.toLowerCase()]; if (k) openModal(k);
+  const k = watching ? null : { b: 'build', q: 'quests', r: 'recruit', t: 'research', u: 'upgrades' }[e.key.toLowerCase()]; if (k) openModal(k);
 });
 // on-screen camera controls
 {
@@ -900,6 +915,107 @@ function syncStaff() {
     mesh.position.set(x, 0, z); mesh.rotation.y = rotY; scene.add(mesh);
     staffMeshes.push({ mesh, patrol, work, t: Math.random() * 6, a: i * 2.1 + Math.random(), cx: HALL.cx + 2.5, cz: HALL.cz + 2.5 });
   }
+}
+
+/* ------------------------------------------------------------------ *
+ *  Expedition watch mode: fly to the stage, follow the party, intervene
+ * ------------------------------------------------------------------ */
+const sm = x => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+const stageEl = $('stageEl'), pipCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -300, 500);
+let watchSaved = null;
+function flyTo(to, dur = 1.1) { viewFly = { t: 0, dur, from: { yaw, pitch, viewS, x: camTarget.x, z: camTarget.z }, to }; }
+const canIntervene = q => q.state === 'active' && (q.dur - q.t) < q.script.win[2].s && !(watching && watching.finish);
+function logReset(w, T) { const ev = w.q.script.events; w.logIdx = ev.findIndex(e => e.t > T - 2.5); if (w.logIdx < 0) w.logIdx = ev.length; w.lastScript = w.q.script; }
+function addLog(e) {
+  const el = document.createElement('div'); el.className = 'lg l-' + e.type; el.textContent = e.log + (e.dmg ? e.dmg : '');
+  const box = $('watchLog'); box.appendChild(el); while (box.children.length > 7) box.firstChild.remove();
+}
+function startWatch(qid) {
+  const q = G.quests.find(x => x.id === qid && x.state === 'active'); if (!q || !q.script) return;
+  closeModal(); cancelPlacement();
+  if (watching) { watching.exp.dispose(); } else watchSaved = { yaw, pitch, viewS, x: camTarget.x, z: camTarget.z };
+  const exp = new Expedition({ scene, q, lowfx: LOWFX, labelEl: stageEl, project: v => toScreen(v) });
+  const th = exp.theme, T = Math.max(0, q.dur - q.t);
+  scene.background.setHex(th.bg); sun.position.set(STAGE_X + 18, 30, 8); sun.target.position.set(STAGE_X, 0, 0); sun.intensity = th.sun; ambient.intensity = th.amb;
+  exp.update(T, 0);
+  const f = exp.focus(T);
+  watching = { q, exp, follow: true, finish: null, exiting: false, pip: watching ? watching.pip : !LOWFX, recallArm: 0, hudT: 0, logIdx: 0 };
+  logReset(watching, T); $('watchLog').innerHTML = '';
+  worldEl.style.display = 'none'; stageEl.style.display = 'block'; document.body.classList.add('watching');
+  flyTo({ yaw: 0.28, pitch: 0.62, viewS: 6.8, x: f.x, z: f.z }, 1.2);
+  updateWatchHUD();
+}
+function endWatch() {
+  const w = watching; if (!w || w.exiting) return;
+  w.exiting = true; stageEl.style.display = 'none'; worldEl.style.display = ''; document.body.classList.remove('watching');
+  flyTo({ yaw: watchSaved.yaw, pitch: watchSaved.pitch, viewS: watchSaved.viewS, x: watchSaved.x, z: watchSaved.z }, 1.0);
+}
+function cleanupWatch() {
+  if (!watching) return; watching.exp.dispose(); watching = null;
+  scene.background.setHex(0x2f7a32); sun.position.set(N / 2 + 18, 30, N / 2 + 8); sun.target.position.set(N / 2, 0, N / 2); sun.intensity = 1.05; ambient.intensity = 0.75;
+  updateCamera();
+}
+function onQuestEnd(q, ok) {
+  if (!watching || watching.q !== q || watching.exiting) return;
+  watching.finish = { ok, t: 4.5, text: ok ? `🏆 Victory! +${Math.round(q.gold * questGoldMul())}g · +${q.renown}⭐` : '☠ Defeat — the party limps home' };
+  updateWatchHUD();
+}
+// --- in-fight actions (only before the finale begins)
+function boostQuest(q, amt) {
+  const c0 = q.chance; q.chance = Math.min(0.97, c0 + amt);
+  if (!q.ok && Math.random() < (q.chance - c0) / (1 - c0)) { q.ok = true; q.deaths = []; q.script = genScript(q); }
+}
+function watchEnchant() {
+  const q = watching?.q; if (!q) return;
+  if (!canIntervene(q)) return toast('Too late — the finale has begun!');
+  if (q.enchant || q.enchantedMid) return toast('This party is already enchanted.');
+  if (G.mana < 5) return toast('Not enough Mana.');
+  G.mana -= 5; q.enchantedMid = true; boostQuest(q, G.research.arcane ? 0.3 : 0.2);
+  toast(`✨ Enchanted! Success chance now ${Math.round(q.chance * 100)}%`); updateWatchHUD();
+}
+function watchPotion() {
+  const q = watching?.q; if (!q) return; const lab = first('alchemy');
+  if (!canIntervene(q)) return toast('Too late — the finale has begun!');
+  if (!lab || lab.stock < 1) return toast('No potions in stock. Brew more at the Alchemical Lab.');
+  lab.stock--; q.heals.push({ t: q.dur - q.t, amt: 0.35 }); boostQuest(q, 0.08);
+  toast(`🧪 Healing potions delivered! Success chance now ${Math.round(q.chance * 100)}%`); updateWatchHUD();
+}
+function watchRecall() {
+  const w = watching, q = w?.q; if (!q || w.finish) return;
+  if (w.recallArm <= 0) { w.recallArm = 3; return updateWatchHUD(); }
+  const i = G.quests.indexOf(q); if (i >= 0) G.quests.splice(i, 1); q.state = 'done';
+  q.heroes.forEach(h => { if (!G.heroes.includes(h)) return; h.state = 'idle'; h.cool = 0; h.target = null; h.stamina = Math.max(20, h.stamina - 10); h.happy = Math.max(0, h.happy - 8); h.pos.set(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1)); h.mesh.visible = true; });
+  toast('🏳 Party recalled — no rewards.'); endWatch();
+}
+function updateWatchHUD() {
+  const w = watching; if (!w) return; const q = w.q, S = q.script, T = w.finish ? q.dur : Math.max(0, q.dur - q.t);
+  $('wName').textContent = `${w.exp.name} — ${q.name}`;
+  $('wPhase').textContent = w.finish ? w.finish.text : phaseText(S, T);
+  $('wProg').style.width = (T / q.dur * 100) + '%';
+  $('wParty').innerHTML = q.party.map((p, h) => { const hp = heroHp(q, S, h, T), dead = S.heroes[h].dies && T >= S.heroes[h].D; return `<div class="chip ${dead ? 'dead' : ''}"><span>${dead ? '☠' : CLASSES[p.cls].icon} ${p.name}</span><b><i style="width:${hp * 100}%;background:${hp > 0.5 ? '#5be35b' : hp > 0.25 ? '#f0c040' : '#e0503a'}"></i></b></div>`; }).join('');
+  const ci = canIntervene(q), lab = first('alchemy');
+  $('wEnchant').disabled = !ci || !!(q.enchant || q.enchantedMid) || G.mana < 5; $('wEnchant').textContent = `✨ Enchant (5) · ${Math.round(q.chance * 100)}%`;
+  $('wPotion').disabled = !ci || !lab || lab.stock < 1; $('wPotion').textContent = `🧪 Potion (${lab ? lab.stock : 0})`;
+  $('wRecall').disabled = !!w.finish; $('wRecall').textContent = w.recallArm > 0 ? '🏳 Confirm recall?' : '🏳 Recall';
+  $('wFollow').classList.toggle('on', w.follow); $('wFollow').textContent = w.follow ? '🎯 Following' : '🎯 Follow';
+  $('wPipBtn').classList.toggle('on', w.pip); $('pipFrame').classList.toggle('off', !w.pip);
+  $('wSpeed').textContent = '⏵ x' + G.speed;
+  $('wSwitch').innerHTML = G.quests.filter(x => x.state === 'active' && x !== q).map(x => `<button class="act" data-act="watch" data-q="${x.id}">👁 ${x.name}</button>`).join('');
+  $('wHint').textContent = ci ? 'Intervene before the finale!' : (w.finish ? '' : 'The finale has begun — no more help possible');
+}
+$('wBack').onclick = endWatch; $('pipFrame').onclick = endWatch;
+$('wFollow').onclick = () => { if (watching) { watching.follow = !watching.follow; updateWatchHUD(); } };
+$('wPipBtn').onclick = () => { if (watching) { watching.pip = !watching.pip; updateWatchHUD(); } };
+$('wSpeed').onclick = () => $('speedBtn').click();
+$('wEnchant').onclick = watchEnchant; $('wPotion').onclick = watchPotion; $('wRecall').onclick = watchRecall;
+function renderPip() {
+  const w = watching; if (!w || w.exiting || !w.pip || !watchSaved) return;
+  const r = $('pipFrame').getBoundingClientRect(); if (r.width < 10) return;
+  const a = r.width / r.height, h = 9, dir = new THREE.Vector3(Math.sin(watchSaved.yaw) * Math.cos(watchSaved.pitch), Math.sin(watchSaved.pitch), Math.cos(watchSaved.yaw) * Math.cos(watchSaved.pitch));
+  pipCam.left = -h * a; pipCam.right = h * a; pipCam.top = h; pipCam.bottom = -h; pipCam.position.set(watchSaved.x, 0, watchSaved.z).addScaledVector(dir, 80); pipCam.lookAt(watchSaved.x, 0, watchSaved.z); pipCam.updateProjectionMatrix();
+  const vy = innerHeight - r.bottom;
+  renderer.setScissorTest(true); renderer.setViewport(r.left, vy, r.width, r.height); renderer.setScissor(r.left, vy, r.width, r.height);
+  renderer.render(scene, pipCam); renderer.setScissorTest(false); renderer.setViewport(0, 0, innerWidth, innerHeight);
 }
 
 /* ------------------------------------------------------------------ *
@@ -948,9 +1064,32 @@ function frame() {
     b.bar.style.transform = `translate(${x}px,${y}px) translate(-50%,-50%)`; b.bar.firstChild.style.width = (b.crafting ? b.progress * 100 : 0) + '%';
     b.tag.style.transform = `translate(${x}px,${y + 14}px) translate(-50%,-50%)`; b.tag.textContent = (b.type === 'forge' ? '🗡️ ' : '🧪 ') + b.stock + '/' + stockCap(b);
   }
+  // expedition watch mode: fly camera, live stage, log, HUD
+  if (viewFly) {
+    viewFly.t += rdt; const f = sm(viewFly.t / viewFly.dur), a = viewFly.from, b = viewFly.to;
+    yaw = a.yaw + (b.yaw - a.yaw) * f; pitch = a.pitch + (b.pitch - a.pitch) * f; viewS = Math.exp(Math.log(a.viewS) + (Math.log(b.viewS) - Math.log(a.viewS)) * f);
+    camTarget.x = a.x + (b.x - a.x) * f; camTarget.z = a.z + (b.z - a.z) * f; updateCamera();
+    if (viewFly.t >= viewFly.dur) viewFly = null;
+  }
+  if (watching) {
+    const w = watching, q = w.q;
+    if (w.exiting) { if (!viewFly) cleanupWatch(); }
+    else {
+      if (w.finish) w.finish.t -= rdt;
+      if (w.recallArm > 0) { w.recallArm -= rdt; if (w.recallArm <= 0) updateWatchHUD(); }
+      const T = w.finish ? q.dur : Math.max(0, q.dur - q.t);
+      w.exp.update(T, rdt);
+      if (w.lastScript !== q.script) logReset(w, T);
+      const ev = q.script.events; while (ev[w.logIdx] && ev[w.logIdx].t <= T) addLog(ev[w.logIdx++]);
+      if (w.follow && !viewFly) { const f = w.exp.focus(T), k = 1 - Math.exp(-4 * rdt); camTarget.x += (f.x - camTarget.x) * k; camTarget.z += (f.z - camTarget.z) * k; updateCamera(); }
+      w.hudT -= rdt; if (w.hudT <= 0) { w.hudT = 0.1; updateWatchHUD(); }
+      if (w.finish && w.finish.t <= 0) endWatch();
+    }
+  }
   hudTick -= rdt; if (hudTick <= 0) { hudTick = 0.15; updateHUD(); }
   modalTick -= rdt; if (modalTick <= 0) { modalTick = 0.4; renderModal(false); }
   renderer.render(scene, camera);
+  renderPip();
 }
 
 /* ------------------------------------------------------------------ *
@@ -961,4 +1100,4 @@ spawnHero('knight', true); spawnHero('ranger', true);
 genQuest(); genQuest();
 toast('Welcome, Guild Master! Build a Tavern and a Forge to attract & equip heroes.');
 frame();
-window.__api = { addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, startRoyal, genQuest, dispatch, readyHeroes };
+window.__api = { startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, startRoyal, genQuest, dispatch, readyHeroes };

@@ -80,3 +80,47 @@ button.act.red{background:linear-gradient(#d65353,#8b1d1d);color:#fff}
 #placeBar button.act{padding:9px 12px;font-size:14px;min-width:84px}
 #placeHint{bottom:122px;max-width:92vw;text-align:center}
 @media (max-width:600px){#camctl{bottom:84px}body.placing #camctl{bottom:140px}}
+
+/* ---- expedition watch mode ---- */
+#stageEl{position:fixed;inset:0;pointer-events:none;overflow:hidden;display:none}
+#watchBar,#watchLog,#pipFrame,#watchActs{display:none}
+body.watching #watchBar{display:block}
+body.watching #watchLog{display:flex}
+body.watching #pipFrame{display:block}
+body.watching #watchActs{display:block}
+body.watching #toolbar,body.watching #objectives,body.watching #banner{display:none}
+.exp[data-act]{cursor:pointer}
+.exp[data-act]:hover{color:#fff}
+#watchBar{position:fixed;top:52px;left:50%;transform:translateX(-50%);width:min(680px,96vw);z-index:6;background:linear-gradient(#5b3a1e,#3b2412);border:2px solid var(--gold);border-radius:10px;padding:6px 10px;box-shadow:0 3px 10px #000a}
+#watchBar .wtop{display:flex;justify-content:space-between;gap:8px;font-size:13px;flex-wrap:wrap}
+#watchBar .wtop b{color:var(--gold)}
+.wbar{position:relative;height:9px;background:#0007;border-radius:5px;margin:5px 0;overflow:hidden}
+.wbar i{display:block;height:100%;background:linear-gradient(#ffd96a,#e8a21a)}
+.wbar u{position:absolute;top:0;width:2px;height:100%;background:#000a}
+#wParty{display:flex;gap:6px;flex-wrap:wrap}
+#wParty .chip{flex:1 1 110px;font-size:11px;background:#0004;border-radius:6px;padding:2px 6px;min-width:100px}
+#wParty .chip.dead{opacity:.5}
+#wParty .chip b{display:block;height:5px;background:#000a;border-radius:3px;overflow:hidden;margin-top:2px}
+#wParty .chip i{display:block;height:100%}
+#wSwitch{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+#wSwitch:empty{display:none}
+#wSwitch button{font-size:11px;padding:3px 7px}
+#watchLog{position:fixed;right:8px;bottom:128px;width:min(250px,60vw);flex-direction:column;gap:2px;z-index:5;pointer-events:none;font-size:12px}
+#watchLog .lg{background:#000a;border-radius:5px;padding:2px 7px;animation:lgin .25s}
+#watchLog .l-hit{color:#ffe9a6}#watchLog .l-ehit{color:#ff9a9a}#watchLog .l-edie{color:#9bff9b}#watchLog .l-hdie{color:#ff6a6a;font-weight:700}#watchLog .l-phase{color:#8fd4ff;font-weight:700}#watchLog .l-loot{color:#ffd24a;font-weight:700}
+@keyframes lgin{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:none}}
+#pipFrame{position:fixed;left:8px;top:170px;width:240px;height:160px;z-index:5;border:3px solid var(--gold);border-radius:8px;cursor:pointer;box-shadow:0 3px 10px #000a;background:transparent}
+#pipFrame.off{display:none!important}
+#pipFrame span{position:absolute;left:0;right:0;bottom:0;background:#000b;font-size:11px;text-align:center;padding:2px}
+#watchActs{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);z-index:6;text-align:center;background:linear-gradient(#6b4423,#4a2d14);border:2px solid var(--gold);border-radius:12px;padding:6px 8px;box-shadow:0 4px 12px #000a;max-width:96vw}
+#watchActs .wrow{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:5px}
+#watchActs button.act{padding:8px 10px;font-size:13px}
+#watchActs button.on{outline:2px solid #fff8}
+#wHint{font-size:12px;color:#ffd96a}
+.hpbar{position:absolute;left:0;top:0;pointer-events:none;text-align:center;font-size:11px;font-weight:700;text-shadow:0 1px 2px #000,0 0 3px #000;white-space:nowrap}
+.hpbar b{display:block;width:42px;height:6px;background:#000b;border:1px solid #000;border-radius:3px;overflow:hidden;margin:1px auto 0}
+.hpbar i{display:block;height:100%;background:#5be35b}
+.hpbar.foe i{background:#e0503a}.hpbar.foe b{width:36px}
+.dnum{font-size:17px!important;font-weight:800}
+.dnum.dh{color:#ffe08a}.dnum.de{color:#ff6a5a}
+@media (max-width:600px){#pipFrame{width:150px;height:100px;top:190px}#watchLog{bottom:150px;width:56vw}#watchActs button.act{padding:7px 8px;font-size:12px}#wParty .chip{flex-basis:90px}}

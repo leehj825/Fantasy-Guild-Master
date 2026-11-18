@@ -15,21 +15,21 @@ export function vox(w, h, d, color, x = 0, y = 0, z = 0, emissive = 0, ei = 0) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color, emissive, ei));
   m.position.set(x, y + h / 2, z); return shade(m);
 }
-const cyl = (rt, rb, h, color, x = 0, y = 0, z = 0, seg = 10, emissive = 0, ei = 0) => {
+export const cyl = (rt, rb, h, color, x = 0, y = 0, z = 0, seg = 10, emissive = 0, ei = 0) => {
   const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat(color, emissive, ei));
   m.position.set(x, y + h / 2, z); return shade(m);
 };
-const cone = (r, h, color, x = 0, y = 0, z = 0, seg = 6, emissive = 0, ei = 0) => {
+export const cone = (r, h, color, x = 0, y = 0, z = 0, seg = 6, emissive = 0, ei = 0) => {
   const m = new THREE.Mesh(new THREE.ConeGeometry(r, h, seg), mat(color, emissive, ei));
   m.position.set(x, y + h / 2, z); return shade(m);
 };
-const sph = (r, color, x = 0, y = 0, z = 0, emissive = 0, ei = 0, seg = 8) => {
+export const sph = (r, color, x = 0, y = 0, z = 0, emissive = 0, ei = 0, seg = 8) => {
   const m = new THREE.Mesh(new THREE.SphereGeometry(r, seg, seg - 2), mat(color, emissive, ei));
   m.position.set(x, y + r, z); return shade(m);
 };
-const rot = (m, x = 0, y = 0, z = 0) => { m.rotation.set(x, y, z); return m; };
-const grp = (...c) => { const g = new THREE.Group(); c.flat().forEach(x => g.add(x)); return g; };
-const at = (o, x = 0, y = 0, z = 0) => { o.position.set(x, y, z); return o; };
+export const rot = (m, x = 0, y = 0, z = 0) => { m.rotation.set(x, y, z); return m; };
+export const grp = (...c) => { const g = new THREE.Group(); c.flat().forEach(x => g.add(x)); return g; };
+export const at = (o, x = 0, y = 0, z = 0) => { o.position.set(x, y, z); return o; };
 
 // triangular prism roof (apex up). ridge along x (default) or z. base sits at y.
 function roof(len, width, height, color, y, axis = 'x') {

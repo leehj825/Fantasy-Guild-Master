@@ -24,5 +24,6 @@ Then visit http://localhost:8123/ . A model viewer lives at `/gallery.html` (bui
 - Procedural low-poly models (`src/models.js`) modelled on the concept art: timber tavern, stone forge, alchemy lab, waystone portal, tents, market stall, carts, crates, training dummies, racks, flasks, planters, anvils, lanterns, giant mushrooms, standing stones; knights, elf rangers, wizards, dwarves, villagers, guards
 - Hero state machine (idle → hungry → tavern → needs gear → shop → ready → quest), classes with distinct needs
 - Crafting (forge / lab), quest board with party dispatch and mana enchanting, staff & wages, research, outpost upgrades
+- Watch expeditions live: tap a quest in the Expeditions panel (or 👁 Watch in the Quests window). The camera flies to a stage (Goblin Woods / Sunken Ruins / Deep Cave) and follows the party through 3 scripted encounters and the loot chest, with HP bars, damage numbers, a combat log and a base picture-in-picture. The fight is a pure function of quest progress, so you can join late, speed up, or leave and return. Before the finale you can cast Enchant, send a healing Potion from the lab, or Recall the party.
 - Events: monster incursion (sound the alarm), wandering merchant, royal demand
 - HTML/CSS HUD overlay with floating world UI (gold popups, mood bubbles, progress bars)
