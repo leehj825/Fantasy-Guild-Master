@@ -125,3 +125,5 @@ body.watching #toolbar,body.watching #objectives,body.watching #banner{display:n
 .dnum.dh{color:#ffe08a}.dnum.de{color:#ff6a5a}
 @media (max-width:600px){#pipFrame{width:150px;height:100px;top:190px}#watchLog{bottom:150px;width:56vw}#watchActs button.act{padding:7px 8px;font-size:12px}#wParty .chip{flex-basis:90px}}
 .ord{border-top:1px solid var(--gold2);padding:5px 0;font-size:12px}.ord:first-child{border-top:0}
+
+#watchBar.dive .wbar u{display:none}

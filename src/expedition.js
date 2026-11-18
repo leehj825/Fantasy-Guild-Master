@@ -150,6 +150,7 @@ export function genScript(q) {
   return S;
 }
 export function heroHp(q, S, h, T) {
+  if (S.dive) return diveHp(q, S, h, T);
   const H = S.heroes[h], w = S.win, base = t => {
     let d = 0; for (let e = 0; e < 3; e++) d += H.dmg[e] * clamp((t - w[e].a) / (w[e].b - w[e].a), 0, 1);
     let heal = 0; for (const x of q.heals || []) if (t >= x.t) heal += x.amt * clamp((t - x.t) / 0.6, 0, 1);
@@ -164,8 +165,121 @@ export function enemyHp(S, k, T) {
   return 1 - E.endFrac * clamp((T - E.a) / (E.b - E.a), 0, 1);
 }
 export function phaseText(S, T) {
+  if (S.dive) { const f = S.floors.length ? S.floors[diveFloorIndex(S, T)] : null; return f ? `Floor ${f.k + 1}${f.boss ? ' — BOSS' : ''} · ${S.encs[f.k].name}` : 'Entering the dungeon…'; }
   for (let i = 0; i < 3; i++) if (T >= S.win[i].s && T < S.win[i].e) return `Encounter ${i + 1}/3 — ${S.encs[i].name}`;
   return T < S.win[0].s ? 'Travelling to the danger zone' : 'Looting';
+}
+
+
+/* ------------------------------------------------------------ endless dive engine
+   Floors are generated on demand from (seed, party, heals, wards), so a dive is still a pure function of its inputs:
+   it can be watched live, joined late, saved and replayed. Hero HP is real: it carries from floor to floor. */
+const DIVE_POOL = [['goblin', 'goblin', 'wolf', 'bandit'], ['wolf', 'bandit', 'imp', 'wisp'], ['imp', 'wisp', 'wolf', 'bandit', 'goblin']];
+const DIVE_BOSS = ['ogre', 'chief', 'golem'];
+export const diveCheckpoint = k => (k + 1) % 5 === 0;
+export function newDiveScript(q) {
+  return { dive: true, dur: Infinity, n: q.party.length, theme: 'cave', win: [], enemies: [], encs: [], heroes: q.party.map(() => ({ dies: false, D: Infinity })), events: [], floors: [], endT: Infinity, wiped: false, rev: 0, evSeq: 0 };
+}
+export function floorReward(q, k) {
+  const r = mulberry(q.seed * 57 + k * 977 + 3), boss = k % 5 === 4;
+  const rw = { gold: Math.round((14 + 9 * k) * (boss ? 2 : 1) * (0.9 + 0.2 * r())), ore: Math.floor(1 + r() * 2.5), wood: r() < 0.5 ? 1 : 0, herbs: Math.floor(r() * 2.5), mana: boss ? 5 : 0, mythril: 0, scale: 0, feather: 0, renown: boss ? 1 : 0 };
+  if (k >= 6 && r() < (boss ? 0.7 : 0.18)) rw.mythril = 1 + (boss && k >= 14 ? 1 : 0);
+  if (boss && k >= 9 && r() < 0.55) rw.scale = 1;
+  if (boss && k >= 14 && r() < 0.4) rw.feather = 1;
+  return rw;
+}
+export function rewardText(rw) {
+  const parts = [`+${rw.gold}g`]; if (rw.ore) parts.push(`⛏️${rw.ore}`); if (rw.herbs) parts.push(`🌿${rw.herbs}`); if (rw.wood) parts.push(`🪵${rw.wood}`); if (rw.mana) parts.push(`✨${rw.mana}`);
+  if (rw.mythril) parts.push(`💎${rw.mythril}`); if (rw.scale) parts.push(`🐉${rw.scale}`); if (rw.feather) parts.push(`🪶${rw.feather}`); if (rw.renown) parts.push(`⭐${rw.renown}`);
+  return parts.join(' ');
+}
+function floorHpAt(q, f, h, T) {
+  const pr = clamp((T - f.a) / (f.b - f.a), 0, 1); let heal = 0;
+  for (const x of q.heals || []) if (x.t >= f.s && x.t < f.e) heal += x.amt * clamp((T - x.t) / 0.6, 0, 1);
+  return clamp(f.hp0[h] - f.dmg[h] * pr + heal, 0, 1);
+}
+function floorAt(S, T) { for (let i = S.floors.length - 1; i >= 0; i--) if (S.floors[i].s <= T) return S.floors[i]; return S.floors[0] || null; }
+export function diveFloorIndex(S, T) { const f = floorAt(S, T); return f ? f.k : 0; }
+function diveHp(q, S, h, T) {
+  const H = S.heroes[h]; if (H.dies && T >= H.D) return 0;
+  const f = floorAt(S, T); if (!f || T < f.s) return 1;
+  return floorHpAt(q, f, h, T);
+}
+function scanDeaths(q, S, f) {
+  q.party.forEach((p, h) => {
+    if (S.heroes[h].dies || f.hp0[h] <= 0) return;
+    for (let t = f.a; t <= f.b + 1e-6; t += 0.1) if (floorHpAt(q, f, h, t) <= 0.0005) { S.heroes[h] = { dies: true, D: t }; break; }
+  });
+  f.lost = S.heroes.every(H => H.dies);
+  if (f.lost) { S.wiped = true; S.endT = Math.max(...S.heroes.map(H => H.D)) + 3.5; } else { S.wiped = false; S.endT = Infinity; }
+}
+function setEnemyTimes(S, f) {
+  const idxs = S.encs[f.k].idxs, m = idxs.length;
+  idxs.forEach((ei, j) => { const E = S.enemies[ei], dies = !(f.lost && j === 0); E.D = dies ? E.a + (E.b - E.a) * (0.5 + 0.5 * (j + 1) / m) : Infinity; E.endFrac = dies ? 1 : 0.62; });
+}
+function genFloorEvents(q, S, f, fromT) {
+  const party = q.party, enc = S.encs[f.k], rr = mulberry(q.seed * 17 + f.k * 104729 + (q.heals || []).length * 13 + (q.enchants || []).length * 7);
+  const push = e => { if (e.t > fromT) { e.id = S.evSeq++; S.events.push(e); } };
+  const aliveH = (h, t) => f.hp0[h] > 0 && !(S.heroes[h].dies && t >= S.heroes[h].D);
+  push({ t: f.s, type: 'phase', log: `Floor ${f.k + 1}${f.boss ? ' — BOSS' : ''}: ${enc.name}` });
+  party.forEach((p, h) => {
+    const P = 0.95 + 0.2 * h + rr() * 0.25; let t = f.a + rr() * P;
+    for (; t < f.b; t += P) {
+      if (!aliveH(h, t)) break; const e = enc.idxs.find(k => S.enemies[k].D > t); if (e === undefined) break;
+      const base = p.cls === 'wizard' ? 11 : p.cls === 'knight' ? 9 : 8;
+      push({ t, type: 'hit', h, e, dmg: Math.round(base * (0.8 + rr() * 0.8) + p.level + f.k * 0.6), log: `${p.name} hits ${S.enemies[e].name} −` });
+    }
+  });
+  enc.idxs.forEach(k => {
+    const E = S.enemies[k], P = 1.25 + rr() * 0.5; let t = f.a + rr() * P;
+    for (; t < Math.min(f.b, E.D); t += P) {
+      const alive = party.map((_, h) => h).filter(h => aliveH(h, t)); if (!alive.length) break;
+      const h = alive[Math.floor(rr() * alive.length)];
+      push({ t, type: 'ehit', e: k, h, dmg: Math.round(3 + rr() * 8 + (E.boss ? 6 : 0) + f.k * 0.8), log: `${E.name} hits ${party[h].name} −` });
+    }
+    if (isFinite(E.D)) push({ t: E.D, type: 'edie', e: k, log: `${E.name} defeated!` });
+  });
+  party.forEach((p, h) => { const H = S.heroes[h]; if (H.dies && H.D >= f.s && H.D <= f.e) push({ t: H.D, type: 'hdie', h, log: `${p.name} has fallen!` }); });
+  if (!f.lost) push({ t: f.e - 0.4, type: 'loot', log: `Floor ${f.k + 1} cleared · ${rewardText(f.reward)}${diveCheckpoint(f.k) ? ' · CHECKPOINT: loot banked!' : ''}` });
+  else push({ t: Math.max(f.b, S.endT - 1.2), type: 'loot', log: 'The party has been wiped out…' });
+  S.events.sort((a, b) => a.t - b.t); S.rev++;
+}
+function genFloor(q, S) {
+  const k = S.floors.length, prev = S.floors[k - 1], party = q.party;
+  const r = mulberry(q.seed * 31 + k * 7919 + 11), boss = k % 5 === 4, len = k === 0 ? 17 : (boss ? 18 : 13);
+  const s = prev ? prev.e : 0, e = s + len, a = s + (k === 0 ? 6.5 : 0.2 * len), b = e - 0.12 * len;
+  const alive = party.map((_, h) => !S.heroes[h].dies);
+  const hp0 = party.map((_, h) => !alive[h] ? 0 : (prev ? Math.min(1, floorHpAt(q, prev, h, prev.e) + 0.05) : 1));
+  const P = party.reduce((sum, p, h) => alive[h] ? sum + (p.power || 3) : sum, 0);
+  const Dk = 2.5 * Math.pow(1.12, k) * (boss ? 1.5 : 1), ward = (q.enchants || []).some(x => k >= x.floor && k < x.floor + 3);
+  const per = 0.07 * Math.pow(Dk / Math.max(1, P), 1.5) * (ward ? 0.6 : 1);
+  const dmg = party.map((_, h) => alive[h] ? clamp(per * (0.75 + 0.5 * r()), 0, 0.95) : 0);
+  const f = { k, s, e, a, b, boss, hp0, dmg, ward, lost: false, reward: floorReward(q, k) };
+  S.floors.push(f); S.win.push({ s, e, a, b });
+  // enemies
+  const bossKind = DIVE_BOSS[((k / 5) | 0) % 3], pool = DIVE_POOL[Math.min(2, (k / 6) | 0)], pickK = () => pool[Math.floor(r() * pool.length)];
+  const kinds = boss ? [bossKind, ...Array.from({ length: k >= 14 ? 2 : 1 }, pickK)] : Array.from({ length: clamp(2 + ((k / 4) | 0), 2, 6) }, pickK), m = kinds.length, idxs = [];
+  kinds.forEach((kind, j) => {
+    const info = ENEMY[kind];
+    S.enemies.push({ enc: k, j, kind, name: info.name, boss: boss && j === 0, s, a, b, D: Infinity, endFrac: 1, home: { x: ARENA[0] + 0.8 + (j % 2) * 1.0 + (j > 3 ? 1 : 0), z: (j - (m - 1) / 2) * 1.5 }, h: info.h });
+    idxs.push(S.enemies.length - 1);
+  });
+  S.encs.push({ name: boss ? `${ENEMY[bossKind].name} (Boss)` : [...new Set(kinds.map(x => ENEMY[x].name))].join(', '), idxs, s, e });
+  scanDeaths(q, S, f); setEnemyTimes(S, f); genFloorEvents(q, S, f, -Infinity);
+}
+export function ensureFloors(q, now) {
+  const S = q.script; let guard = 0;
+  while (!S.wiped && guard++ < 60 && (S.floors.length === 0 || S.floors[S.floors.length - 1].e < now + 20)) genFloor(q, S);
+}
+// a heal or ward changed the future: drop later floors and re-evaluate the current one from time T
+export function rebuildDive(q, T) {
+  const S = q.script, idx = diveFloorIndex(S, T), f = S.floors[idx]; if (!f) return;
+  S.floors.length = idx + 1; S.win.length = idx + 1; S.encs.length = idx + 1; S.enemies = S.enemies.filter(E => E.enc <= idx);
+  S.events = S.events.filter(e => e.t <= T);
+  S.heroes.forEach((H, h) => { if (H.dies && H.D >= f.s) S.heroes[h] = { dies: false, D: Infinity }; });
+  S.wiped = false; S.endT = Infinity;
+  scanDeaths(q, S, f); setEnemyTimes(S, f); genFloorEvents(q, S, f, T);
+  ensureFloors(q, T);
 }
 
 /* ------------------------------------------------------------ stage scenery */
@@ -219,45 +333,59 @@ const THEME = {
 export class Expedition {
   constructor({ scene, q, lowfx, labelEl, project }) {
     this.scene = scene; this.q = q; this.S = q.script; this.labelEl = labelEl; this.project = project; this.lowfx = lowfx;
-    this.theme = THEME[this.S.theme]; this.name = this.theme.name;
+    this.theme = THEME[this.S.theme]; this.name = this.S.dive ? 'Endless Dungeon' : this.theme.name;
     this.origin = new THREE.Vector3(STAGE_X, 0, 0);
     this.group = new THREE.Group(); this.group.position.copy(this.origin);
     this.stage = buildStage(this.S.theme, q.seed, lowfx); this.group.add(this.stage.group);
     this.hero = q.party.map(p => { const m = buildHero(p.cls, p.variant); this.group.add(m); return { m, p, bar: this.bar(p.name, 'hero') }; });
-    this.foe = this.S.enemies.map((E, k) => { const m = ENEMY[E.kind].make(); m.visible = false; this.group.add(m); return { m, E, bar: this.bar(E.boss ? E.name : '', 'foe'), dead: false }; });
+    this.foe = [];
     // pooled effects: projectiles and hit sparks
     this.proj = Array.from({ length: 8 }, () => { const m = sph(0.12, 0xffffff, 0, 0, 0, 0xffffff, 1.2, 6); m.visible = false; this.group.add(m); return m; });
     this.spark = Array.from({ length: 8 }, () => { const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.3), new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.9 })); m.visible = false; this.group.add(m); return m; });
     this.coins = Array.from({ length: 8 }, () => { const m = sph(0.07, 0xffd24a, 0, 0, 0, 0xffd24a, 1.4, 5); m.visible = false; this.group.add(m); return m; });
-    this.nums = []; this.fired = new Set(); this.T = 0; this.sceneRef = scene; scene.add(this.group);
-    this.index();
+    this.nums = []; this.fired = new Set(); this.T = 0; scene.add(this.group);
+    this.syncFoes(0); this.index();
   }
   bar(name, cls) { const el = document.createElement('div'); el.className = 'hpbar ' + cls; el.innerHTML = (name ? `<span>${name}</span>` : '') + '<b><i></i></b>'; this.labelEl.appendChild(el); return el; }
-  index() {
-    const S = this.S; this.hitsBy = this.hero.map((_, h) => S.events.filter(e => e.type === 'hit' && e.h === h));
-    this.ehitsBy = S.enemies.map((_, k) => S.events.filter(e => e.type === 'ehit' && e.e === k));
-    this.hits = S.events.filter(e => e.type === 'hit'); this.ehits = S.events.filter(e => e.type === 'ehit');
+  // enemy meshes follow the script: created as floors are generated, dropped when rebuilt or long past
+  syncFoes(T) {
+    const S = this.S;
+    while (this.foe.length > S.enemies.length) { const o = this.foe.pop(); if (!o.gone) { this.group.remove(o.m); o.bar.remove(); } }
+    for (let k = this.foe.length; k < S.enemies.length; k++) { const E = S.enemies[k]; const m = ENEMY[E.kind].make(); m.visible = false; this.group.add(m); this.foe.push({ m, bar: this.bar(E.boss ? E.name : '', 'foe'), dead: false, gone: false }); }
+    if (S.dive) { const cur = diveFloorIndex(S, T); this.foe.forEach((o, k) => { if (!o.gone && S.enemies[k].enc < cur - 1) { this.group.remove(o.m); o.bar.remove(); o.gone = true; o.m.visible = false; } }); }
   }
-  last(arr, T) { for (let i = arr.length - 1; i >= 0; i--) if (arr[i].t <= T) return arr[i]; return null; }
-  heroPos(h) { return this.hero[h].m.position; }
+  index() {
+    const S = this.S; this.rev = S.rev || 0; this.nEv = S.events.length;
+    this.hitsBy = this.hero.map(() => []); this.ehitsOnHero = this.hero.map(() => []); this.ehitsBy = S.enemies.map(() => []); this.hitsOnFoe = S.enemies.map(() => []);
+    for (const e of S.events) {
+      if (e.type === 'hit') { this.hitsBy[e.h]?.push(e); this.hitsOnFoe[e.e]?.push(e); }
+      else if (e.type === 'ehit') { this.ehitsBy[e.e]?.push(e); this.ehitsOnHero[e.h]?.push(e); }
+    }
+  }
+  last(arr, T) { if (!arr) return null; for (let i = arr.length - 1; i >= 0; i--) if (arr[i].t <= T) return arr[i]; return null; }
   wpos(v, dy = 0) { return new THREE.Vector3(v.x + this.origin.x, v.y + dy, v.z + this.origin.z); }
   // where the camera should look
-  focus(T) {
-    const S = this.S; let x = 0, z = 0, n = 0;
-    this.hero.forEach((o, h) => { x += o.m.position.x; z += o.m.position.z; n++; });
-    this.foe.forEach(o => { if (o.m.visible && !o.dead) { x += o.m.position.x * 0.8; z += o.m.position.z * 0.8; n += 0.8; } });
+  focus() {
+    let x = 0, z = 0, n = 0;
+    this.hero.forEach(o => { x += o.m.position.x; z += o.m.position.z; n++; });
+    this.foe.forEach(o => { if (!o.gone && o.m.visible && !o.dead) { x += o.m.position.x * 0.8; z += o.m.position.z * 0.8; n += 0.8; } });
     return new THREE.Vector3(x / n + this.origin.x, 0, z / n + this.origin.z);
   }
   update(T, rdt) {
-    const q = this.q, S = q.script; if (S !== this.S) { this.S = S; this.index(); this.fired.clear(); }
-    T = clamp(T, 0, S.dur); this.T = T;
-    const w = S.win, n = this.hero.length, stand = ARENA.map(a => a - 2.6);
-    // party march: walking segments between fights
-    const segs = [[0, w[0].a, -19, stand[0]], [w[0].b, w[1].a, stand[0], stand[1]], [w[1].b, w[2].a, stand[1], stand[2]]];
-    segs.push(q.ok ? [w[2].b, S.dur * 0.93, stand[2], CHEST_X - 2.6] : [w[2].b, S.dur, stand[2], stand[2] - 6]);
-    let px = -19, moving = false;
-    for (const [t0, t1, x0, x1] of segs) { if (T >= t1) px = x1; else { if (T >= t0) { px = lerp(x0, x1, (T - t0) / (t1 - t0)); moving = true; } else px = x0; break; } }
-    const retreat = !q.ok && T > w[2].b;
+    const q = this.q, S = q.script; T = clamp(T, 0, S.dur); this.T = T;
+    if (S !== this.S) { this.S = S; this.fired.clear(); this.syncFoes(T); this.index(); }
+    else if ((S.rev || 0) !== this.rev || S.events.length !== this.nEv) { this.syncFoes(T); this.index(); }
+    else if (S.dive) this.syncFoes(T);
+    const w = S.win, n = this.hero.length, stand = ARENA.map(a => a - 2.6), dive = !!S.dive;
+    // party march: walking segments between fights (a dive keeps the party in place after the walk-in)
+    let px = -19, moving = false, retreat = false;
+    if (dive) { if (T < w[0].a) { px = lerp(-19, stand[0], T / w[0].a); moving = true; } else px = stand[0]; }
+    else {
+      const segs = [[0, w[0].a, -19, stand[0]], [w[0].b, w[1].a, stand[0], stand[1]], [w[1].b, w[2].a, stand[1], stand[2]]];
+      segs.push(q.ok ? [w[2].b, S.dur * 0.93, stand[2], CHEST_X - 2.6] : [w[2].b, S.dur, stand[2], stand[2] - 6]);
+      for (const [t0, t1, x0, x1] of segs) { if (T >= t1) px = x1; else { if (T >= t0) { px = lerp(x0, x1, (T - t0) / (t1 - t0)); moving = true; } else px = x0; break; } }
+      retreat = !q.ok && T > w[2].b;
+    }
     // heroes
     this.hero.forEach((o, h) => {
       const m = o.m, H = S.heroes[h], hp = heroHp(q, S, h, T), dead = H.dies && T >= H.D;
@@ -273,8 +401,7 @@ export class Expedition {
           else if (cls === 'ranger') { A[0].rotation.x = -1.5; A[1].rotation.x = -1.5; }
           else { A[1].rotation.x = -2.9 * k; A[0].rotation.x = -0.6 * k; }
         }
-        // hit reaction from enemy blows
-        const eh = this.last(this.ehits.filter(e => e.h === h), T); if (eh && T - eh.t > 0.28 && T - eh.t < 0.5) lunge -= 0.18 * Math.sin((T - eh.t - 0.28) / 0.22 * Math.PI);
+        const eh = this.last(this.ehitsOnHero[h], T); if (eh && T - eh.t > 0.28 && T - eh.t < 0.5) lunge -= 0.18 * Math.sin((T - eh.t - 0.28) / 0.22 * Math.PI);
         m.rotation.set(0, retreat ? -Math.PI / 2 : Math.PI / 2, 0);
       } else { const f = sm((T - H.D) / 0.45); m.rotation.set(0, Math.PI / 2, f * Math.PI / 2); y = f * 0.12; }
       m.position.set(x + lunge, y, z);
@@ -282,7 +409,8 @@ export class Expedition {
     });
     // enemies
     this.foe.forEach((o, k) => {
-      const E = o.E, m = o.m, hp = enemyHp(S, k, T), dying = T >= E.D;
+      if (o.gone) return;
+      const E = S.enemies[k], m = o.m, hp = enemyHp(S, k, T), dying = T >= E.D;
       const encEnd = S.encs[E.enc].e, show = T >= E.s && (T <= encEnd + 1.2 || (!isFinite(E.D) && T <= S.dur));
       m.visible = show; o.dead = dying; if (!show) { o.bar.style.display = 'none'; return; }
       const info = m.userData; const approach = clamp((T - E.s) / (E.a - E.s), 0, 1), walking = approach < 1 && !dying;
@@ -294,7 +422,7 @@ export class Expedition {
         if (walking && info.swing) info.swing(Math.sin(T * 8 + k) * 0.6);
         y = info.float ? 0.25 + Math.sin(T * 3 + k) * 0.12 : (walking ? Math.abs(Math.sin(T * 8 + k)) * 0.05 : 0);
         if (u < 1 && info.attack) { info.attack(clamp(u, 0, 1)); if (!info.float) lunge = -0.9 * Math.sin(clamp(u, 0, 1) * Math.PI); } else if (info.attack) info.attack(0);
-        const hh = this.last(this.hits.filter(e => e.e === k), T); if (hh && T - hh.t > 0.28 && T - hh.t < 0.5) lunge += 0.2 * Math.sin((T - hh.t - 0.28) / 0.22 * Math.PI);
+        const hh = this.last(this.hitsOnFoe[k], T); if (hh && T - hh.t > 0.28 && T - hh.t < 0.5) lunge += 0.2 * Math.sin((T - hh.t - 0.28) / 0.22 * Math.PI);
         m.scale.setScalar(m.userData.s0 ??= m.scale.x);
       } else {
         const f = sm((T - E.D) / 0.5), s0 = m.userData.s0 ??= m.scale.x;
@@ -304,25 +432,28 @@ export class Expedition {
       this.setBar(o.bar, m.position, ENEMY[E.kind].h, hp, dying);
     });
     // chest, coins, swirl, flicker
-    const ch = this.stage.chest, lidT = T - S.dur * 0.93;
-    ch.visible = q.ok; ch.userData.lid.rotation.x = -1.15 * sm(lidT / 0.4); ch.userData.glow.visible = q.ok && lidT > 0.2;
-    this.coins.forEach((c, i) => { const t = (T - (S.dur * 0.94 + i * 0.08)); c.visible = q.ok && t > 0 && t < 1.4; if (c.visible) c.position.set(CHEST_X + Math.sin(i * 2.4) * 0.5 * t, 0.5 + t * 1.6 - t * t * 0.9, Math.cos(i * 2.4) * 0.4 * t); });
+    const ch = this.stage.chest, lidT = dive ? -1 : T - S.dur * 0.93;
+    ch.visible = !dive && q.ok; ch.userData.lid.rotation.x = -1.15 * sm(lidT / 0.4); ch.userData.glow.visible = !dive && q.ok && lidT > 0.2;
+    this.coins.forEach((c, i) => { const t = dive ? -1 : (T - (S.dur * 0.94 + i * 0.08)); c.visible = !dive && q.ok && t > 0 && t < 1.4; if (c.visible) c.position.set(CHEST_X + Math.sin(i * 2.4) * 0.5 * t, 0.5 + t * 1.6 - t * t * 0.9, Math.cos(i * 2.4) * 0.4 * t); });
     if (this.stage.swirl) this.stage.swirl.children.forEach(c => { if (c.userData.arm !== undefined) c.rotation.z = performance.now() / 1000 * (1 + c.userData.arm * 0.4) + c.userData.arm * 1.3; });
     this.stage.flicker.forEach((f, i) => { if (f) f.intensity = 1.0 + Math.sin(performance.now() / 90 + i) * 0.25 + Math.random() * 0.15; });
-    // projectiles, sparks, floating numbers
+    // projectiles, sparks, floating numbers (only events near "now")
     this.proj.forEach(p => { p.visible = false; }); this.spark.forEach(p => { p.visible = false; });
-    let pi = 0, si = 0;
-    for (const e of S.events) {
+    let pi = 0, si = 0, lo = 0, hi = S.events.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (S.events[mid].t < T - 1.0) lo = mid + 1; else hi = mid; }
+    for (let i = lo; i < S.events.length; i++) {
+      const e = S.events[i];
       if (e.t > T + 0.1) break;
       if (e.type !== 'hit' && e.type !== 'ehit') continue;
-      const ho = this.hero[e.h], fo = this.foe[e.e], ranged = e.type === 'hit' && ho.p.cls !== 'knight';
+      const ho = this.hero[e.h], fo = this.foe[e.e]; if (!ho || !fo || fo.gone) continue;
+      const ranged = e.type === 'hit' && ho.p.cls !== 'knight';
       const from = e.type === 'hit' ? ho.m.position : fo.m.position, to = e.type === 'hit' ? fo.m.position : ho.m.position;
       if (ranged && T >= e.t + 0.1 && T <= e.t + 0.3 && pi < this.proj.length) {
         const p = this.proj[pi++], f = (T - e.t - 0.1) / 0.2; p.visible = true; p.position.set(lerp(from.x + 0.3, to.x, f), 1.0 + Math.sin(f * Math.PI) * 0.25, lerp(from.z, to.z, f));
         p.material.color.setHex(ho.p.cls === 'wizard' ? 0x7affff : 0xe8d9a8); p.scale.setScalar(ho.p.cls === 'wizard' ? 1.4 : 0.7);
       }
       const hit = e.t + (ranged ? 0.3 : 0.28);
-      if (T >= hit && T <= hit + 0.25 && si < this.spark.length && (e.type === 'ehit' ? !this.hero[e.h] || true : fo.m.visible)) {
+      if (T >= hit && T <= hit + 0.25 && si < this.spark.length && (e.type === 'ehit' || fo.m.visible)) {
         const s = this.spark[si++], f = (T - hit) / 0.25; s.visible = true; s.position.set(to.x, 1.0, to.z + 0.1); s.scale.setScalar(0.6 + f); s.material.opacity = 0.9 * (1 - f); s.material.color.setHex(e.type === 'hit' ? 0xffe08a : 0xff6a5a);
       }
       if (T >= hit && T - hit < 0.6 && !this.fired.has(e.id)) {
@@ -332,7 +463,7 @@ export class Expedition {
     }
     if (this.fired.size > 400) this.fired.clear();
     for (let i = this.nums.length - 1; i >= 0; i--) {
-      const nmb = this.nums[i]; nmb.age += rdt; const [sx, sy, sz] = this.project(nmb.pos);
+      const nmb = this.nums[i]; nmb.age += rdt; const [sx, sy] = this.project(nmb.pos);
       nmb.el.style.transform = `translate(${sx}px,${sy - nmb.age * 36}px) translate(-50%,-50%)`; nmb.el.style.opacity = Math.max(0, 1 - nmb.age / 0.9);
       if (nmb.age > 0.9) { nmb.el.remove(); this.nums.splice(i, 1); }
     }

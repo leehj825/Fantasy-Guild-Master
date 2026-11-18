@@ -1,6 +1,6 @@
 import * as THREE from '../vendor/three.module.js';
 import { BUILDINGS, buildBuilding, buildHero, buildStaff, buildGoblin, buildMerchantCart, vox, mat, PROPS } from './models.js';
-import { Expedition, genScript, STAGE_X, heroHp, phaseText } from './expedition.js';
+import { Expedition, genScript, STAGE_X, heroHp, phaseText, newDiveScript, ensureFloors, rebuildDive, diveFloorIndex, diveCheckpoint, rewardText } from './expedition.js';
 
 /* ------------------------------------------------------------------ *
  *  Setup: renderer, isometric ortho camera, lights, terrain
@@ -107,7 +107,7 @@ const G = {
   staff: { smith: 0, alch: 0, cook: 0, bard: 0, guard: 0, porter: 0 },
   research: {}, outpost: 0, boardLvl: 0, walls: 0,
   buildings: [], heroes: [], quests: [], goblins: [],
-  orders: [], merchant: null, alarm: false, questsDone: 0, nextId: 1,
+  orders: [], rare: { mythril: 0, scale: 0, feather: 0 }, diveBest: 0, merchant: null, alarm: false, questsDone: 0, nextId: 1,
   tm: { spawn: 4, quest: 1, wage: 30, trickle: 0, merchant: 100, royal: 160, caravan: 260, raid: 150, tavern: 0, mana: 0 },
 };
 window.__G = G;
@@ -212,7 +212,7 @@ G.buildings[0].pop = 1; G.buildings[0].group.scale.setScalar(1);
  *  Derived stats
  * ------------------------------------------------------------------ */
 const popCap = () => 4 + ofType('tent').length * 3 + ofType('tavern').length * 4 + G.outpost * 3;
-const craftSpeed = () => (1 + 0.25 * G.staff.smith) * (G.research.forging ? 1.3 : 1);
+const craftSpeed = () => (1 + 0.25 * G.staff.smith) * (G.research.forging ? 1.3 : 1) * (G.research.mythril ? 1.4 : 1);
 const alchSpeed = () => (1 + 0.25 * G.staff.alch) * (G.research.forging ? 1.15 : 1);
 const mealGold = () => 12 * (1 + 0.15 * G.staff.cook) * (1 + 0.3 * ((first('tavern')?.level || 1) - 1));
 const questGoldMul = () => (G.research.charter ? 1.25 : 1);
@@ -384,7 +384,7 @@ function decide(h) {
       return visit(h, shop, 1.8, () => {
         if (shop.stock > 0) {
           shop.stock--; h.gear = true;
-          gain(shop.door, CLASSES[h.cls].price * (1 + 0.15 * (shop.level - 1)));
+          gain(shop.door, CLASSES[h.cls].price * (1 + 0.15 * (shop.level - 1)) * (G.research.mythril && h.cls !== 'wizard' ? 1.25 : 1));
         }
       });
     }
@@ -487,7 +487,7 @@ function dispatch(qid, enchant) {
   if (enchant) { if (G.mana < 5) return toast('Not enough Mana.'); G.mana -= 5; }
   q.enchant = enchant; q.chance = chanceFor(q, party, enchant); q.heroes = party; q.state = 'active'; q.t = q.dur;
   // the outcome is rolled now so the expedition can be watched live without ever contradicting the result
-  q.party = party.map(h => ({ id: h.id, name: h.name, cls: h.cls, level: h.level, variant: h.variant || 0, trait: traitOf(h), vip: !!h.vip }));
+  q.party = party.map(h => heroSnap(h));
   q.seed = (Math.random() * 1e9) | 0; q.ok = Math.random() < q.chance; q.heals = [];
   q.deaths = party.filter(h => Math.random() > CLASSES[h.cls].survive + 0.15 + (traitOf(h) === 'brave' ? 0.35 : 0)).map(h => h.id);
   q.script = genScript(q);
@@ -531,6 +531,57 @@ function resolveQuest(q) {
 }
 
 /* ------------------------------------------------------------------ *
+ *  Endless Dive (Waystone Portal): floors forever, real HP, bank or die
+ * ------------------------------------------------------------------ */
+const newPending = () => ({ gold: 0, ore: 0, wood: 0, herbs: 0, mana: 0, mythril: 0, scale: 0, feather: 0, renown: 0 });
+const heroSnap = h => ({ id: h.id, name: h.name, cls: h.cls, level: h.level, variant: h.variant || 0, trait: traitOf(h), vip: !!h.vip, power: heroPower(h, 'combat') });
+const diveFloor = q => q.script.floors[diveFloorIndex(q.script, q.elapsed)];
+const diveProg = q => { const f = diveFloor(q); return f ? Math.min(100, Math.max(0, (q.elapsed - f.s) / (f.e - f.s) * 100)) : 0; };
+function dispatchDive() {
+  if (!first('portal')) return toast('Build a Waystone Portal first.');
+  if (G.quests.some(q => q.dive)) return toast('A party is already inside the dungeon.');
+  const r = readyHeroes().sort((a, b) => heroPower(b, 'combat') - heroPower(a, 'combat')).slice(0, 4);
+  if (r.length < 2) return toast('The dive needs at least 2 geared, rested heroes.');
+  const q = { id: G.nextId++, name: 'Endless Dive', type: 'dive', dive: true, state: 'active', heroes: r, party: r.map(heroSnap), seed: (Math.random() * 1e9) | 0, heals: [], enchants: [], elapsed: 0, cleared: 0, pending: newPending(), dur: 1e9, t: 1e9, chance: 0.5, minH: 2, maxH: 4, diff: 0, loot: {}, enchant: false, gold: 0, renown: 0 };
+  q.script = newDiveScript(q); ensureFloors(q, 0); G.quests.push(q);
+  r.forEach(h => { h.state = 'quest'; h.mesh.visible = false; setMood(h, null); h.onDone = null; });
+  toast(`🌀 ${r.length} heroes step through the portal… Recall to bank your loot!`); renderModal(true);
+}
+function bankPending(q) {
+  const p = q.pending, pm = G.research.prospect ? 1.5 : 1, txt = rewardText(p);
+  G.gold += Math.round(p.gold * questGoldMul()); G.ore += Math.round(p.ore * pm); G.wood += p.wood; G.herbs += p.herbs; G.mana += p.mana;
+  G.rare.mythril += p.mythril; G.rare.scale += p.scale; G.rare.feather += p.feather; G.renown += p.renown; q.pending = newPending();
+  return txt;
+}
+function diveTick(q, dt) {
+  q.elapsed += dt; q.t = q.dur - q.elapsed; const S = q.script; ensureFloors(q, q.elapsed);
+  while (q.cleared < S.floors.length && S.floors[q.cleared].e <= q.elapsed && !S.floors[q.cleared].lost) {
+    const f = S.floors[q.cleared]; for (const k of Object.keys(q.pending)) q.pending[k] += f.reward[k] || 0;
+    q.cleared++; G.diveBest = Math.max(G.diveBest, q.cleared);
+    if (diveCheckpoint(f.k)) toast(`🏁 Checkpoint — floor ${f.k + 1}! Banked: ${bankPending(q)}`);
+  }
+  if (S.wiped && q.elapsed >= S.endT) resolveDive(q, 'wiped');
+}
+function resolveDive(q, mode) {
+  const S = q.script, T = q.elapsed; let text;
+  if (mode === 'recalled') text = `🏁 Banked & left after floor ${q.cleared} · ${bankPending(q)}`;
+  else text = `☠ Wiped out on floor ${S.floors.length}. Lost unbanked loot: ${rewardText(q.pending)}`;
+  q.endText = text; G.diveBest = Math.max(G.diveBest, q.cleared);
+  onQuestEnd(q, mode === 'recalled');
+  q.state = 'done'; G.quests.splice(G.quests.indexOf(q), 1);
+  q.heroes.forEach(h => {
+    if (!G.heroes.includes(h)) return;
+    const i = q.party.findIndex(pp => pp.id === h.id), H = S.heroes[i];
+    h.state = 'idle'; h.cool = 0; h.target = null; h.mesh.visible = true; h.pos.set(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1));
+    if (H.dies && H.D <= T) { if (h.vip) G.renown = Math.max(0, G.renown - 1); removeHero(h, h.vip ? `☠ ${h.name} — a legend of the guild — fell on floor ${diveFloorIndex(S, H.D) + 1}!` : `${h.name} fell on floor ${diveFloorIndex(S, H.D) + 1} of the dive.`); return; }
+    h.quests = (h.quests || 0) + 1; h.xp += Math.floor(q.cleared / 3) * (traitOf(h) === 'scholar' ? 2 : 1);
+    while (h.xp >= h.level + 1) { h.xp -= h.level + 1; h.level++; floatText(h.pos, `⬆ ${h.name} Lv${h.level}`, '#9bff9b'); }
+    h.stamina = Math.max(15, h.stamina - 25 - q.cleared); h.happy = Math.min(100, h.happy + 10); if (Math.random() < 0.7) h.gear = false;
+  });
+  toast(text); renderModal(true);
+}
+
+/* ------------------------------------------------------------------ *
  *  Events: monster incursion, wandering merchant, royal demand
  * ------------------------------------------------------------------ */
 function startRaid() {
@@ -547,7 +598,7 @@ function startRaid() {
   toast('Goblins at the perimeter!');
 }
 function defense() {
-  let d = G.staff.guard * 4 + G.walls * 3;
+  let d = G.staff.guard * (G.research.scales ? 8 : 4) + G.walls * 3 + (G.research.scales ? 6 : 0);
   if (G.alarm) d += G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving').reduce((s, h) => s + CLASSES[h.cls].base * (h.gear ? 1 : 0.6) * 0.8, 0);
   return d;
 }
@@ -671,7 +722,7 @@ function updateEconomy(dt) {
   // quests
   t.quest -= dt;
   if (t.quest <= 0) { t.quest = 14; if (G.quests.filter(q => q.state === 'open').length < 3 + G.boardLvl) genQuest(); }
-  for (const q of [...G.quests]) if (q.state === 'active') { q.t -= dt; if (q.t <= 0) resolveQuest(q); }
+  for (const q of [...G.quests]) if (q.state === 'active') { if (q.dive) diveTick(q, dt); else { q.t -= dt; if (q.t <= 0) resolveQuest(q); } }
   // events
   t.merchant -= dt; if (t.merchant <= 0) { t.merchant = rnd(150, 220); if (G.renown >= 2 && !G.merchant) startMerchant(); }
   if (G.merchant) { G.merchant.t -= dt; if (G.merchant.t <= 0) endMerchant(); }
@@ -703,8 +754,9 @@ function updateHUD() {
   $('hRenown').textContent = G.renown;
   $('hMana').textContent = G.mana;
   $('hPop').textContent = `${G.heroes.length}/${popCap()}`;
+  { const r = G.rare; $('hRare').classList.toggle('hidden', !(r.mythril || r.scale || r.feather)); $('hMyth').textContent = r.mythril; $('hScale').textContent = r.scale; $('hFeather').textContent = r.feather; }
   $('hOre').textContent = G.ore; $('hWood').textContent = G.wood; $('hHerbs').textContent = G.herbs;
-  const ex = G.quests.filter(q => q.state === 'active').map(q => `<div class="exp" data-act="watch" data-q="${q.id}" title="Watch this expedition live"><span>👁 ${q.name}</span><span>${Math.ceil(q.t)}s</span><div class="bar"><i style="width:${100 - q.t / q.dur * 100}%"></i></div></div>`).join('');
+  const ex = G.quests.filter(q => q.state === 'active').map(q => { const dv = q.dive, lab = dv ? `Floor ${diveFloorIndex(q.script, q.elapsed) + 1}` : `${Math.ceil(q.t)}s`, pr = dv ? diveProg(q) : 100 - q.t / q.dur * 100; return `<div class="exp" data-act="watch" data-q="${q.id}" title="Watch this expedition live"><span>${dv ? '🌀' : '👁'} ${q.name}</span><span>${lab}</span><div class="bar"><i style="width:${pr}%"></i></div></div>`; }).join('');
   if (ex !== $('expeds')._h) { $('expeds')._h = ex; $('expeds').innerHTML = ex ? '<h4>Expeditions:</h4>' + ex : ''; }
   const pend = OBJ.filter(o => !o[1]()).slice(0, 3);
   const done = OBJ.filter(o => o[1]()).slice(-1);
@@ -727,6 +779,11 @@ function closeModal() { modalKind = null; modal.classList.add('hidden'); lastHtm
 $('modalClose').onclick = closeModal;
 modal.addEventListener('pointerdown', e => { if (e.target === modal) closeModal(); });
 const cost = n => `<span class="tag">💰 ${n}</span>`;
+const RARE = { mythril: { icon: '💎', label: 'Mythril' }, scale: { icon: '🐉', label: 'Dragon Scale' }, feather: { icon: '🪶', label: 'Phoenix Feather' } };
+const hasRare = req => !req || Object.entries(req).every(([k, v]) => G.rare[k] >= v);
+const rareTags = req => req ? Object.entries(req).map(([k, v]) => `<span class="tag" title="${RARE[k].label}">${RARE[k].icon} ${v}${G.rare[k] < v ? ' (have ' + G.rare[k] + ')' : ''}</span>`).join('') : '';
+const spendRare = req => { if (req) for (const [k, v] of Object.entries(req)) G.rare[k] -= v; };
+const upReq = b => (['forge', 'alchemy'].includes(b.type) && b.level >= 4) ? { mythril: 3 } : null;
 
 const TECHS = {
   prospect: ['Prospecting', 'Ore yields from quests and workers +50%.', 200],
@@ -734,6 +791,9 @@ const TECHS = {
   charter: ['Guild Charter', 'Quest gold rewards +25%.', 300],
   arcane: ['Arcane Studies', 'Mana regen doubled; Enchant bonus +30%.', 350],
   valor: ['Banner of Valor', 'All parties +10% success chance.', 400],
+  mythril: ['Mythril Forging', 'Forge crafting +40% and weapons sell for 25% more. (Rare: from the Endless Dive)', 300, { mythril: 5 }],
+  scales: ['Dragonhide Walls', 'Raid defense +6 and guards twice as effective. (Rare: from the Endless Dive)', 300, { scale: 3 }],
+  feather: ['Phoenix Elixir', 'Potions heal 50% instead of 35%. (Rare: from the Endless Dive)', 400, { feather: 2 }],
 };
 const STAFF = {
   smith: ['Blacksmith', '⚒️', 'Forge crafting speed +25%'], alch: ['Alchemist', '🧪', 'Lab brewing speed +25%'],
@@ -757,7 +817,13 @@ function modalContent() {
       const rd = readyHeroes();
       const open = G.quests.filter(q => q.state === 'open'), act = G.quests.filter(q => q.state === 'active');
       let h = `<div class="s">Ready heroes (geared & rested): <b>${rd.length}</b> / ${G.heroes.length}</div>`;
-      h += '<div class="sec">Active Expeditions</div>' + (act.map(q => `<div class="row"><div class="grow"><div class="t">${q.name}</div><div class="s">${q.heroes.map(x => x.name).join(', ')} · success ${Math.round(q.chance * 100)}%</div><div class="bar"><i style="width:${100 - q.t / q.dur * 100}%"></i></div></div><div style="text-align:center">${Math.ceil(q.t)}s<br><button class="act" data-act="watch" data-q="${q.id}">👁 Watch</button></div></div>`).join('') || '<div class="s">None.</div>');
+      if (first('portal')) {
+        const dq = G.quests.find(q => q.dive);
+        h += `<div class="sec">Waystone Portal</div><div class="row" style="border-color:#b070ff"><div style="font-size:30px">🌀</div><div class="grow"><div class="t">Endless Dive</div><div class="s">Send 2–4 geared heroes through the portal. Floors get harder forever: <b>recall to bank your loot</b> or fight on for rare materials (💎 🐉 🪶). Loot is banked automatically every 5 floors; a wipe-out loses what is unbanked. Best: floor ${G.diveBest}.</div></div><button class="act" data-act="dive" ${dq || rd.length < 2 ? 'disabled' : ''}>${dq ? 'In progress' : (rd.length < 2 ? 'Need 2 ready' : 'Dive!')}</button></div>`;
+      }
+      h += '<div class="sec">Active Expeditions</div>' + (act.map(q => q.dive
+        ? `<div class="row"><div class="grow"><div class="t">🌀 Endless Dive — floor ${diveFloorIndex(q.script, q.elapsed) + 1}</div><div class="s">${q.heroes.map(x => x.name).join(', ')} · at risk: ${rewardText(q.pending)}</div><div class="bar"><i style="width:${diveProg(q)}%"></i></div></div><div style="text-align:center"><button class="act" data-act="watch" data-q="${q.id}">👁 Watch</button></div></div>`
+        : `<div class="row"><div class="grow"><div class="t">${q.name}</div><div class="s">${q.heroes.map(x => x.name).join(', ')} · success ${Math.round(q.chance * 100)}%</div><div class="bar"><i style="width:${100 - q.t / q.dur * 100}%"></i></div></div><div style="text-align:center">${Math.ceil(q.t)}s<br><button class="act" data-act="watch" data-q="${q.id}">👁 Watch</button></div></div>`).join('') || '<div class="s">None.</div>');
       h += '<div class="sec">Quest Board</div>' + (open.map(q => {
         const party = bestParty(q), ok = party.length >= q.minH, c = Math.round(chanceFor(q, party, false) * 100), ce = Math.round(chanceFor(q, party, true) * 100);
         const loot = Object.entries(q.loot).map(([k, v]) => ({ ore: '⛏️', herbs: '🌿', wood: '🪵', arcane: '✨' }[k]) + v).join(' ');
@@ -778,8 +844,8 @@ function modalContent() {
         <div style="display:flex;gap:4px"><button class="act" data-act="hire" data-k="${k}" ${G.gold < staffCost(k) || G.staff[k] >= maxStaff ? 'disabled' : ''}>Hire</button>${G.staff[k] ? `<button class="act red" data-act="fire" data-k="${k}">Fire</button>` : ''}</div></div>`).join('');
       return ['🛡️ Recruit & Staff', h];
     }
-    case 'research': return ['⚗️ Research', Object.entries(TECHS).map(([k, [n, d, c]]) => `<div class="row"><div class="grow"><div class="t">${n}</div><div class="s">${d}</div>${cost(c)}</div>
-        ${G.research[k] ? '<span class="tag">✔ Researched</span>' : `<button class="act" data-act="research" data-k="${k}" ${G.gold < c ? 'disabled' : ''}>Research</button>`}</div>`).join('')];
+    case 'research': return ['⚗️ Research', Object.entries(TECHS).map(([k, [n, d, c, req]]) => `<div class="row"><div class="grow"><div class="t">${n}</div><div class="s">${d}</div>${cost(c)}${rareTags(req)}</div>
+        ${G.research[k] ? '<span class="tag">✔ Researched</span>' : `<button class="act" data-act="research" data-k="${k}" ${G.gold < c || !hasRare(req) ? 'disabled' : ''}>Research</button>`}</div>`).join('')];
     case 'settings': return ['⚙ Settings & Save', `
       <div class="row"><div class="grow"><div class="t">💾 Save</div><div class="s">The game autosaves every 15 seconds and when you leave. Last save: ${lastSaved ? Math.round((Date.now() - lastSaved) / 1000) + 's ago' : 'not yet'}.</div></div><button class="act" data-act="save">Save now</button></div>
       <div class="row"><div class="grow"><div class="t">🗑 New game</div><div class="s">${modalArg === 'confirm' ? '<b style="color:#ff9a9a">This erases your saved guild. Tap again to confirm.</b>' : 'Delete the save and start a fresh guild.'}</div></div><button class="act red" data-act="newgame">${modalArg === 'confirm' ? 'Really erase' : 'New game'}</button></div>
@@ -813,7 +879,8 @@ function modalContent() {
       if (b.type === 'warehouse') h += `<div class="s">This warehouse adds <b>+${6 + 4 * (b.level - 1)}</b> stock to every Forge and Lab · total bonus +${warehouseBonus()}</div>`;
       if (b.type === 'tavern') h += `<div class="s">Meal price: ${mealGold().toFixed(1)}g · Passive: ${b.level * 0.25}g/s</div>`;
       const uc = 150 * b.level + 100;
-      if (['forge', 'alchemy', 'tavern', 'warehouse'].includes(b.type)) h += `</div><button class="act" data-act="upBuilding" data-id="${b.id}" ${G.gold < uc || G.wood < 5 * b.level || b.level >= 5 ? 'disabled' : ''}>Upgrade<br>${uc}g + ${5 * b.level}🪵</button></div>`; else h += '</div></div>';
+      if (['forge', 'alchemy', 'tavern', 'warehouse'].includes(b.type)) h += `</div><button class="act" data-act="upBuilding" data-id="${b.id}" ${G.gold < uc || G.wood < 5 * b.level || b.level >= 5 || !hasRare(upReq(b)) ? 'disabled' : ''}>Upgrade<br>${uc}g + ${5 * b.level}🪵 ${rareTags(upReq(b))}</button></div>`; else h += '</div></div>';
+      if (b.type === 'portal') h += `<div class="s">Deepest dive so far: floor <b>${G.diveBest}</b></div><button class="act" data-act="open" data-k="quests" style="margin:6px 0">Open the Endless Dive</button>`;
       if (b.type === 'hall') h += `<button class="act" data-act="open" data-k="quests" style="margin:6px 0">Open Quest Board</button>`;
       if (b.type === 'market') h += '<div class="sec">Buy Materials</div>' + [['ore', '⛏️ Iron Ore', 8], ['herbs', '🌿 Herbs', 6], ['wood', '🪵 Pine Wood', 6]].map(([k, n, p]) => `<div class="row"><div class="grow"><div class="t">${n} ×5</div>${cost(p * 5)}<span class="tag">have ${G[k]}</span></div><button class="act" data-act="buy" data-k="${k}" data-p="${p * 5}" ${G.gold < p * 5 ? 'disabled' : ''}>Buy</button></div>`).join('');
       return [t.icon + ' ' + t.name, h];
@@ -821,7 +888,7 @@ function modalContent() {
     case 'merchant': {
       if (!G.merchant) return ['', ''];
       return ['🛒 Wandering Merchant', `<div class="s">Rare wares, heavily discounted! Leaves in ${Math.ceil(G.merchant.t)}s.</div>` +
-        [['ore', 20, 70, '⛏️ 20 Iron Ore'], ['herbs', 15, 45, '🌿 15 Herbs'], ['mana', 10, 60, '✨ 10 Mana'], ['arcane', 1, 90, '🐉 Dragon Scale (+3 Renown)']].map(([k, n, p, l]) => `<div class="row"><div class="grow"><div class="t">${l}</div>${cost(p)}</div><button class="act" data-act="mbuy" data-k="${k}" data-n="${n}" data-p="${p}" ${G.gold < p ? 'disabled' : ''}>Buy</button></div>`).join('')];
+        [['ore', 20, 70, '⛏️ 20 Iron Ore'], ['herbs', 15, 45, '🌿 15 Herbs'], ['mana', 10, 60, '✨ 10 Mana'], ['arcane', 1, 90, '🐉 Dragon Scale (rare material)']].map(([k, n, p, l]) => `<div class="row"><div class="grow"><div class="t">${l}</div>${cost(p)}</div><button class="act" data-act="mbuy" data-k="${k}" data-n="${n}" data-p="${p}" ${G.gold < p ? 'disabled' : ''}>Buy</button></div>`).join('')];
     }
   }
   return ['', ''];
@@ -839,6 +906,7 @@ function renderModal(force) {
 }
 
 const ACT = {
+  dive() { dispatchDive(); },
   hero(d) { openModal('hero', +d.id); },
   save() { saveGame(false); renderModal(true); },
   newgame() { if (modalArg !== 'confirm') { modalArg = 'confirm'; return; } try { localStorage.removeItem(SAVE_KEY); } catch (e) { } window.__noSave = true; location.reload(); },
@@ -852,17 +920,17 @@ const ACT = {
   flyer() { if (G.gold >= 60 && spawnHero()) { G.gold -= 60; toast('A new hero answers your flyer!'); } },
   hire(d) { const c = staffCost(d.k); if (G.gold >= c && G.staff[d.k] < maxStaff) { G.gold -= c; G.staff[d.k]++; } },
   fire(d) { if (G.staff[d.k] > 0) G.staff[d.k]--; },
-  research(d) { const c = TECHS[d.k][2]; if (G.gold >= c && !G.research[d.k]) { G.gold -= c; G.research[d.k] = true; toast(`Researched ${TECHS[d.k][0]}!`); } },
+  research(d) { const c = TECHS[d.k][2], req = TECHS[d.k][3]; if (G.gold >= c && !G.research[d.k] && hasRare(req)) { G.gold -= c; spendRare(req); G.research[d.k] = true; toast(`Researched ${TECHS[d.k][0]}!`); } },
   up(d) {
     const k = d.k, c = { outpost: 300 * (G.outpost + 1), boardLvl: 250 * (G.boardLvl + 1), walls: 200 * (G.walls + 1) }[k];
     if (G.gold >= c) { G.gold -= c; G[k]++; }
   },
-  upBuilding(d) { const b = G.buildings.find(x => x.id === +d.id), c = 150 * b.level + 100; if (b && G.gold >= c && G.wood >= 5 * b.level) { G.gold -= c; G.wood -= 5 * b.level; b.level++; b.pop = 0.6; toast(`${BUILDINGS[b.type].name} upgraded to level ${b.level}!`); } },
+  upBuilding(d) { const b = G.buildings.find(x => x.id === +d.id), c = 150 * b.level + 100; if (b && b.level < 5 && G.gold >= c && G.wood >= 5 * b.level && hasRare(upReq(b))) { G.gold -= c; G.wood -= 5 * b.level; spendRare(upReq(b)); b.level++; b.pop = 0.6; toast(`${BUILDINGS[b.type].name} upgraded to level ${b.level}!`); } },
   open(d) { openModal(d.k); },
   buy(d) { const p = +d.p; if (G.gold >= p) { G.gold -= p; G[d.k] += 5; } },
   mbuy(d) {
     const p = +d.p, n = +d.n; if (G.gold < p) return; G.gold -= p;
-    if (d.k === 'arcane') { G.renown += 3; toast('The scale is displayed proudly. +3 ⭐'); } else G[d.k] += n;
+    if (d.k === 'arcane') { G.rare.scale++; toast('🐉 You acquired a Dragon Scale!'); } else G[d.k] += n;
   },
 };
 document.addEventListener('click', e => {
@@ -1045,11 +1113,11 @@ function syncStaff() {
  *  Save / load (localStorage autosave)
  * ------------------------------------------------------------------ */
 const SAVE_KEY = 'fantasy-guild-master-save-v1';
-const SCALARS = ['gold', 'renown', 'mana', 'ore', 'wood', 'herbs', 'time', 'speed', 'outpost', 'boardLvl', 'walls', 'questsDone', 'nextId'];
+const SCALARS = ['gold', 'renown', 'mana', 'ore', 'wood', 'herbs', 'time', 'speed', 'outpost', 'boardLvl', 'walls', 'questsDone', 'nextId', 'diveBest'];
 let lastSaved = 0;
 function serialize() {
   const g = {}; SCALARS.forEach(k => { g[k] = G[k]; });
-  Object.assign(g, { staff: G.staff, research: G.research, tm: G.tm, orders: G.orders });
+  Object.assign(g, { staff: G.staff, research: G.research, tm: G.tm, orders: G.orders, rare: G.rare });
   return {
     v: 1, savedAt: Date.now(), g,
     buildings: G.buildings.map(b => ({ type: b.type, cx: b.cx, cz: b.cz, rot: b.rot || 0, level: b.level, stock: b.stock, progress: b.progress })),
@@ -1070,7 +1138,7 @@ function loadGame() {
   if (!d || d.v !== 1) return false;
   try {
     SCALARS.forEach(k => { if (d.g[k] !== undefined) G[k] = d.g[k]; });
-    Object.assign(G.staff, d.g.staff); G.research = d.g.research || {}; Object.assign(G.tm, d.g.tm);
+    Object.assign(G.rare, d.g.rare || {}); Object.assign(G.staff, d.g.staff); G.research = d.g.research || {}; Object.assign(G.tm, d.g.tm);
     G.orders = d.g.orders || (d.g.royal ? [{ id: G.nextId++, kind: 'royal', need: { sword: d.g.royal.need }, t: d.g.royal.t, tMax: 150, reward: d.g.royal.reward, ren: d.g.royal.ren, pen: 3, title: 'Royal Demand', icon: '👑' }] : []);
     if (G.orders.some(o => o.kind === 'caravan')) spawnCaravan();
     const nextId = G.nextId;
@@ -1086,7 +1154,8 @@ function loadGame() {
       if (q.state === 'active') {
         if (!q.heroes.length) return;
         q.heroes.forEach(h => { h.state = 'quest'; h.mesh.visible = false; });
-        if (!q.dive) { q.t = Math.max(0.3, q.t - away); q.script = genScript(q); }
+        if (q.dive) { q.script = newDiveScript(q); ensureFloors(q, q.elapsed || 0); q.t = q.dur - (q.elapsed || 0); }   // dives only advance while the game is open
+        else { q.t = Math.max(0.3, q.t - away); q.script = genScript(q); }
       }
       G.quests.push(q);
     });
@@ -1106,7 +1175,8 @@ const sm = x => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); }
 const stageEl = $('stageEl'), pipCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -300, 500);
 let watchSaved = null;
 function flyTo(to, dur = 1.1) { viewFly = { t: 0, dur, from: { yaw, pitch, viewS, x: camTarget.x, z: camTarget.z }, to }; }
-const canIntervene = q => q.state === 'active' && (q.dur - q.t) < q.script.win[2].s && !(watching && watching.finish);
+const canIntervene = q => q.state === 'active' && (q.dive ? !q.script.wiped : (q.dur - q.t) < q.script.win[2].s) && !(watching && watching.finish);
+const nowT = w => w.finish ? w.finish.T : Math.max(0, w.q.dur - w.q.t);
 function logReset(w, T) { const ev = w.q.script.events; w.logIdx = ev.findIndex(e => e.t > T - 2.5); if (w.logIdx < 0) w.logIdx = ev.length; w.lastScript = w.q.script; }
 function addLog(e) {
   const el = document.createElement('div'); el.className = 'lg l-' + e.type; el.textContent = e.log + (e.dmg ? e.dmg : '');
@@ -1139,7 +1209,7 @@ function cleanupWatch() {
 }
 function onQuestEnd(q, ok) {
   if (!watching || watching.q !== q || watching.exiting) return;
-  watching.finish = { ok, t: 4.5, text: ok ? `🏆 Victory! +${Math.round(q.gold * questGoldMul())}g · +${q.renown}⭐` : '☠ Defeat — the party limps home' };
+  watching.finish = { ok, t: 4.5, T: q.dive ? q.elapsed : q.dur, text: q.endText || (ok ? `🏆 Victory! +${Math.round(q.gold * questGoldMul())}g · +${q.renown}⭐` : '☠ Defeat — the party limps home') };
   updateWatchHUD();
 }
 // --- in-fight actions (only before the finale begins)
@@ -1149,41 +1219,52 @@ function boostQuest(q, amt) {
 }
 function watchEnchant() {
   const q = watching?.q; if (!q) return;
-  if (!canIntervene(q)) return toast('Too late — the finale has begun!');
-  if (q.enchant || q.enchantedMid) return toast('This party is already enchanted.');
+  if (!canIntervene(q)) return toast(q.dive ? 'The party has already fallen.' : 'Too late — the finale has begun!');
   if (G.mana < 5) return toast('Not enough Mana.');
+  if (q.dive) {
+    const T = q.elapsed, next = diveFloorIndex(q.script, T) + 1;
+    if ((q.enchants || []).some(x => x.floor + 3 > next)) return toast('A ward is already protecting the party.');
+    G.mana -= 5; q.enchants.push({ floor: next, t: T }); rebuildDive(q, T);
+    return toast('✨ Ward cast: damage −40% for the next 3 floors.'), updateWatchHUD();
+  }
+  if (q.enchant || q.enchantedMid) return toast('This party is already enchanted.');
   G.mana -= 5; q.enchantedMid = true; boostQuest(q, G.research.arcane ? 0.3 : 0.2);
   toast(`✨ Enchanted! Success chance now ${Math.round(q.chance * 100)}%`); updateWatchHUD();
 }
 function watchPotion() {
-  const q = watching?.q; if (!q) return; const lab = first('alchemy');
-  if (!canIntervene(q)) return toast('Too late — the finale has begun!');
-  if (!lab || lab.stock < 1) return toast('No potions in stock. Brew more at the Alchemical Lab.');
-  lab.stock--; q.heals.push({ t: q.dur - q.t, amt: 0.35 }); boostQuest(q, 0.08);
-  toast(`🧪 Healing potions delivered! Success chance now ${Math.round(q.chance * 100)}%`); updateWatchHUD();
+  const q = watching?.q; if (!q) return; const lab = ofType('alchemy').find(b => b.stock > 0);
+  if (!canIntervene(q)) return toast(q.dive ? 'The party has already fallen.' : 'Too late — the finale has begun!');
+  if (!lab) return toast('No potions in stock. Brew more at the Alchemical Lab.');
+  lab.stock--;
+  if (q.dive) { q.heals.push({ t: q.elapsed, amt: G.research.feather ? 0.5 : 0.35 }); rebuildDive(q, q.elapsed); toast('🧪 Healing potions delivered to the party!'); }
+  else { q.heals.push({ t: q.dur - q.t, amt: G.research.feather ? 0.5 : 0.35 }); boostQuest(q, 0.08); toast(`🧪 Healing potions delivered! Success chance now ${Math.round(q.chance * 100)}%`); }
+  updateWatchHUD();
 }
 function watchRecall() {
   const w = watching, q = w?.q; if (!q || w.finish) return;
   if (w.recallArm <= 0) { w.recallArm = 3; return updateWatchHUD(); }
+  if (q.dive) return resolveDive(q, 'recalled');
   const i = G.quests.indexOf(q); if (i >= 0) G.quests.splice(i, 1); q.state = 'done';
   q.heroes.forEach(h => { if (!G.heroes.includes(h)) return; h.state = 'idle'; h.cool = 0; h.target = null; h.stamina = Math.max(20, h.stamina - 10); h.happy = Math.max(0, h.happy - 8); h.pos.set(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1)); h.mesh.visible = true; });
   toast('🏳 Party recalled — no rewards.'); endWatch();
 }
 function updateWatchHUD() {
-  const w = watching; if (!w) return; const q = w.q, S = q.script, T = w.finish ? q.dur : Math.max(0, q.dur - q.t);
-  $('wName').textContent = `${w.exp.name} — ${q.name}`;
+  const w = watching; if (!w) return; const q = w.q, S = q.script, T = nowT(w), dv = !!q.dive;
+  $('wName').textContent = dv ? `Endless Dungeon — floor ${diveFloorIndex(S, T) + 1} · best ${G.diveBest}` : `${w.exp.name} — ${q.name}`;
   $('wPhase').textContent = w.finish ? w.finish.text : phaseText(S, T);
-  $('wProg').style.width = (T / q.dur * 100) + '%';
+  $('wProg').style.width = (dv ? (diveFloor({ script: S, elapsed: T }) ? Math.min(100, (T - diveFloor({ script: S, elapsed: T }).s) / (diveFloor({ script: S, elapsed: T }).e - diveFloor({ script: S, elapsed: T }).s) * 100) : 0) : T / q.dur * 100) + '%';
+  $('watchBar').classList.toggle('dive', dv);
   $('wParty').innerHTML = q.party.map((p, h) => { const hp = heroHp(q, S, h, T), dead = S.heroes[h].dies && T >= S.heroes[h].D; return `<div class="chip ${dead ? 'dead' : ''}"><span>${dead ? '☠' : CLASSES[p.cls].icon} ${p.name}</span><b><i style="width:${hp * 100}%;background:${hp > 0.5 ? '#5be35b' : hp > 0.25 ? '#f0c040' : '#e0503a'}"></i></b></div>`; }).join('');
   const ci = canIntervene(q), lab = first('alchemy');
-  $('wEnchant').disabled = !ci || !!(q.enchant || q.enchantedMid) || G.mana < 5; $('wEnchant').textContent = `✨ Enchant (5) · ${Math.round(q.chance * 100)}%`;
-  $('wPotion').disabled = !ci || !lab || lab.stock < 1; $('wPotion').textContent = `🧪 Potion (${lab ? lab.stock : 0})`;
-  $('wRecall').disabled = !!w.finish; $('wRecall').textContent = w.recallArm > 0 ? '🏳 Confirm recall?' : '🏳 Recall';
+  const potions = ofType('alchemy').reduce((n, b) => n + b.stock, 0), nextF = dv ? diveFloorIndex(S, T) + 1 : 0, warded = dv && (q.enchants || []).some(x => x.floor + 3 > nextF);
+  $('wEnchant').disabled = !ci || G.mana < 5 || (dv ? warded : !!(q.enchant || q.enchantedMid)); $('wEnchant').textContent = dv ? (warded ? '✨ Ward active' : '✨ Ward (5)') : `✨ Enchant (5) · ${Math.round(q.chance * 100)}%`;
+  $('wPotion').disabled = !ci || potions < 1; $('wPotion').textContent = `🧪 Potion (${potions})`;
+  $('wRecall').disabled = !!w.finish; $('wRecall').textContent = w.recallArm > 0 ? (dv ? '🏁 Confirm: bank & leave?' : '🏳 Confirm recall?') : (dv ? '🏁 Bank & leave' : '🏳 Recall');
   $('wFollow').classList.toggle('on', w.follow); $('wFollow').textContent = w.follow ? '🎯 Following' : '🎯 Follow';
   $('wPipBtn').classList.toggle('on', w.pip); $('pipFrame').classList.toggle('off', !w.pip);
   $('wSpeed').textContent = '⏵ x' + G.speed;
   $('wSwitch').innerHTML = G.quests.filter(x => x.state === 'active' && x !== q).map(x => `<button class="act" data-act="watch" data-q="${x.id}">👁 ${x.name}</button>`).join('');
-  $('wHint').textContent = ci ? 'Intervene before the finale!' : (w.finish ? '' : 'The finale has begun — no more help possible');
+  $('wHint').textContent = dv ? (w.finish ? '' : (S.wiped ? 'The party has fallen…' : `At risk: ${rewardText(q.pending)} · next checkpoint: floor ${Math.ceil((q.cleared + 1) / 5) * 5}`)) : (ci ? 'Intervene before the finale!' : (w.finish ? '' : 'The finale has begun — no more help possible'));
 }
 $('wBack').onclick = endWatch; $('pipFrame').onclick = endWatch;
 $('wFollow').onclick = () => { if (watching) { watching.follow = !watching.follow; updateWatchHUD(); } };
@@ -1259,7 +1340,7 @@ function frame() {
     else {
       if (w.finish) w.finish.t -= rdt;
       if (w.recallArm > 0) { w.recallArm -= rdt; if (w.recallArm <= 0) updateWatchHUD(); }
-      const T = w.finish ? q.dur : Math.max(0, q.dur - q.t);
+      const T = nowT(w);
       w.exp.update(T, rdt);
       if (w.lastScript !== q.script) logReset(w, T);
       const ev = q.script.events; while (ev[w.logIdx] && ev[w.logIdx].t <= T) addLog(ev[w.logIdx++]);
@@ -1285,4 +1366,5 @@ if (!loadGame()) {
   toast('Welcome, Guild Master! Build a Tavern and a Forge to attract & equip heroes.');
 }
 frame();
-window.__api = { toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__heroHp = heroHp; window.__rebuild = rebuildDive;
+window.__api = { dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
