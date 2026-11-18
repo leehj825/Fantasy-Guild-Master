@@ -112,7 +112,7 @@ const G = {
 };
 window.__G = G;
 
-const occ = new Set();
+const occ = new Set(); let occVersion = 0;   // occVersion bumps whenever the walkable grid changes (heroes repath)
 const key = (x, z) => x + ',' + z;
 
 // Decorative forest (instanced) around and inside the grid
@@ -199,7 +199,7 @@ function addBuilding(type, cx, cz, rot = 0) {
   }
   // pop-in animation
   group.scale.setScalar(0.01); b.pop = 0;
-  G.buildings.push(b);
+  G.buildings.push(b); occVersion++;
   return b;
 }
 const ofType = t => G.buildings.filter(b => b.type === t);
@@ -284,7 +284,56 @@ function removeHero(h, why) {
   G.heroes.splice(G.heroes.indexOf(h), 1);
   if (why) toast(why);
 }
-function goTo(h, p, onArrive) { h.target = p.clone(); h.target.x += rnd(-0.5, 0.5); h.onArrive = onArrive; h.state = 'walking'; }
+/* ---- A* pathfinding over the base grid (buildings, props and interior trees are blocked cells) ---- */
+const blocked = (x, z) => x < 0 || z < 0 || x >= N || z >= N || occ.has(key(x, z));
+function nearestFree(cx, cz) {
+  for (let r = 0; r <= 6; r++) for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
+    if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue; if (!blocked(cx + dx, cz + dz)) return [cx + dx, cz + dz];
+  }
+  return null;
+}
+function lineClear(a, b) {
+  const dx = b.x - a.x, dz = b.z - a.z, n = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.2));
+  for (let i = 1; i < n; i++) if (blocked(Math.floor(a.x + dx * i / n), Math.floor(a.z + dz * i / n))) return false;
+  return true;
+}
+function findPath(from, to) {
+  const ci = v => Math.max(0, Math.min(N - 1, Math.floor(v)));
+  const sx = ci(from.x), sz = ci(from.z); let gx = ci(to.x), gz = ci(to.z);
+  const exactOk = !blocked(gx, gz);
+  if (!exactOk) { const f = nearestFree(gx, gz); if (!f) return [to.clone()]; [gx, gz] = f; }
+  if (lineClear(from, exactOk ? to : new THREE.Vector3(gx + 0.5, 0, gz + 0.5))) return [exactOk ? to.clone() : new THREE.Vector3(gx + 0.5, 0, gz + 0.5)];
+  const idx = (x, z) => z * N + x, g = new Float32Array(N * N).fill(Infinity), par = new Int32Array(N * N).fill(-1), done = new Uint8Array(N * N);
+  const hf = (x, z) => { const dx = Math.abs(x - gx), dz = Math.abs(z - gz); return Math.max(dx, dz) + 0.414 * Math.min(dx, dz); };
+  const open = [idx(sx, sz)]; g[open[0]] = 0; let found = false;
+  const D = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.414], [1, -1, 1.414], [-1, 1, 1.414], [-1, -1, 1.414]];
+  while (open.length) {
+    let bi = 0, bf = Infinity;
+    for (let i = 0; i < open.length; i++) { const k = open[i], f = g[k] + hf(k % N, (k / N) | 0); if (f < bf) { bf = f; bi = i; } }
+    const cur = open.splice(bi, 1)[0]; if (done[cur]) continue; done[cur] = 1;
+    const cx = cur % N, cz = (cur / N) | 0; if (cx === gx && cz === gz) { found = true; break; }
+    for (const [dx, dz, c] of D) {
+      const nx = cx + dx, nz = cz + dz; if (blocked(nx, nz)) continue;
+      if (dx && dz && (blocked(cx + dx, cz) || blocked(cx, cz + dz))) continue;   // no corner cutting
+      const k = idx(nx, nz), ng = g[cur] + c; if (ng < g[k]) { g[k] = ng; par[k] = cur; open.push(k); }
+    }
+  }
+  if (!found) return [to.clone()];
+  const cells = []; for (let k = idx(gx, gz); k !== -1 && k !== idx(sx, sz); k = par[k]) cells.push(new THREE.Vector3(k % N + 0.5, 0, ((k / N) | 0) + 0.5));
+  cells.reverse(); const pts = [from, ...cells], out = []; let i = 0, cur = from;   // string-pull: skip nodes that are in line of sight
+  while (i < pts.length - 1) { let j = pts.length - 1; while (j > i + 1 && !lineClear(cur, pts[j])) j--; out.push(pts[j].clone()); cur = pts[j]; i = j; }
+  if (exactOk && out.length) out[out.length - 1].copy(to);
+  return out;
+}
+function setPath(h) { h.path = findPath(h.pos, h.target); h.pi = 0; h.pv = occVersion; }
+function stepPath(h, dt, speed) {
+  if (!h.path || h.pi >= h.path.length) return true;
+  if (h.pv !== occVersion) setPath(h);
+  if (stepToward(h, dt, speed, h.path[h.pi])) h.pi++;
+  return h.pi >= h.path.length;
+}
+function setLeave(h) { h.state = 'leaving'; h.target = spawnPoint(); setPath(h); }
+function goTo(h, p, onArrive) { h.target = p.clone(); h.target.x += rnd(-0.5, 0.5); h.onArrive = onArrive; h.state = 'walking'; setPath(h); }
 function wanderNearHall(h) { goTo(h, new THREE.Vector3(HALL.cx + 2.5 + rnd(-3, 3), 0, HALL.cz + 5.5 + rnd(0, 2)), () => { h.timer = rnd(1.5, 3); h.state = 'waiting'; h.onDone = null; }); }
 function visit(h, b, dur, fn) {
   goTo(h, b.door, () => { h.state = 'busy'; h.timer = dur; h.onDone = fn; h.mesh.visible = true; });
@@ -339,18 +388,18 @@ function updateHero(h, dt) {
   h.happy = Math.max(0, Math.min(100, h.happy + (needy ? -0.35 * decay : 0.15) * dt));
   if (nearCampfire(h)) h.happy = Math.min(100, h.happy + 0.3 * dt);   // cosy fire
   if (h.state === 'leaving') {
-    if (stepToward(h, dt, 3)) removeHero(h);
+    if (stepPath(h, dt, 3)) removeHero(h);
     return;
   }
   if (h.happy <= 0 && h.state !== 'busy') {
-    h.state = 'leaving'; h.target = spawnPoint(); setMood(h, '💢'); toast(`${h.name} the ${CLASSES[h.cls].label} got fed up and left.`); return;
+    setLeave(h); setMood(h, '💢'); toast(`${h.name} the ${CLASSES[h.cls].label} got fed up and left.`); return;
   }
   if (G.alarm && G.goblins.length) {
     const c = G.goblins[0].mesh.position;
     stepToward(h, dt, 4.2, c, 3.2); setMood(h, '⚔️'); return;
   }
   if (h.state === 'walking') {
-    if (stepToward(h, dt, 2.4)) { h.target = null; const f = h.onArrive; h.onArrive = null; if (f) f(); }
+    if (stepPath(h, dt, 2.4)) { h.target = null; const f = h.onArrive; h.onArrive = null; if (f) f(); }
   } else if (h.state === 'busy' || h.state === 'waiting') {
     h.timer -= dt;
     if (h.timer <= 0) { const f = h.onDone; h.onDone = null; h.state = 'idle'; if (f) f(); }
@@ -1171,4 +1220,4 @@ if (!loadGame()) {
   toast('Welcome, Guild Master! Build a Tavern and a Forge to attract & equip heroes.');
 }
 frame();
-window.__api = { saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, startRoyal, genQuest, dispatch, readyHeroes };
+window.__api = { findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, startRoyal, genQuest, dispatch, readyHeroes };
