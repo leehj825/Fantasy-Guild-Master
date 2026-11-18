@@ -257,6 +257,18 @@ const heroGroup = new THREE.Group(); scene.add(heroGroup);
 function spawnPoint() {
   return Math.random() < 0.5 ? new THREE.Vector3(N - 1.5, 0, HALL.cz + 2) : new THREE.Vector3(HALL.cx + 2.5, 0, N - 1.5);
 }
+function createHero(d) {
+  const mesh = buildHero(d.cls, d.variant), p = new THREE.Vector3(d.x, 0, d.z);
+  mesh.position.copy(p); heroGroup.add(mesh);
+  const bub = document.createElement('div'); bub.className = 'bub hidden'; worldEl.appendChild(bub);
+  const h = {
+    id: d.id ?? G.nextId++, cls: d.cls, variant: d.variant, name: d.name, level: d.level ?? 1, xp: d.xp ?? 0, stamina: d.stamina ?? rnd(60, 100), happy: d.happy ?? 100, gear: !!d.gear,
+    quests: d.quests || 0, vip: d.vip || null,
+    mesh, pos: mesh.position, bub, state: 'idle', target: null, onArrive: null, timer: 0, onDone: null, cool: 0, phase: Math.random() * 6, vis: true,
+  };
+  mesh.userData.hid = h.id; G.heroes.push(h);
+  return h;
+}
 function spawnHero(cls, atHall = false) {
   if (G.heroes.length >= popCap()) return null;
   if (!cls) {
@@ -264,16 +276,8 @@ function spawnHero(cls, atHall = false) {
     if (first('alchemy')) opts.push('wizard', 'wizard');
     cls = pick(opts);
   }
-  const variant = Math.floor(Math.random() * 3), mesh = buildHero(cls, variant);
   const p = atHall ? new THREE.Vector3(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1.2)) : spawnPoint();
-  mesh.position.copy(p); heroGroup.add(mesh);
-  const bub = document.createElement('div'); bub.className = 'bub hidden'; worldEl.appendChild(bub);
-  const h = {
-    id: G.nextId++, cls, variant, name: pick(NAMES), level: 1, xp: 0, stamina: rnd(60, 100), happy: 100, gear: false,
-    mesh, pos: mesh.position, bub, state: 'idle', target: null, onArrive: null, timer: 0, onDone: null, cool: 0, phase: Math.random() * 6, vis: true,
-  };
-  G.heroes.push(h);
-  return h;
+  return createHero({ cls, variant: Math.floor(Math.random() * 3), name: pick(NAMES), x: p.x, z: p.z });
 }
 function removeHero(h, why) {
   heroGroup.remove(h.mesh); h.bub.remove();
@@ -325,6 +329,7 @@ function decide(h) {
   } else wanderNearHall(h);
 }
 
+const nearCampfire = h => ofType('campfire').some(b => Math.hypot(b.cx + b.w / 2 - h.pos.x, b.cz + b.d / 2 - h.pos.z) < 6);
 function updateHero(h, dt) {
   h.phase += dt * 8;
   if (h.state === 'quest') return;
@@ -332,9 +337,9 @@ function updateHero(h, dt) {
   h.stamina = Math.max(0, h.stamina - 0.7 * dt);
   const needy = h.stamina < 45 || !h.gear;
   h.happy = Math.max(0, Math.min(100, h.happy + (needy ? -0.35 * decay : 0.15) * dt));
+  if (nearCampfire(h)) h.happy = Math.min(100, h.happy + 0.3 * dt);   // cosy fire
   if (h.state === 'leaving') {
-    stepToward(h, dt, 3);
-    if (!h.target) removeHero(h);
+    if (stepToward(h, dt, 3)) removeHero(h);
     return;
   }
   if (h.happy <= 0 && h.state !== 'busy') {
@@ -675,6 +680,10 @@ function modalContent() {
     }
     case 'research': return ['⚗️ Research', Object.entries(TECHS).map(([k, [n, d, c]]) => `<div class="row"><div class="grow"><div class="t">${n}</div><div class="s">${d}</div>${cost(c)}</div>
         ${G.research[k] ? '<span class="tag">✔ Researched</span>' : `<button class="act" data-act="research" data-k="${k}" ${G.gold < c ? 'disabled' : ''}>Research</button>`}</div>`).join('')];
+    case 'settings': return ['⚙ Settings & Save', `
+      <div class="row"><div class="grow"><div class="t">💾 Save</div><div class="s">The game autosaves every 15 seconds and when you leave. Last save: ${lastSaved ? Math.round((Date.now() - lastSaved) / 1000) + 's ago' : 'not yet'}.</div></div><button class="act" data-act="save">Save now</button></div>
+      <div class="row"><div class="grow"><div class="t">🗑 New game</div><div class="s">${modalArg === 'confirm' ? '<b style="color:#ff9a9a">This erases your saved guild. Tap again to confirm.</b>' : 'Delete the save and start a fresh guild.'}</div></div><button class="act red" data-act="newgame">${modalArg === 'confirm' ? 'Really erase' : 'New game'}</button></div>
+      <div class="s" style="margin-top:8px">Quests keep running for up to 10 minutes while you are away.</div>`];
     case 'upgrades': {
       const c1 = 300 * (G.outpost + 1), c2 = 250 * (G.boardLvl + 1), c3 = 200 * (G.walls + 1);
       return ['⬆️ Outpost Upgrades', `
@@ -715,6 +724,8 @@ function renderModal(force) {
 }
 
 const ACT = {
+  save() { saveGame(false); renderModal(true); },
+  newgame() { if (modalArg !== 'confirm') { modalArg = 'confirm'; return; } try { localStorage.removeItem(SAVE_KEY); } catch (e) { } window.__noSave = true; location.reload(); },
   watch(d) { startWatch(+d.q); },
   alarm() { G.alarm = true; toast('🔔 Alarm sounded! Heroes rush to defend!'); hideBanner('raid'); showBanner('raid', '🔔 Alarm sounded — heroes are defending!', []); },
   openMerchant() { openModal('merchant'); },
@@ -747,6 +758,7 @@ document.addEventListener('click', e => {
   const t = e.target.closest('[data-act]'); if (t && ACT[t.dataset.act]) { ACT[t.dataset.act](t.dataset); renderModal(true); updateHUD(); return; }
   const o = e.target.closest('[data-open]'); if (o) { cancelPlacement(); openModal(o.dataset.open); }
 });
+$('settingsBtn').onclick = () => openModal('settings');
 $('speedBtn').onclick = () => { G.speed = G.speed === 1 ? 2 : G.speed === 2 ? 4 : 1; $('speedBtn').textContent = '⏵ x' + G.speed; };
 
 /* ------------------------------------------------------------------ *
@@ -918,6 +930,62 @@ function syncStaff() {
 }
 
 /* ------------------------------------------------------------------ *
+ *  Save / load (localStorage autosave)
+ * ------------------------------------------------------------------ */
+const SAVE_KEY = 'fantasy-guild-master-save-v1';
+const SCALARS = ['gold', 'renown', 'mana', 'ore', 'wood', 'herbs', 'time', 'speed', 'outpost', 'boardLvl', 'walls', 'questsDone', 'nextId'];
+let lastSaved = 0;
+function serialize() {
+  const g = {}; SCALARS.forEach(k => { g[k] = G[k]; });
+  Object.assign(g, { staff: G.staff, research: G.research, tm: G.tm, royal: G.royal });
+  return {
+    v: 1, savedAt: Date.now(), g,
+    buildings: G.buildings.map(b => ({ type: b.type, cx: b.cx, cz: b.cz, rot: b.rot || 0, level: b.level, stock: b.stock, progress: b.progress })),
+    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, quests: h.quests, vip: h.vip, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
+    quests: G.quests.map(q => { const o = {}; for (const [k, v] of Object.entries(q)) if (k !== 'heroes' && k !== 'script') o[k] = v; o.heroIds = (q.heroes || []).map(h => h.id); return o; }),
+    extra: serializeExtra(),
+  };
+}
+function serializeExtra() { return {}; }
+function applyExtra(x) { }
+function saveGame(quiet = true) {
+  if (window.__noSave) return false;
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(serialize())); lastSaved = Date.now(); if (!quiet) toast('💾 Game saved.'); return true; }
+  catch (e) { if (!quiet) toast('Could not save (storage unavailable).'); return false; }
+}
+function loadGame() {
+  let d; try { d = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch (e) { d = null; }
+  if (!d || d.v !== 1) return false;
+  try {
+    SCALARS.forEach(k => { if (d.g[k] !== undefined) G[k] = d.g[k]; });
+    Object.assign(G.staff, d.g.staff); G.research = d.g.research || {}; Object.assign(G.tm, d.g.tm); G.royal = d.g.royal || null;
+    const nextId = G.nextId;
+    d.buildings.forEach(sb => {
+      if (sb.type === 'hall') { G.buildings[0].level = sb.level; return; }
+      const b = addBuilding(sb.type, sb.cx, sb.cz, sb.rot || 0); b.level = sb.level; b.stock = sb.stock; b.progress = sb.progress; b.pop = 1; b.group.scale.setScalar(1);
+    });
+    G.nextId = Math.max(G.nextId, nextId);
+    d.heroes.forEach(sh => { const h = createHero(sh); if (sh.onQuest) { h.state = 'quest'; h.mesh.visible = false; } });
+    const away = Math.max(0, Math.min(600, (Date.now() - d.savedAt) / 1000));
+    d.quests.forEach(sq => {
+      const q = { ...sq }; q.heroes = (sq.heroIds || []).map(id => G.heroes.find(h => h.id === id)).filter(Boolean); delete q.heroIds;
+      if (q.state === 'active') {
+        if (!q.heroes.length) return;
+        q.heroes.forEach(h => { h.state = 'quest'; h.mesh.visible = false; });
+        if (!q.dive) { q.t = Math.max(0.3, q.t - away); q.script = genScript(q); }
+      }
+      G.quests.push(q);
+    });
+    applyExtra(d.extra || {});
+    G.alarm = false; $('speedBtn').textContent = '⏵ x' + G.speed;
+    toast(away > 20 ? `💾 Welcome back! Away for ${Math.round(away / 60)} min — quests kept going.` : '💾 Save loaded.');
+    return true;
+  } catch (e) { console.error('load failed', e); return false; }
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveGame(); });
+addEventListener('pagehide', () => saveGame());
+
+/* ------------------------------------------------------------------ *
  *  Expedition watch mode: fly to the stage, follow the party, intervene
  * ------------------------------------------------------------------ */
 const sm = x => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
@@ -1021,7 +1089,7 @@ function renderPip() {
 /* ------------------------------------------------------------------ *
  *  Main loop
  * ------------------------------------------------------------------ */
-const clock = new THREE.Clock(); let modalTick = 0, hudTick = 0;
+const clock = new THREE.Clock(); let modalTick = 0, hudTick = 0, saveTick = 15;
 function frame() {
   requestAnimationFrame(frame);
   const rdt = Math.min(clock.getDelta(), 0.5), dt = rdt * G.speed;   // wall-clock timing: slow frames no longer slow the game
@@ -1086,6 +1154,7 @@ function frame() {
       if (w.finish && w.finish.t <= 0) endWatch();
     }
   }
+  saveTick -= rdt; if (saveTick <= 0) { saveTick = 15; saveGame(); }
   hudTick -= rdt; if (hudTick <= 0) { hudTick = 0.15; updateHUD(); }
   modalTick -= rdt; if (modalTick <= 0) { modalTick = 0.4; renderModal(false); }
   renderer.render(scene, camera);
@@ -1096,8 +1165,10 @@ function frame() {
  *  Boot: starter heroes + quests
  * ------------------------------------------------------------------ */
 resize();
-spawnHero('knight', true); spawnHero('ranger', true);
-genQuest(); genQuest();
-toast('Welcome, Guild Master! Build a Tavern and a Forge to attract & equip heroes.');
+if (!loadGame()) {
+  spawnHero('knight', true); spawnHero('ranger', true);
+  genQuest(); genQuest();
+  toast('Welcome, Guild Master! Build a Tavern and a Forge to attract & equip heroes.');
+}
 frame();
-window.__api = { startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, startRoyal, genQuest, dispatch, readyHeroes };
+window.__api = { saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, startRoyal, genQuest, dispatch, readyHeroes };
