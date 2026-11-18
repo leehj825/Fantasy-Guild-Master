@@ -26,8 +26,9 @@ const ENEMY = {
   chief:  { name: 'Bandit Chief', make: () => bandit(true), h: 2.3, boss: true },
   wisp:   { name: 'Wisp', make: () => wisp(), h: 1.6 },
   imp:    { name: 'Imp', make: () => imp(), h: 1.3 },
-  golem:  { name: 'Ancient Golem', make: () => golem(), h: 3.4, boss: true },
+  golem:  { name: 'Ancient Golem', make: () => (golemMaker ? golemMaker() : golem()), h: 3.4, boss: true },
 };
+let golemMaker = null; export const setGolemMaker = f => { golemMaker = f; };   // main.js sets the rigged golem when rigged bodies are on
 function charEnemy(look, scale) {
   const g = buildChar(look); g.scale.multiplyScalar(scale); if (g.userData.anim) return g;   // rigged: the clips animate it
   const [L, A] = [g.userData.legs, g.userData.arms];
@@ -472,13 +473,13 @@ export class Expedition {
       m.visible = show; o.dead = dying; if (!show) { o.bar.style.display = 'none'; return; }
       const info = m.userData; const approach = clamp((T - E.s) / (E.a - E.s), 0, 1), walking = approach < 1 && !dying;
       if (info.anim) {      // rigged raider: walk in, swing, flinch, fall — all from clips
-        const approach2 = approach, hitsE = this.ehitsBy[k] || [], ci = clipInfo('attack1'); let name = 'idleEase', t = T + k * 0.6, atk = null, lunge2 = 0;
+        const approach2 = approach, hitsE = this.ehitsBy[k] || [], cl = info.clips || {}, atkName = cl.attack || 'attack1', ci = clipInfo(atkName); let name = 'idleEase', t = T + k * 0.6, atk = null, lunge2 = 0;
         for (let i = firstAfter(hitsE, T - 1.6); i < hitsE.length; i++) { const s0 = hitsE[i].t - ci.hit; if (s0 > T) break; if (T < s0 + ci.d) atk = T - s0; }
         const hh = this.last(this.hitsOnFoe[k], T);
         if (dying) { name = 'die'; t = T - E.D; }
-        else if (atk !== null) { name = 'attack1'; t = atk; lunge2 = -0.9 * Math.sin(clamp(atk / ci.d, 0, 1) * Math.PI); }
+        else if (atk !== null) { name = atkName; t = atk; lunge2 = -0.9 * Math.sin(clamp(atk / ci.d, 0, 1) * Math.PI); }
         else if (hh && T - hh.t < 0.7) { name = 'impact'; t = T - hh.t; }
-        else if (approach2 < 1) { name = 'walkCalm'; t = T * 1.15; }
+        else if (approach2 < 1) { name = cl.walk || 'walkCalm'; t = T * (cl.walkSpeed || 1.15); }
         info.anim.drive(name, t, rdt); m.rotation.set(0, -Math.PI / 2, 0); m.scale.setScalar(m.userData.s0 ??= m.scale.x);
         m.position.set(E.home.x + 9 * (1 - approach2) + lunge2, 0, E.home.z); this.setBar(o.bar, m.position, ENEMY[E.kind].h, hp, dying); return;
       }

@@ -3,7 +3,7 @@
 // in clips.js can play on it. Two body styles share one rig:  'voxel' (flat-shaded boxes, like the old look) and
 // 'round' (tapered limbs, ball joints, ellipsoid head). Left = +x, the character faces +z.
 import * as THREE from '../vendor/three.module.js';
-import { mat, vox, cyl, cone, sph, rot, at } from './models.js';
+import { mat, vox, cyl, cone, sph, rot, at, tbox } from './models.js';
 import CLIPS from './clips.js';
 
 const WOOD_D = 0x5a3a1a, GOLD = 0xe8c04a;
@@ -195,4 +195,37 @@ export function autoAnim(m, dt) {
   const want = u._v > 2.6 ? 'runCalm' : u._v > 0.25 ? 'walkCalm' : 'idleEase';
   a.play(want, { speed: want === 'walkCalm' ? Math.max(0.7, Math.min(1.6, u._v / 1.35)) : want === 'runCalm' ? Math.max(0.8, Math.min(1.5, u._v / 3.6)) : 1 });
   a.update(dt);
+}
+
+// ------------------------------------------------------------------ the Ancient Golem on the same rig
+// Built from separate stone parts (feet, shins, thighs, pelvis, chest, head, shoulders, upper arms, forearms, fists) on the same
+// 15 joints as a person, so the walk / attack / flinch / fall clips play on it. Big, with long arms and short legs.
+export function makeRigGolem() {
+  const J = { hips: [0, 0.82, 0], torso: [0, 0.95, 0], head: [0, 1.6, 0] };
+  for (const [s, sx] of [['L', 1], ['R', -1]]) {
+    J['hip' + s] = [sx * 0.3, 0.82, 0]; J['knee' + s] = [sx * 0.3, 0.46, 0]; J['ank' + s] = [sx * 0.3, 0.14, 0];
+    J['sh' + s] = [sx * 0.8, 1.5, 0]; J['el' + s] = [sx * 0.86, 0.92, 0]; J['wr' + s] = [sx * 0.86, 0.42, 0];
+  }
+  const g = new THREE.Group(), root = new THREE.Group(); g.add(root);
+  const j = {}; for (const b of BONES) j[b] = new THREE.Group();
+  for (const b of BONES) { const p = PARENT[b]; if (p) { j[b].position.fromArray(J[b].map((v, i) => v - J[p][i])); j[p].add(j[b]); } else { j[b].position.fromArray(J[b]); root.add(j[b]); } }
+  const put = (jn, ...ms) => { for (const m of ms.flat()) { m.position.x -= J[jn][0]; m.position.y -= J[jn][1]; m.position.z -= J[jn][2]; j[jn].add(m); } };
+  const st = (w, h, d, x, y, z) => tbox(w, h, d, 'stone', x, y, z), glow = (w, h, d, x, y, z, ei = 1.4) => vox(w, h, d, 0x55ffee, x, y, z, 0x33ffd0, ei);
+  for (const [s, sx] of [['L', 1], ['R', -1]]) {
+    put('hip' + s, st(0.44, 0.4, 0.48, sx * 0.3, 0.46, 0));
+    put('knee' + s, st(0.4, 0.34, 0.44, sx * 0.3, 0.14, 0));
+    put('ank' + s, st(0.52, 0.14, 0.7, sx * 0.3, 0, 0.09));
+    put('sh' + s, st(0.5, 0.36, 0.56, sx * 0.8, 1.5 - 0.1, 0), st(0.4, 0.62, 0.42, sx * 0.86, 0.92, 0));
+    put('el' + s, st(0.36, 0.5, 0.4, sx * 0.86, 0.42, 0));
+    put('wr' + s, st(0.52, 0.46, 0.54, sx * 0.86, -0.04, 0.04));
+  }
+  put('hips', st(0.98, 0.34, 0.6, 0, 0.7, 0));
+  put('torso', st(1.12, 0.72, 0.7, 0, 0.95, 0), vox(0.96, 0.1, 0.62, 0x5d9b45, 0, 1.62, 0), glow(0.3, 0.3, 0.05, 0, 1.25, 0.36, 1.7));   // moss on the shoulders, a glowing core
+  put('head', st(0.56, 0.5, 0.52, 0, 1.58, 0.02), glow(0.14, 0.09, 0.04, -0.15, 1.82, 0.28), glow(0.14, 0.09, 0.04, 0.15, 1.82, 0.28), glow(0.4, 0.07, 0.04, 0, 1.64, 0.28, 1.1), vox(0.5, 0.1, 0.46, 0x5d9b45, 0, 2.06, 0));
+  g.scale.setScalar(1.5);
+  g.userData.rig = { root, hips: j.hips, j, hipsRest: J.hips[1] };
+  const dummy = () => new THREE.Group(); g.userData.legs = [dummy(), dummy()]; g.userData.arms = [dummy(), dummy()];
+  g.userData.anim = new Animator(g.userData.rig);
+  g.userData.clips = { attack: 'attack3', walk: 'walkCalm', walkSpeed: 0.7 };     // heavy swing, slow stride
+  return g;
 }

@@ -7,7 +7,7 @@
 <script type="module">
 import * as THREE from './vendor/three.module.js';
 import { LOOKS, makeChar } from './src/models.js';
-import { makeRigChar, CLIP_NAMES } from './src/rigchar.js';
+import { makeRigChar, makeRigGolem, CLIP_NAMES } from './src/rigchar.js';
 const q = new URLSearchParams(location.search);
 const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('gl'), antialias: true });
 renderer.shadowMap.enabled = true; renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -18,7 +18,7 @@ Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 12, bottom: -12, n
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshLambertMaterial({ color: 0x5aae45 })); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
 const cam = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
 const keys = (q.get('looks') || 'knightB,wizardBlue,elfBlond,dwarfBrown,guardA,villagerA,elfHood,wizardPurple').split(',');
-const STYLES = ['old', 'voxel', 'round'];
+const STYLES = q.get('golem') ? [] : ['old', 'voxel', 'round'];
 const group = new THREE.Group(); scene.add(group); let anims = [], clip = q.get('clip') || 'idleEase';
 function build() {
   group.clear(); anims = [];
@@ -27,6 +27,7 @@ function build() {
     m.position.set((i - (keys.length - 1) / 2) * 1.25, 0, (r - 1) * 2.4); m.rotation.y = 0; group.add(m);
     if (m.userData.anim) { m.userData.anim.play(clip, { fade: 0 }); m.userData.anim.t = i * 0.13; anims.push(m.userData.anim); }
   }));
+  if (q.get('golem')) { const m = makeRigGolem(); m.position.set(0, 0, 0); group.add(m); m.userData.anim.play(clip, { fade: 0 }); anims.push(m.userData.anim); }
 }
 build();
 const ui = document.getElementById('clips'); ui.textContent = 'clip: ';

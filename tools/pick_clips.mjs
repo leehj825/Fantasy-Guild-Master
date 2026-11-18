@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 const src = process.argv[2]; if (!src) throw new Error('give the path of anims.js');
 const A = (await import(pathToFileURL(src).href)).default;
-const PICK = ['idleEase', 'idleCalm', 'walkCalm', 'runCalm', 'slash1', 'slash3', 'attack1', 'shoot', 'mgBolt', 'mgFire', 'mgNova', 'mgHeal', 'mgBless', 'mgHoly', 'impact', 'die', 'mgBlock', 'blockIdle', 'block', 'kneel'];
+const PICK = ['idleEase', 'idleCalm', 'walkCalm', 'runCalm', 'slash1', 'slash3', 'attack1', 'attack3', 'attackJump', 'shoot', 'mgBolt', 'mgFire', 'mgNova', 'mgHeal', 'mgBless', 'mgHoly', 'impact', 'die', 'mgBlock', 'blockIdle', 'block', 'kneel'];
 const r = v => Math.round(v * 1000) / 1000, out = {};
 for (const k of PICK) {
   const c = A[k]; if (!c) throw new Error('missing clip ' + k);
