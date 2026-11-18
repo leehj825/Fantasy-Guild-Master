@@ -32,7 +32,7 @@ let camera = orthoCam;
 const camTarget = new THREE.Vector3(N / 2 + 1, 0, N / 2 + 1);
 const clampView = () => {
   pitch = Math.max(0.28, Math.min(1.42, pitch)); viewS = Math.max(3.5, Math.min(24, viewS));
-  if (!watching) { camTarget.x = Math.max(2, Math.min(N - 2, camTarget.x)); camTarget.z = Math.max(2, Math.min(N - 2, camTarget.z)); }
+  if (!watching) { const B = landBounds(); camTarget.x = Math.max(B.x0, Math.min(B.x1, camTarget.x)); camTarget.z = Math.max(B.z0, Math.min(B.z1, camTarget.z)); }
 };
 function updateCamera() {
   clampView();
@@ -110,7 +110,7 @@ const G = {
   staff: { smith: 0, alch: 0, cook: 0, bard: 0, guard: 0, porter: 0 },
   research: {}, outpost: 0, boardLvl: 0, walls: 0,
   buildings: [], heroes: [], quests: [], goblins: [],
-  orders: [], rare: { mythril: 0, scale: 0, feather: 0 }, diveBest: 0, rank: 0, ingots: 0,
+  orders: [], rare: { mythril: 0, scale: 0, feather: 0 }, diveBest: 0, rank: 0, ingots: 0, land: 0, region: 'greenwood', regions: {},
   market: { ore: 1, herbs: 1, wood: 1, news: '' }, goalsDone: {}, stats: { orders: 0, raidsWon: 0, promoted: 0 }, fallen: [], flags: {}, merchant: null, alarm: false, questsDone: 0, nextId: 1,
   tm: { goals: 1, market: 80, spawn: 4, quest: 1, wage: 30, trickle: 0, merchant: 100, royal: 160, caravan: 260, raid: 150, tavern: 0, mana: 0 },
 };
@@ -145,6 +145,9 @@ const canPay = c => Object.entries(c).every(([k, v]) => (k === 'mythril' ? G.rar
 const payCost = c => { for (const [k, v] of Object.entries(c)) { if (k === 'mythril') G.rare.mythril -= v; else G[k] -= v; } };
 const costText = c => Object.entries(c).map(([k, v]) => `${v}${{ ore: '⛏️', ingots: '🔩', mythril: '💎', herbs: '🌿', mana: '✨' }[k]}`).join(' ');
 const gradeUnlocked = (b, g) => g === 1 || (g === 2 && b.level >= 3 && G.rank >= 1) || (g === 3 && b.level >= 5 && G.rank >= 2);
+// ---- territory: the buildable area can grow by 4 tiles on every side (up to 3 times)
+function landBounds() { const E = G.land * 4; return { x0: 2 - E, z0: 2 - E, x1: N - 2 + E, z1: N - 2 + E, E }; }
+const forest = { trees: [], meshes: [] };
 // Decorative forest (instanced) around and inside the grid
 {
   const TREES = 260;
@@ -178,8 +181,9 @@ const gradeUnlocked = (b, g) => g === 1 || (g === 2 && b.level >= 3 && G.rank >=
     dummy.position.set(x, 0.7 * s + 1.2 * s, z); dummy.updateMatrix(); c2.setMatrixAt(n, dummy.matrix);
     col.setHSL(rnd(0.3, 0.37), rnd(0.5, 0.65), rnd(0.2, 0.3));
     c1.setColorAt(n, col); c2.setColorAt(n, col);
-    n++;
+    forest.trees.push({ x, z, n }); n++;
   }
+  forest.meshes = [trunk, c1, c2];
   [trunk, c1, c2].forEach(m => { m.count = n; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; });
   // decorative scenery from the model library: mushrooms, rocks, stones, crates, carts, lanterns
   const g = new THREE.Group();
@@ -196,6 +200,12 @@ const gradeUnlocked = (b, g) => g === 1 || (g === 2 && b.level >= 3 && G.rank >=
   stripLights(g); scene.add(g); window.__decor = g;
 }
 
+function applyLand() {   // clear the trees from newly unlocked land and redraw the boundary
+  const B = landBounds(), dummy = new THREE.Object3D(); dummy.scale.setScalar(0); dummy.updateMatrix();
+  for (const t of forest.trees) if (!t.hidden && t.x > B.x0 - 0.6 && t.x < B.x1 + 0.6 && t.z > B.z0 - 0.6 && t.z < B.z1 + 0.6) { t.hidden = true; forest.meshes.forEach(m => m.setMatrixAt(t.n, dummy.matrix)); }
+  forest.meshes.forEach(m => { m.instanceMatrix.needsUpdate = true; });
+  if (typeof buildGrid === 'function' && typeof scene !== 'undefined' && grid !== undefined) buildGrid();
+}
 /* ------------------------------------------------------------------ *
  *  Buildings
  * ------------------------------------------------------------------ */
@@ -205,7 +215,7 @@ const worldEl = document.getElementById('world');
 const footprint = (type, rot) => { const t = BUILDINGS[type]; return rot % 2 ? [t.d, t.w] : [t.w, t.d]; };
 function canPlace(type, cx, cz, rot = 0) {
   const [w, d] = footprint(type, rot);
-  if (cx < 2 || cz < 2 || cx + w > N - 2 || cz + d > N - 2) return false;
+  const B = landBounds(); if (cx < B.x0 || cz < B.z0 || cx + w > B.x1 || cz + d > B.z1) return false;
   for (let x = cx; x < cx + w; x++) for (let z = cz; z < cz + d; z++) if (occ.has(key(x, z))) return false;
   return true;
 }
@@ -241,11 +251,11 @@ G.buildings[0].pop = 1; G.buildings[0].group.scale.setScalar(1);
 /* ------------------------------------------------------------------ *
  *  Derived stats
  * ------------------------------------------------------------------ */
-const popCap = () => 4 + ofType('tent').length * 3 + ofType('tavern').length * 4 + G.outpost * 3 + G.rank * 4;
+const popCap = () => 4 + ofType('tent').length * 3 + ofType('tavern').length * 4 + G.outpost * 3 + G.rank * 4 + 2 * regionPerk('greenwood');
 const maxLevel = () => [3, 5, 7, 9][G.rank];
 const boardSlots = () => 3 + G.boardLvl + (G.rank >= 2 ? 1 : 0) + (G.rank >= 3 ? 1 : 0);
-const craftSpeed = () => (1 + 0.25 * G.staff.smith) * (G.research.forging ? 1.3 : 1) * (G.research.mythril ? 1.4 : 1);
-const alchSpeed = () => (1 + 0.25 * G.staff.alch) * (G.research.forging ? 1.15 : 1);
+const craftSpeed = () => (1 + 0.25 * G.staff.smith) * (G.research.forging ? 1.3 : 1) * (G.research.mythril ? 1.4 : 1) * (1 + 0.1 * regionPerk('stonepeak'));
+const alchSpeed = () => (1 + 0.25 * G.staff.alch) * (G.research.forging ? 1.15 : 1) * (1 + 0.1 * regionPerk('ashen'));
 const mealGold = tav => { tav = tav || first('tavern'); return 9 * (1 + 0.15 * G.staff.cook) * (1 + 0.3 * ((tav?.level || 1) - 1)) * (tav ? adj(tav).meal : 1); };
 const questGoldMul = () => (G.research.charter ? 1.25 : 1);
 const trickleMul = () => (1 + 0.5 * G.staff.porter);
@@ -336,7 +346,7 @@ const heroPower = (h, type) => { const m = heroMods(h); return CLASSES[h.cls].ba
 const heroGroup = new THREE.Group(); scene.add(heroGroup);
 
 function spawnPoint() {
-  return Math.random() < 0.5 ? new THREE.Vector3(N - 1.5, 0, HALL.cz + 2) : new THREE.Vector3(HALL.cx + 2.5, 0, N - 1.5);
+  const E = G.land * 4; return Math.random() < 0.5 ? new THREE.Vector3(N - 1.5 + E, 0, HALL.cz + 2) : new THREE.Vector3(HALL.cx + 2.5, 0, N - 1.5 + E);
 }
 function createHero(d) {
   const mesh = buildHero(d.cls, d.variant), p = new THREE.Vector3(d.x, 0, d.z);
@@ -371,7 +381,8 @@ function removeHero(h, why) {
   if (why) toast(why);
 }
 /* ---- A* pathfinding over the base grid (buildings, props and interior trees are blocked cells) ---- */
-const blocked = (x, z) => x < 0 || z < 0 || x >= N || z >= N || occ.has(key(x, z));
+const OFF = 14, MG = N + 2 * OFF;   // pathfinding grid covers the base and every possible expansion
+const blocked = (x, z) => x < -OFF || z < -OFF || x >= N + OFF || z >= N + OFF || occ.has(key(x, z));
 function nearestFree(cx, cz) {
   for (let r = 0; r <= 6; r++) for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
     if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue; if (!blocked(cx + dx, cz + dz)) return [cx + dx, cz + dz];
@@ -384,20 +395,21 @@ function lineClear(a, b) {
   return true;
 }
 function findPath(from, to) {
-  const ci = v => Math.max(0, Math.min(N - 1, Math.floor(v)));
+  const ci = v => Math.max(-OFF, Math.min(N + OFF - 1, Math.floor(v)));
   const sx = ci(from.x), sz = ci(from.z); let gx = ci(to.x), gz = ci(to.z);
   const exactOk = !blocked(gx, gz);
   if (!exactOk) { const f = nearestFree(gx, gz); if (!f) return [to.clone()]; [gx, gz] = f; }
   if (lineClear(from, exactOk ? to : new THREE.Vector3(gx + 0.5, 0, gz + 0.5))) return [exactOk ? to.clone() : new THREE.Vector3(gx + 0.5, 0, gz + 0.5)];
-  const idx = (x, z) => z * N + x, g = new Float32Array(N * N).fill(Infinity), par = new Int32Array(N * N).fill(-1), done = new Uint8Array(N * N);
+  const idx = (x, z) => (z + OFF) * MG + (x + OFF), cxOf = k => (k % MG) - OFF, czOf = k => ((k / MG) | 0) - OFF;
+  const g = new Float32Array(MG * MG).fill(Infinity), par = new Int32Array(MG * MG).fill(-1), done = new Uint8Array(MG * MG);
   const hf = (x, z) => { const dx = Math.abs(x - gx), dz = Math.abs(z - gz); return Math.max(dx, dz) + 0.414 * Math.min(dx, dz); };
   const open = [idx(sx, sz)]; g[open[0]] = 0; let found = false;
   const D = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.414], [1, -1, 1.414], [-1, 1, 1.414], [-1, -1, 1.414]];
   while (open.length) {
     let bi = 0, bf = Infinity;
-    for (let i = 0; i < open.length; i++) { const k = open[i], f = g[k] + hf(k % N, (k / N) | 0); if (f < bf) { bf = f; bi = i; } }
+    for (let i = 0; i < open.length; i++) { const k = open[i], f = g[k] + hf(cxOf(k), czOf(k)); if (f < bf) { bf = f; bi = i; } }
     const cur = open.splice(bi, 1)[0]; if (done[cur]) continue; done[cur] = 1;
-    const cx = cur % N, cz = (cur / N) | 0; if (cx === gx && cz === gz) { found = true; break; }
+    const cx = cxOf(cur), cz = czOf(cur); if (cx === gx && cz === gz) { found = true; break; }
     for (const [dx, dz, c] of D) {
       const nx = cx + dx, nz = cz + dz; if (blocked(nx, nz)) continue;
       if (dx && dz && (blocked(cx + dx, cz) || blocked(cx, cz + dz))) continue;   // no corner cutting
@@ -405,7 +417,7 @@ function findPath(from, to) {
     }
   }
   if (!found) return [to.clone()];
-  const cells = []; for (let k = idx(gx, gz); k !== -1 && k !== idx(sx, sz); k = par[k]) cells.push(new THREE.Vector3(k % N + 0.5, 0, ((k / N) | 0) + 0.5));
+  const cells = []; for (let k = idx(gx, gz); k !== -1 && k !== idx(sx, sz); k = par[k]) cells.push(new THREE.Vector3(cxOf(k) + 0.5, 0, czOf(k) + 0.5));
   cells.reverse(); const pts = [from, ...cells], out = []; let i = 0, cur = from;   // string-pull: skip nodes that are in line of sight
   while (i < pts.length - 1) { let j = pts.length - 1; while (j > i + 1 && !lineClear(cur, pts[j])) j--; out.push(pts[j].clone()); cur = pts[j]; i = j; }
   if (exactOk && out.length) out[out.length - 1].copy(to);
@@ -517,6 +529,20 @@ const QNAMES = {
   gather: ['Scout the Whispering Woods', 'Gather Moonpetal Herbs', 'Map the Old Mine', 'Track the Lost Merchant'],
   arcane: ['Seal the Rift', 'Recover the Rune Tome', 'Banish the Wisp Swarm', 'Study the Ancient Obelisk'],
 };
+// ---- world map: regions bias the quest board; mastery grows with quests done and gives permanent bonuses
+const REGIONS = {
+  greenwood: { name: 'Greenwood', icon: '🌲', unlock: () => true, need: '', theme: 'forest', types: { combat: 1, gather: 1, arcane: 1 }, loot: {}, goldMul: 1, diffMul: 1, mods: null, names: null,
+    desc: 'The quiet home forest. Balanced quests, gentle danger.', summary: 'Balanced quests · ×1.0 gold · ×1.0 danger', perk: '+2 population capacity (mastery 3), +4 (mastery 5)' },
+  stonepeak: { name: 'Stonepeak Mines', icon: '⛰️', unlock: () => G.renown >= 10, need: 'Renown 10', theme: 'cave', types: { combat: 2, gather: 1.2, arcane: 0.3 }, loot: { ore: 1.6 }, goldMul: 1.1, diffMul: 1.15, mods: ['armored', 'elite'],
+    names: ['Collapse in the Deep Shaft', 'Clear the Troll Tunnel', 'Escort the Ore Cart', 'Seal the Rockfall'], desc: 'Dark tunnels full of trolls and ore.', summary: 'Mostly combat · +60% ore loot · ×1.1 gold · ×1.15 danger', perk: 'Forge speed +10% (mastery 3), +20% (mastery 5)' },
+  ashen: { name: 'Ashen Marsh', icon: '🌫️', unlock: () => G.renown >= 20, need: 'Renown 20', theme: 'forest', types: { combat: 0.8, gather: 2, arcane: 1 }, loot: { herbs: 1.8 }, goldMul: 1.15, diffMul: 1.25, mods: ['poison', 'cursed'],
+    names: ['Gather Bog Lotus', 'Hunt the Marsh Hag', 'Cleanse the Poisoned Spring', 'Find the Lost Peddler'], desc: 'Foul mists, rare herbs and curses.', summary: 'Mostly gathering · +80% herb loot · ×1.15 gold · ×1.25 danger', perk: 'Lab speed +10% (mastery 3), +20% (mastery 5)' },
+  ruins: { name: 'Sunken Ruins', icon: '🏛️', unlock: () => G.rank >= 2, need: 'Guild Rank Keep', theme: 'ruins', types: { combat: 0.7, gather: 0.5, arcane: 2.5 }, loot: { arcane: 1.8 }, goldMul: 1.3, diffMul: 1.4, mods: ['cursed', 'storm', 'elite'],
+    names: ['Decipher the Sunken Glyphs', 'Banish the Drowned Wraith', 'Recover the Tidal Relic', 'Calm the Restless Statues'], desc: 'Drowned halls humming with old magic.', summary: 'Mostly arcane · +80% mana loot · ×1.3 gold · ×1.4 danger', perk: 'Mana regeneration +1 (mastery 3), +2 (mastery 5)' },
+};
+const regionLevel = id => Math.min(5, Math.floor(((G.regions[id] || {}).done || 0) / 8));
+const regionPerk = id => { const l = regionLevel(id); return l >= 5 ? 2 : l >= 3 ? 1 : 0; };
+const wpick = w => { const e = Object.entries(w), t = e.reduce((n, [, v]) => n + v, 0); let r = Math.random() * t; for (const [k, v] of e) { r -= v; if (r <= 0) return k; } return e[0][0]; };
 // quest modifiers: each one asks for something specific (a class, gear grade, a potion) or trades risk for reward
 const MODS = {
   elite: { icon: '💀', label: 'Elite', desc: '+40% danger, +50% gold, may drop rare Mythril.' },
@@ -534,9 +560,9 @@ const APPROACH = {
   bold: { label: 'Bold', icon: '🔥', chance: -0.08, gold: 1.3, dur: 0.85, survive: -0.1, desc: '−8% success, +30% gold, 15% faster, more casualties' },
 };
 function makeQuest(o = {}) {
-  const type = o.type || pick(['combat', 'gather', 'arcane']);
+  const reg = REGIONS[G.region] || REGIONS.greenwood, type = o.type || wpick(reg.types);
   const minH = o.minH || (Math.random() < 0.5 ? 1 : (Math.random() < 0.7 ? 2 : 3));
-  let diff = (2.6 + rnd(0, 1.2) + (minH - 1) * 2.4) * (1 + 0.5 * Math.sqrt(G.renown / 10)) * (1 + 0.08 * G.rank);   // difficulty grows gently with renown
+  let diff = (2.6 + rnd(0, 1.2) + (minH - 1) * 2.4) * (1 + 0.5 * Math.sqrt(G.renown / 10)) * (1 + 0.08 * G.rank) * (o.type ? 1 : reg.diffMul);   // difficulty grows gently with renown
   const loot = {};
   if (type === 'combat') loot.ore = Math.round(rnd(2, 5) * minH);
   if (type === 'gather') { loot.herbs = Math.round(rnd(2, 5) * minH); loot.wood = Math.round(rnd(2, 4)); }
@@ -544,20 +570,21 @@ function makeQuest(o = {}) {
   let mods = o.mods;
   if (!mods) {
     mods = []; const chance = G.renown < 3 ? 0.25 : G.renown < 10 ? 0.55 : 0.8, keys = Object.keys(MODS);
-    if (Math.random() < chance) mods.push(pick(keys)); if (G.renown >= 10 && Math.random() < 0.3) { const k2 = pick(keys); if (!mods.includes(k2)) mods.push(k2); }
+    if (reg.mods && Math.random() < 0.5) mods.push(pick(reg.mods)); else if (Math.random() < chance) mods.push(pick(keys)); if (G.renown >= 10 && Math.random() < 0.3) { const k2 = pick(keys); if (!mods.includes(k2)) mods.push(k2); }
   }
   let gold = (30 + diff * 14) * rnd(0.9, 1.15), dur = rnd(30, 50) + minH * 10;
   if (mods.includes('elite')) { diff *= 1.4; gold *= 1.5; } if (mods.includes('rush')) { dur *= 0.6; gold *= 1.2; } if (mods.includes('bounty')) gold *= 1.6;
   if (mods.includes('hoard')) for (const k of Object.keys(loot)) loot[k] *= 2;
+  if (!o.type) { gold *= reg.goldMul * (1 + 0.04 * regionLevel(G.region)); for (const k of Object.keys(loot)) loot[k] = Math.round(loot[k] * (reg.loot[k] || 1)); }
   gold *= (o.goldMul || 1);
   const q = {
-    id: G.nextId++, name: o.name || pick(QNAMES[type]), type, diff, minH, maxH: Math.min(4, minH + 1), dur, gold: Math.round(gold), renown: (() => { const x = diff / 6 * 40 / (40 + G.renown); return Math.floor(x) + (Math.random() < x - Math.floor(x) ? 1 : 0); })() + (o.renownBonus || 0),   // fractional, with diminishing returns: no runaway renown
+    id: G.nextId++, name: o.name || (!o.type && reg.names && Math.random() < 0.6 ? pick(reg.names) : pick(QNAMES[type])), region: o.type ? null : G.region, type, diff, minH, maxH: Math.min(4, minH + 1), dur, gold: Math.round(gold), renown: (() => { const x = diff / 6 * 40 / (40 + G.renown); return Math.floor(x) + (Math.random() < x - Math.floor(x) ? 1 : 0); })() + (o.renownBonus || 0),   // fractional, with diminishing returns: no runaway renown
     loot, mods, special: !!o.special, state: 'open', heroes: [], t: 0, enchant: false, chance: 0,
   };
   G.quests.push(q); return q;
 }
 const genQuest = () => makeQuest();
-const modTags = q => (q.mods || []).map(k => `<span class="tag" title="${MODS[k].desc}">${MODS[k].icon} ${MODS[k].label}</span>`).join('');
+const modTags = q => (q.region && q.region !== 'greenwood' && REGIONS[q.region] ? `<span class="tag">${REGIONS[q.region].icon} ${REGIONS[q.region].name}</span>` : '') + (q.mods || []).map(k => `<span class="tag" title="${MODS[k].desc}">${MODS[k].icon} ${MODS[k].label}</span>`).join('');
 const questPay = q => Math.round(q.gold * questGoldMul() * (q.approachGold || 1));
 const readyHeroes = () => G.heroes.filter(h => h.gear && h.stamina >= 45 && h.state !== 'quest' && h.state !== 'leaving');
 function bestParty(q) {
@@ -633,6 +660,7 @@ function resolveQuest(q) {
     if (q.loot.wood) G.wood += Math.round(q.loot.wood * oreMul / (G.research.prospect ? 1.5 : 1));
     if (q.loot.arcane) G.mana += Math.round(q.loot.arcane * 5 * oreMul / (G.research.prospect ? 1.5 : 1));
     G.questsDone++;
+    if (q.region && REGIONS[q.region]) { const rec = (G.regions[q.region] = G.regions[q.region] || { done: 0 }), before = regionLevel(q.region); rec.done++; if (regionLevel(q.region) > before) toast(`🗺 ${REGIONS[q.region].name} mastery level ${regionLevel(q.region)}! ${REGIONS[q.region].perk}`); }
     toast(`✔ ${q.name} complete! +${g}g, +${q.renown}⭐, loot collected.`);
   } else {
     G.renown = Math.max(0, G.renown - 1);
@@ -882,7 +910,7 @@ function updateEconomy(dt) {
       if (G.ingots < cap && G.ore >= 2) { b.crafting = true; b.progress += dt * (1 + 0.3 * (b.level - 1)) * adj(b).speed / 10; if (b.progress >= 1) { b.progress = 0; G.ore -= 2; G.ingots++; floatText(b.door, '🔩 +1', '#fff'); } }
     }
   }
-  if (first('alchemy')) { t.mana += dt; if (t.mana >= 5) { t.mana = 0; G.mana += 1 + (G.research.arcane ? 1 : 0); } }
+  if (first('alchemy')) { t.mana += dt; if (t.mana >= 5) { t.mana = 0; G.mana += 1 + (G.research.arcane ? 1 : 0) + regionPerk('ruins'); } }
   t.market -= dt; if (t.market <= 0) { t.market = rnd(70, 100); tickMarket(); }
   t.goals -= dt; if (t.goals <= 0) { t.goals = 1; checkGoals(); checkStories(); tutorial.tick(); }
   // minor facilities
@@ -941,6 +969,7 @@ const GOALS = [
   ['Raise the guild to a Keep', () => G.rank >= 2, { renown: 5 }], ['Fulfil 5 trade orders', () => G.stats.orders >= 5, { gold: 1500 }],
   ['Win 5 defences', () => G.stats.raidsWon >= 5, { gold: 1500 }], ['Dive to floor 20', () => G.diveBest >= 20, { rare: { scale: 1, feather: 1 } }],
   ['Complete 50 quests', () => G.questsDone >= 50, { gold: 1500 }], ['Raise the guild to a Fortress', () => G.rank >= 3, { renown: 10 }],
+  ['Expand your territory', () => G.land >= 1, { gold: 600 }], ['Reach mastery 3 in a region', () => Object.keys(REGIONS).some(r => regionLevel(r) >= 3), { rare: { mythril: 2 } }],
   ['Promote a hero', () => G.stats.promoted >= 1, { gold: 500 }], ['Give a hero a talent', () => G.heroes.some(h => (h.talents || []).length), { gold: 300 }],
   ['Reach 100 renown', () => G.renown >= 100, { gold: 4000 }],
 ];
@@ -1109,6 +1138,14 @@ function modalContent() {
       const st = STORIES.find(x => x.id === G.flags.pending); if (!st) return ['Story', '<div class="s">Nothing to decide right now.</div>'];
       return ['📖 ' + st.title, `<div style="line-height:1.5;margin-bottom:8px">${st.text}</div>` + st.choices.map((c, i) => `<div class="row"><div class="grow"><div class="t">${c.label}</div>${c.hint ? `<div class="s">${c.hint}</div>` : ''}</div><button class="act" data-act="storychoice" data-i="${i}" ${c.ok && !c.ok() ? 'disabled' : ''}>Choose</button></div>`).join('')];
     }
+    case 'map': {
+      let h = '<div class="s">Choose where your quests are posted. Region mastery grows as you complete quests there and unlocks permanent bonuses.</div>';
+      for (const [id, R] of Object.entries(REGIONS)) {
+        const open = R.unlock(), act = G.region === id, rec = G.regions[id] || { done: 0 }, lvl = regionLevel(id);
+        h += `<div class="row" style="${act ? 'border-color:#ffd24a;background:#ffd24a18' : ''}"><div style="font-size:32px">${R.icon}</div><div class="grow"><div class="t">${R.name} ${act ? '<span class="tag">✔ Active</span>' : ''}<span class="tag">Mastery ${lvl}/5</span></div><div class="s">${R.desc}</div><div class="s">${R.summary}</div><div class="bar"><i style="width:${lvl >= 5 ? 100 : (rec.done % 8) / 8 * 100}%"></i></div><div class="s">Quests done here: ${rec.done}${lvl < 5 ? ` · next level at ${(lvl + 1) * 8}` : ''}<br>Mastery bonus: ${R.perk}</div></div><button class="act" data-act="region" data-r="${id}" ${open && !act ? '' : 'disabled'}>${open ? (act ? 'Active' : 'Travel here') : '🔒 ' + R.need}</button></div>`;
+      }
+      return ['🗺 World Map', h];
+    }
     case 'hero': {
       const h = G.heroes.find(x => x.id === modalArg); if (!h) return ['Hero', '<div class="s">This hero is no longer in the guild.</div>'];
       const c = CLASSES[h.cls], tr = h.vip ? TRAITS[h.vip.trait] : null, aq = G.quests.find(q => q.state === 'active' && q.heroes.includes(h));
@@ -1134,7 +1171,9 @@ function modalContent() {
       const c1 = 300 * (G.outpost + 1), c2 = 250 * (G.boardLvl + 1), c3 = 200 * (G.walls + 1);
       const nr = G.rank < 3 ? RANKS[G.rank + 1] : null, reqs = nr ? rankReqs(G.rank + 1) : [];
       const rankHtml = `<div class="row" style="border-color:#ffd24a"><div style="font-size:34px">${RANKS[G.rank].icon}</div><div class="grow"><div class="t">Guild Rank: ${RANKS[G.rank].name}</div><div class="s">${RANKS[G.rank].perks}</div>${nr ? `<div class="s" style="margin-top:6px"><b>Next: ${nr.icon} ${nr.name}</b> — ${nr.perks}</div>` + reqs.map(([ok, t]) => `<div class="s" style="color:${ok ? '#9bff9b' : '#ff9a9a'}">${ok ? '✔' : '✘'} ${t}</div>`).join('') : '<div class="s">The guild has reached its highest rank!</div>'}</div>${nr ? `<button class="act" data-act="rankup" ${reqs.every(x => x[0]) ? '' : 'disabled'}>Promote</button>` : ''}</div>`;
-      return ['⬆️ Guild & Outpost', rankHtml + `
+      const lc = [1500, 4000, 10000][G.land], lw = [60, 120, 200][G.land], lok = G.land < 3 && G.rank >= G.land + 1 && G.gold >= lc && G.wood >= lw;
+      const landHtml = `<div class="row"><div style="font-size:30px">🌾</div><div class="grow"><div class="t">Expand Territory <span class="tag">Lv ${G.land}/3</span></div><div class="s">Clears forest and opens +4 tiles of buildable land on every side.${G.land < 3 ? ` Needs Guild Rank ${RANKS[G.land + 1].name}.` : ''}</div>${G.land < 3 ? cost(lc) + `<span class="tag">🪵 ${lw}</span>` : ''}</div><button class="act" data-act="land" ${lok ? '' : 'disabled'}>${G.land >= 3 ? 'Max' : 'Expand'}</button></div>`;
+      return ['⬆️ Guild & Outpost', rankHtml + landHtml + `
         <div class="row"><div class="grow"><div class="t">Expand Outpost <span class="tag">Lv ${G.outpost}/5</span></div><div class="s">+3 population capacity.</div>${cost(c1)}</div><button class="act" data-act="up" data-k="outpost" ${G.gold < c1 || G.outpost >= 5 ? 'disabled' : ''}>Upgrade</button></div>
         <div class="row"><div class="grow"><div class="t">Quest Board Expansion <span class="tag">Lv ${G.boardLvl}/3</span></div><div class="s">+1 quest slot on the board.</div>${cost(c2)}</div><button class="act" data-act="up" data-k="boardLvl" ${G.gold < c2 || G.boardLvl >= 3 ? 'disabled' : ''}>Upgrade</button></div>
         <div class="row"><div class="grow"><div class="t">Fortify Walls <span class="tag">Lv ${G.walls}/4</span></div><div class="s">+3 defense against monster raids.</div>${cost(c3)}</div><button class="act" data-act="up" data-k="walls" ${G.gold < c3 || G.walls >= 4 ? 'disabled' : ''}>Upgrade</button></div>`];
@@ -1181,6 +1220,8 @@ function renderModal(force) {
 }
 
 const ACT = {
+  land() { const lc = [1500, 4000, 10000][G.land], lw = [60, 120, 200][G.land]; if (G.land >= 3 || G.rank < G.land + 1 || G.gold < lc || G.wood < lw) return toast('Not enough gold, wood, or guild rank.'); G.gold -= lc; G.wood -= lw; G.land++; applyLand(); occVersion++; sfx('build'); toast(`🌾 Territory expanded! Buildable land is now ${24 + 8 * G.land}×${24 + 8 * G.land}.`); },
+  region(d) { const R = REGIONS[d.r]; if (R && R.unlock()) { G.region = d.r; toast(`🗺 Quests will now come from ${R.name}.`); } },
   sfxtoggle() { setPref('sfx', !getPrefs().sfx); unlock(); sfx('chime'); },
   musictoggle() { setPref('music', !getPrefs().music); unlock(); },
   lang(d) { setLang(d.l); },
@@ -1239,8 +1280,14 @@ $('speedBtn').onclick = () => { G.speed = G.speed === 1 ? 2 : G.speed === 2 ? 4 
 /* ------------------------------------------------------------------ *
  *  Placement & input (raycaster, grid snapping, pan/zoom)
  * ------------------------------------------------------------------ */
-const grid = new THREE.GridHelper(N, N, 0xffffff, 0xffffff);
-grid.position.set(N / 2, 0.05, N / 2); grid.material.transparent = true; grid.material.opacity = 0.18; grid.visible = false; scene.add(grid);
+let grid = null, boundsLine = null;
+function buildGrid() {
+  const vis = grid ? grid.visible : false; if (grid) scene.remove(grid); if (boundsLine) scene.remove(boundsLine);
+  const B = landBounds(), S = B.x1 - B.x0;
+  grid = new THREE.GridHelper(S, S, 0xffffff, 0xffffff); grid.position.set((B.x0 + B.x1) / 2, 0.05, (B.z0 + B.z1) / 2); grid.material.transparent = true; grid.material.opacity = 0.18; grid.visible = vis; scene.add(grid);
+  boundsLine = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([[B.x0, B.z0], [B.x1, B.z0], [B.x1, B.z1], [B.x0, B.z1]].map(([x, z]) => new THREE.Vector3(x, 0.08, z))), new THREE.LineBasicMaterial({ color: 0xffd24a, transparent: true, opacity: 0.45 })); scene.add(boundsLine);
+}
+buildGrid();
 let placing = null, ghost = null, ghostCell = [0, 0], ghostRot = 0;
 function startPlacement(type) {
   cancelPlacement(); placing = type; ghostRot = 0;
@@ -1273,7 +1320,7 @@ function cancelPlacement() {
 }
 function moveGhost(cx, cz) {
   const [w, d] = footprint(placing, ghostRot), t = BUILDINGS[placing];
-  cx = Math.max(2, Math.min(N - 2 - w, cx)); cz = Math.max(2, Math.min(N - 2 - d, cz));
+  const B = landBounds(); cx = Math.max(B.x0, Math.min(B.x1 - w, cx)); cz = Math.max(B.z0, Math.min(B.z1 - d, cz));
   ghostCell = [cx, cz];
   ghost.position.set(cx + w / 2, 0, cz + d / 2);
   ghost.userData.pivot.rotation.y = ghostRot * Math.PI / 2;
@@ -1368,7 +1415,7 @@ addEventListener('keydown', e => {
   if (e.key === '-' || e.key === '_') return zoomBy(1.14);
   if (e.key === 'Home' || e.key === '0') return resetView();
   if (e.key.toLowerCase() === 'v') return togglePerspective();
-  const k = watching ? null : { b: 'build', q: 'quests', r: 'recruit', t: 'research', u: 'upgrades' }[e.key.toLowerCase()]; if (k) openModal(k);
+  const k = watching ? null : { b: 'build', q: 'quests', m: 'map', r: 'recruit', t: 'research', u: 'upgrades' }[e.key.toLowerCase()]; if (k) openModal(k);
 });
 // on-screen camera controls
 {
@@ -1410,11 +1457,11 @@ function syncStaff() {
  *  Save / load (localStorage autosave)
  * ------------------------------------------------------------------ */
 const SAVE_KEY = 'fantasy-guild-master-save-v1';
-const SCALARS = ['gold', 'renown', 'mana', 'ore', 'wood', 'herbs', 'time', 'speed', 'outpost', 'boardLvl', 'walls', 'questsDone', 'nextId', 'diveBest', 'rank', 'ingots'];
+const SCALARS = ['gold', 'renown', 'mana', 'ore', 'wood', 'herbs', 'time', 'speed', 'outpost', 'boardLvl', 'walls', 'questsDone', 'nextId', 'diveBest', 'rank', 'ingots', 'land'];
 let lastSaved = 0;
 function serialize() {
   const g = {}; SCALARS.forEach(k => { g[k] = G[k]; });
-  Object.assign(g, { staff: G.staff, research: G.research, tm: G.tm, orders: G.orders, rare: G.rare, market: G.market, goalsDone: G.goalsDone, stats: G.stats, fallen: G.fallen, flags: G.flags });
+  Object.assign(g, { staff: G.staff, research: G.research, tm: G.tm, orders: G.orders, rare: G.rare, market: G.market, goalsDone: G.goalsDone, stats: G.stats, fallen: G.fallen, flags: G.flags, region: G.region, regions: G.regions });
   return {
     v: 1, savedAt: Date.now(), g,
     buildings: G.buildings.map(b => ({ type: b.type, cx: b.cx, cz: b.cz, rot: b.rot || 0, level: b.level, stock: b.stock, progress: b.progress })),
@@ -1435,7 +1482,7 @@ function loadGame() {
   if (!d || d.v !== 1) return false;
   try {
     SCALARS.forEach(k => { if (d.g[k] !== undefined) G[k] = d.g[k]; });
-    Object.assign(G.rare, d.g.rare || {}); Object.assign(G.market, d.g.market || {}); G.goalsDone = d.g.goalsDone || {}; Object.assign(G.stats, d.g.stats || {}); G.fallen = d.g.fallen || []; G.flags = d.g.flags || {}; Object.assign(G.staff, d.g.staff); G.research = d.g.research || {}; Object.assign(G.tm, d.g.tm);
+    Object.assign(G.rare, d.g.rare || {}); Object.assign(G.market, d.g.market || {}); G.goalsDone = d.g.goalsDone || {}; Object.assign(G.stats, d.g.stats || {}); G.fallen = d.g.fallen || []; G.flags = d.g.flags || {}; G.region = d.g.region || 'greenwood'; G.regions = d.g.regions || {}; applyLand(); Object.assign(G.staff, d.g.staff); G.research = d.g.research || {}; Object.assign(G.tm, d.g.tm);
     G.orders = d.g.orders || (d.g.royal ? [{ id: G.nextId++, kind: 'royal', need: { sword: d.g.royal.need }, t: d.g.royal.t, tMax: 150, reward: d.g.royal.reward, ren: d.g.royal.ren, pen: 3, title: 'Royal Demand', icon: '👑' }] : []);
     if (G.orders.some(o => o.kind === 'caravan')) spawnCaravan();
     const nextId = G.nextId;
@@ -1672,4 +1719,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__api = { audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__api = { REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };

@@ -93,7 +93,7 @@ const ENCOUNTERS = {
 };
 ENCOUNTERS.defense = ENCOUNTERS.combat;
 const ENC_NAMES = { goblin: 'Goblin Raiders', wolf: 'Dire Wolves', ogre: 'Ogre Warchief', bandit: 'Bandit Ambush', chief: 'Bandit Chief', wisp: 'Wisp Swarm', imp: 'Imp Pack', golem: 'Ancient Golem' };
-export const themeFor = q => q.type === 'arcane' ? 'ruins' : (q.type === 'combat' && q.seed % 2 ? 'cave' : 'forest');
+export const themeFor = q => ({ stonepeak: 'cave', ruins: 'ruins', ashen: 'forest', greenwood: 'forest' })[q.region] || (q.type === 'arcane' ? 'ruins' : (q.type === 'combat' && q.seed % 2 ? 'cave' : 'forest'));
 
 /* ------------------------------------------------------------ script */
 export function genScript(q) {

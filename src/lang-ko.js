@@ -116,6 +116,18 @@ const BUILD = {
 };
 
 const PROG = {
+  'Map': '지도', 'World Map': '월드맵', '🗺 World Map': '🗺 월드맵', 'Expand Territory': '영토 확장', 'Territory': '영토', 'Travel here': '이곳으로 이동', 'Active': '활성', '✔ Active': '✔ 활성', 'Mastery': '숙련도',
+  'Choose where your quests are posted. Region mastery grows as you complete quests there and unlocks permanent bonuses.': '퀘스트가 올라올 지역을 고르세요. 그 지역에서 퀘스트를 완수할수록 숙련도가 오르고 영구 보너스가 해금됩니다.',
+  'Clears forest and opens +4 tiles of buildable land on every side.': '숲을 개간해 사방으로 건설 가능한 땅을 4칸씩 넓힙니다.', 'Quests done here:': '이곳에서 완수한 퀘스트:', 'Mastery bonus:': '숙련도 보너스:', 'next level at': '다음 레벨까지', 'Needs Guild Rank': '필요 길드 등급:',
+  'Not enough gold, wood, or guild rank.': '골드, 목재 또는 길드 등급이 부족합니다.', 'Greenwood': '초록숲', 'Stonepeak Mines': '돌봉우리 광산', 'Ashen Marsh': '잿빛 늪', 'Sunken Ruins': '가라앉은 폐허',
+  'The quiet home forest. Balanced quests, gentle danger.': '고요한 고향 숲. 균형 잡힌 퀘스트와 낮은 위험도.', 'Balanced quests · ×1.0 gold · ×1.0 danger': '균형 잡힌 퀘스트 · 골드 ×1.0 · 위험도 ×1.0', '+2 population capacity (mastery 3), +4 (mastery 5)': '수용 인원 +2 (숙련 3), +4 (숙련 5)',
+  'Dark tunnels full of trolls and ore.': '트롤과 철광석이 가득한 어두운 갱도.', 'Mostly combat · +60% ore loot · ×1.1 gold · ×1.15 danger': '주로 전투 · 철광석 전리품 +60% · 골드 ×1.1 · 위험도 ×1.15', 'Forge speed +10% (mastery 3), +20% (mastery 5)': '대장간 속도 +10% (숙련 3), +20% (숙련 5)',
+  'Foul mists, rare herbs and curses.': '역겨운 안개, 희귀한 약초, 그리고 저주.', 'Mostly gathering · +80% herb loot · ×1.15 gold · ×1.25 danger': '주로 채집 · 약초 전리품 +80% · 골드 ×1.15 · 위험도 ×1.25', 'Lab speed +10% (mastery 3), +20% (mastery 5)': '실험실 속도 +10% (숙련 3), +20% (숙련 5)',
+  'Drowned halls humming with old magic.': '오래된 마법이 웅웅대는 물에 잠긴 회랑.', 'Mostly arcane · +80% mana loot · ×1.3 gold · ×1.4 danger': '주로 비전 · 마나 전리품 +80% · 골드 ×1.3 · 위험도 ×1.4', 'Mana regeneration +1 (mastery 3), +2 (mastery 5)': '마나 재생 +1 (숙련 3), +2 (숙련 5)', 'Guild Rank Keep': '길드 등급 성', 'Renown 10': '명성 10', 'Renown 20': '명성 20',
+  'Collapse in the Deep Shaft': '깊은 수직갱 붕괴', 'Clear the Troll Tunnel': '트롤 터널 소탕', 'Escort the Ore Cart': '광석 수레 호위', 'Seal the Rockfall': '낙석 지대 봉쇄', 'Gather Bog Lotus': '늪 연꽃 채집', 'Hunt the Marsh Hag': '늪의 마녀 사냥', 'Cleanse the Poisoned Spring': '오염된 샘 정화', 'Find the Lost Peddler': '실종된 행상인 찾기',
+  'Decipher the Sunken Glyphs': '가라앉은 문양 해독', 'Banish the Drowned Wraith': '익사한 망령 퇴치', 'Recover the Tidal Relic': '조수의 유물 회수', 'Calm the Restless Statues': '잠들지 못한 석상 달래기',
+  'Expand your territory': '영토 확장하기', 'Reach mastery 3 in a region': '지역 숙련도 3 달성', '🗺 Quests will now come from': '🗺 이제 퀘스트가 올라오는 곳:',
+
   'Procedural sound effects and music (no downloads).': '실시간 합성 효과음과 음악입니다 (다운로드 없음).', 'Effects: On': '효과음: 켜짐', 'Effects: Off': '효과음: 꺼짐', 'Music: On': '음악: 켜짐', 'Music: Off': '음악: 꺼짐',
   'Tutorial': '튜토리얼', 'Skip': '건너뛰기', '🎓 Tutorial': '🎓 튜토리얼', 'Show the first-run guide again.': '처음 플레이 안내를 다시 보여줍니다.', 'Replay': '다시 보기',
   'Welcome, Guild Master! Tap "Build" and place a Tavern so heroes have somewhere to rest. Drag the golden plot, rotate it with ⟲ ⟳, then press ✔ Build.': '환영합니다, 길드 마스터! "건설"을 눌러 영웅들이 쉴 수 있는 여관을 지으세요. 황금 부지를 끌어서 옮기고 ⟲ ⟳ 로 회전한 뒤 ✔ 건설을 누르면 됩니다.',
@@ -248,6 +260,9 @@ export function makeKoRules(T) {
     [/^([\d.]+) on (\w+) quests$/, (n, t) => `${t === 'combat' ? '전투' : t === 'gather' ? '채집' : '비전'} 퀘스트 기준 ${n}`],
     [/^⭐ (\d+) req\.$/, n => `⭐ 명성 ${n} 필요`],
     [/^🧭 Choose a party — (.+)$/, q => `🧭 파티 선택 — ${f(q)}`],
+    [/^🌾 Territory expanded! Buildable land is now (\d+)×(\d+)\.$/, (a, b) => `🌾 영토가 확장되었습니다! 건설 가능한 땅이 이제 ${a}×${b}입니다.`],
+    [/^🗺 (.+) mastery level (\d)! (.+)$/, (n, l, p) => `🗺 ${f(n)} 숙련도 ${l}레벨! ${f(p)}`], [/^🗺 Quests will now come from (.+)\.$/, n => `🗺 이제 퀘스트가 ${f(n)}에서 올라옵니다.`],
+    [/^Mastery (\d)\/5$/, l => `숙련도 ${l}/5`],
     [/^Floor (\d+)$/, n => `${n}층`], [/^At most (\d+) heroes on this quest\.$/, n => `이 퀘스트에는 최대 ${n}명까지 보낼 수 있습니다.`],
     [/^Researched (.+)!$/, t => `${f(t)} 연구 완료!`], [/^(.+) now makes (\w+) (weapons|potions)\.$/, (b, g, k) => `${f(b)}: 이제 ${f(g)} ${f(k)} 제작`],
     [/^(\S+) (.+) is promoted to (.+)!$/, (i, n, p) => `${i} ${f(n)} 영웅이 ${f(p)} 직업으로 승급했습니다!`], [/^✨ (.+) learns (.+)!$/, (n, t) => `✨ ${f(n)} 영웅이 재능을 습득했습니다: ${f(t)}!`],
