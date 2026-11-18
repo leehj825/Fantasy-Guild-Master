@@ -373,6 +373,10 @@ export class Expedition {
     this.foe = [];
     // pooled effects: projectiles and hit sparks
     this.proj = Array.from({ length: 8 }, () => { const m = sph(0.12, 0xffffff, 0, 0, 0, 0xffffff, 1.2, 6); m.visible = false; this.group.add(m); return m; });
+    // arrows (a real shaft that flies straight), spell bolts/fireballs with trails, and ground rings for impacts
+    this.arrows = Array.from({ length: 8 }, () => { const g = new THREE.Group(); g.add(vox(0.035, 0.035, 0.8, 0x8a5a2b, 0, -0.0175, -0.4), cone(0.06, 0.16, 0xdfe3ea, 0, 0, 0.0, 4), vox(0.1, 0.012, 0.16, 0xc0392b, 0, -0.006, -0.78), vox(0.012, 0.1, 0.16, 0xc0392b, 0, -0.05, -0.78)); g.children[1].rotation.x = Math.PI / 2; g.children[1].position.set(0, 0, 0.08); g.scale.setScalar(1.7); g.visible = false; this.group.add(g); return g; });
+    this.bolts = Array.from({ length: 6 }, () => { const g = new THREE.Group(); g.userData.parts = Array.from({ length: 7 }, (_, i) => { const m = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false })); g.add(m); return m; }); g.visible = false; this.group.add(g); return g; });
+    this.rings = Array.from({ length: 6 }, () => { const m = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.75, 20), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false })); m.rotation.x = -Math.PI / 2; m.visible = false; this.group.add(m); return m; });
     this.spark = Array.from({ length: 8 }, () => { const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.3), new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.9 })); m.visible = false; this.group.add(m); return m; });
     this.coins = Array.from({ length: 8 }, () => { const m = sph(0.07, 0xffd24a, 0, 0, 0, 0xffd24a, 1.4, 5); m.visible = false; this.group.add(m); return m; });
     this.nums = []; this.fired = new Set(); this.T = 0; scene.add(this.group);
@@ -430,6 +434,47 @@ export class Expedition {
     o.m.userData.anim.drive(name, t, rdt);
     m.rotation.set(0, rotY, 0); m.position.set(x, 0, z);
     this.setBar(o.bar, m.position, 2.15, hp, dead);
+  }
+  // Ranged attack visuals around the hit event e (damage lands at e.t + 0.3): a charge glow before release, then a straight flight.
+  castFx(e, ho, fo, from, to, T, n) {
+    const cls = ho.p.cls, idx = (this.hitsBy[e.h] || []).indexOf(e), kind = cls === 'ranger' ? 'arrow' : (idx % 2 ? 'fire' : 'bolt');
+    const eh = ENEMY[this.S.enemies[e.e].kind].h, ty = clamp(eh * 0.4, 0.5, 1.4);
+    const hand = cls === 'ranger' ? 0.55 : 1.0, sx = from.x + 0.3, sy = hand, sz = from.z + 0.2;
+    const f = (T - e.t) / 0.3;                                  // 0 at release, 1 at the target
+    if (kind === 'arrow') {
+      if (f < 0 || f > 1) return; const a = this.arrows[(n - 1) % this.arrows.length]; a.visible = true;
+      const x = lerp(sx, to.x, f), y = lerp(sy, ty, f), z = lerp(sz, to.z, f);
+      a.position.set(x, y, z); a.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(to.x - sx, ty - sy, to.z - sz).normalize());
+      return;
+    }
+    const b = this.bolts[(n - 1) % this.bolts.length], parts = b.userData.parts, fire = kind === 'fire', now = performance.now() / 1000;
+    const core = fire ? 0xffb030 : 0x9affff, mid = fire ? 0xff5a20 : 0x4aa8ff;
+    b.visible = true;
+    if (f < 0) {        // charging: a small orb grows at the staff
+      const c = clamp((f + 1.5) / 1.5, 0, 1); parts.forEach((m, i) => { m.visible = i < 2; });
+      parts[0].position.set(sx, sy, sz); parts[0].scale.setScalar(0.05 + 0.13 * c); parts[0].material.color.setHex(core);
+      parts[1].position.set(sx, sy, sz); parts[1].scale.setScalar(0.1 + 0.2 * c * (0.85 + 0.15 * Math.sin(now * 30))); parts[1].material.color.setHex(mid); parts[1].material.opacity = 0.35;
+      return;
+    }
+    if (f > 1) { b.visible = false; return; }
+    const dx = to.x - sx, dy = ty - sy, dz = to.z - sz, L = Math.hypot(dx, dy, dz), ux = dx / L, uy = dy / L, uz = dz / L;
+    const x = lerp(sx, to.x, f), y = lerp(sy, ty, f), z = lerp(sz, to.z, f);
+    parts.forEach((m, i) => {
+      m.visible = true;
+      if (i === 0) { m.position.set(x, y, z); m.scale.setScalar(fire ? 0.2 : 0.13); m.material.color.setHex(core); m.material.opacity = 1; }
+      else if (i === 1) { m.position.set(x, y, z); m.scale.setScalar((fire ? 0.34 : 0.22) * (0.9 + 0.1 * Math.sin(now * 40))); m.material.color.setHex(mid); m.material.opacity = 0.45; }
+      else {            // the trail: embers drifting up (fire) or a crackling zig-zag (arcane bolt), fading behind
+        const k = (i - 1) * 0.07 * L / 8, wob = fire ? 0 : Math.sin(now * 55 + i * 2.1) * 0.09, rise = fire ? (i - 1) * 0.03 : 0;
+        m.position.set(x - ux * k + wob * uz, y - uy * k + rise + wob * 0.5, z - uz * k - wob * ux);
+        m.scale.setScalar((fire ? 0.16 : 0.08) * (1 - (i - 1) / 7) + 0.02); m.material.color.setHex(i % 2 ? core : mid); m.material.opacity = 0.75 * (1 - (i - 1) / 6);
+      }
+    });
+  }
+  // A ring expanding on the ground where a spell lands
+  impactRing(e, ho, age, n) {
+    if (ho.p.cls === 'ranger') return;
+    const fo = this.foe[e.e], idx = (this.hitsBy[e.h] || []).indexOf(e), fire = idx % 2 === 1, r = this.rings[n % this.rings.length], f = age / 0.4;
+    r.visible = true; r.position.set(fo.m.position.x, 0.06, fo.m.position.z); r.scale.setScalar(0.4 + f * (fire ? 2.4 : 1.8)); r.material.opacity = 0.8 * (1 - f); r.material.color.setHex(fire ? 0xff7a30 : 0x7affff);
   }
   update(T, rdt) {
     const q = this.q, S = q.script; T = clamp(T, 0, S.dur); this.T = T;
@@ -516,23 +561,22 @@ export class Expedition {
     this.stage.flicker.forEach((f, i) => { if (f) f.intensity = 1.0 + Math.sin(performance.now() / 90 + i) * 0.25 + Math.random() * 0.15; });
     // projectiles, sparks, floating numbers (only events near "now")
     this.proj.forEach(p => { p.visible = false; }); this.spark.forEach(p => { p.visible = false; });
-    let pi = 0, si = 0, lo = 0, hi = S.events.length;
+    this.arrows.forEach(a => { a.visible = false; }); this.bolts.forEach(b => { b.visible = false; }); this.rings.forEach(r => { r.visible = false; });
+    let nfx = 0, si = 0, lo = 0, hi = S.events.length;
     while (lo < hi) { const mid = (lo + hi) >> 1; if (S.events[mid].t < T - 1.0) lo = mid + 1; else hi = mid; }
     for (let i = lo; i < S.events.length; i++) {
       const e = S.events[i];
-      if (e.t > T + 0.1) break;
+      if (e.t > T + 0.5) break;
       if (e.type !== 'hit' && e.type !== 'ehit') continue;
       const ho = this.hero[e.h], fo = this.foe[e.e]; if (!ho || !fo || fo.gone) continue;
       const ranged = e.type === 'hit' && ho.p.cls !== 'knight';
       const from = e.type === 'hit' ? ho.m.position : fo.m.position, to = e.type === 'hit' ? fo.m.position : ho.m.position;
-      if (ranged && T >= e.t + 0.1 && T <= e.t + 0.3 && pi < this.proj.length) {
-        const p = this.proj[pi++], f = (T - e.t - 0.1) / 0.2; p.visible = true; p.position.set(lerp(from.x + 0.3, to.x, f), 1.0 + Math.sin(f * Math.PI) * 0.25, lerp(from.z, to.z, f));
-        p.material.color.setHex(ho.p.cls === 'wizard' ? 0x7affff : 0xe8d9a8); p.scale.setScalar(ho.p.cls === 'wizard' ? 1.4 : 0.7);
-      }
+      if (ranged && T >= e.t - 0.45 && T <= e.t + 0.3) this.castFx(e, ho, fo, from, to, T, ++nfx);
       const hit = e.t + (ranged ? 0.3 : 0.28);
       if (T >= hit && T <= hit + 0.25 && si < this.spark.length && (e.type === 'ehit' || fo.m.visible)) {
         const s = this.spark[si++], f = (T - hit) / 0.25; s.visible = true; s.position.set(to.x, 1.0, to.z + 0.1); s.scale.setScalar(0.6 + f); s.material.opacity = 0.9 * (1 - f); s.material.color.setHex(e.type === 'hit' ? 0xffe08a : 0xff6a5a);
       }
+      if (ranged && T >= hit && T <= hit + 0.4 && nfx < 6) this.impactRing(e, ho, T - hit, nfx++);
       if (T >= hit && T - hit < 0.6 && !this.fired.has(e.id)) {
         this.fired.add(e.id); sfx(e.type === 'hit' ? 'hit' : 'ehit'); const el = document.createElement('div'); el.className = 'fl dnum ' + (e.type === 'hit' ? 'dh' : 'de'); el.textContent = '−' + e.dmg; this.labelEl.appendChild(el);
         this.nums.push({ el, pos: this.wpos(to, 1.6), age: 0 });
