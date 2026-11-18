@@ -99,7 +99,8 @@ public class MainActivity extends Activity {
         return m != null ? m : "application/octet-stream";
     }
 
-    @Override protected void onPause() { web.onPause(); super.onPause(); }
-    @Override protected void onResume() { super.onResume(); web.onResume(); }
+    // WebView.onPause() does not stop Web Audio, so tell the page to silence itself first
+    @Override protected void onPause() { web.evaluateJavascript("window.__audioHidden&&window.__audioHidden(true)", null); web.onPause(); super.onPause(); }
+    @Override protected void onResume() { super.onResume(); web.onResume(); web.evaluateJavascript("window.__audioHidden&&window.__audioHidden(false)", null); }
     @Override protected void onDestroy() { web.destroy(); super.onDestroy(); }
 }
