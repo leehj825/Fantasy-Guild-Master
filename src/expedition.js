@@ -12,6 +12,7 @@ export const STAGE_X = 170;                                   // stage sits far 
 export const TL = { enc: [[0.10, 0.36], [0.36, 0.62], [0.62, 0.90]], loot: 0.90, cutoff: 0.62 };
 const ARENA = [-4, 3.5, 11];                                  // x of each fight
 const CHEST_X = 17;
+const RUN_SPEED = 4.4;                                       // units per second when the party runs between fights
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const sm = x => { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); };
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -425,7 +426,7 @@ export class Expedition {
     else if (eh && T - eh.t < 0.75) { name = 'impact'; t = T - eh.t; }
     else if (cast) { name = cast[0]; t = cast[1]; }
     else if (env > 0.02) { name = 'runCalm'; t = T * 1.4; if (!fwd) rotY = -Math.PI / 2; }      // run to the enemy, then back
-    else if (moving) { name = retreat ? 'runCalm' : 'walkCalm'; t = T * (retreat ? 1.2 : 1.15) + h * 0.3; if (retreat) rotY = -Math.PI / 2; }
+    else if (moving) { name = 'runCalm'; t = T * 1.35 + h * 0.3; if (retreat) rotY = -Math.PI / 2; }
     o.m.userData.anim.drive(name, t, rdt);
     m.rotation.set(0, rotY, 0); m.position.set(x, 0, z);
     this.setBar(o.bar, m.position, 2.15, hp, dead);
@@ -438,11 +439,15 @@ export class Expedition {
     const w = S.win, n = this.hero.length, stand = ARENA.map(a => a - 2.6), dive = !!S.dive;
     // party march: walking segments between fights (a dive keeps the party in place after the walk-in)
     let px = -19, moving = false, retreat = false;
-    if (dive) { if (T < w[0].a) { px = lerp(-19, stand[0], T / w[0].a); moving = true; } else px = stand[0]; }
+    if (dive) { const rd = Math.min(w[0].a, Math.abs(stand[0] + 19) / RUN_SPEED); if (T < rd) { px = lerp(-19, stand[0], T / rd); moving = true; } else px = stand[0]; }
     else {
       const segs = [[0, w[0].a, -19, stand[0]], [w[0].b, w[1].a, stand[0], stand[1]], [w[1].b, w[2].a, stand[1], stand[2]]];
       segs.push(q.ok ? [w[2].b, S.dur * 0.93, stand[2], CHEST_X - 2.6] : [w[2].b, S.dur, stand[2], stand[2] - 6]);
-      for (const [t0, t1, x0, x1] of segs) { if (T >= t1) px = x1; else { if (T >= t0) { px = lerp(x0, x1, (T - t0) / (t1 - t0)); moving = true; } else px = x0; break; } }
+      // the party sprints to the next fight (then waits for the enemy) instead of ambling for the whole window
+      for (const [t0, t1, x0, x1] of segs) {
+        const rd = Math.max(0.5, Math.min(t1 - t0, Math.abs(x1 - x0) / RUN_SPEED));
+        if (T >= t1) px = x1; else { if (T >= t0) { const u = clamp((T - t0) / rd, 0, 1); px = lerp(x0, x1, u); moving = u < 1; } else px = x0; break; }
+      }
       retreat = !q.ok && T > w[2].b;
     }
     // heroes
