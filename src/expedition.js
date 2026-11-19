@@ -9,9 +9,11 @@ import { clipInfo } from './rigchar.js';
 import { makeChar, buildChar, buildHero, buildGoblin, buildBuilding, vox, tbox, mat, cyl, cone, sph, rot, PROPS } from './models.js';
 
 export const STAGE_X = 170;                                   // stage sits far off the base map
-export const TL = { enc: [[0.10, 0.36], [0.36, 0.62], [0.62, 0.90]], loot: 0.90, cutoff: 0.62 };
+export const TL = { enc: [[0.03, 0.36], [0.36, 0.62], [0.62, 0.90]], loot: 0.90, cutoff: 0.62 };
 const ARENA = [-4, 3.5, 11];                                  // x of each fight
 const CHEST_X = 17;
+const MAX_IDLE = 2.0;                                        // longest pause before the party sets off for a fight
+const ENEMY_RUN = 2.0;                                       // seconds the enemies take to run in (they appear just before the fight)
 const RUN_SPEED = 4.4;                                       // units per second when the party runs between fights
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const sm = x => { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); };
@@ -374,7 +376,7 @@ export class Expedition {
     // pooled effects: projectiles and hit sparks
     this.proj = Array.from({ length: 8 }, () => { const m = sph(0.12, 0xffffff, 0, 0, 0, 0xffffff, 1.2, 6); m.visible = false; this.group.add(m); return m; });
     // arrows (a real shaft that flies straight), spell bolts/fireballs with trails, and ground rings for impacts
-    this.arrows = Array.from({ length: 8 }, () => { const g = new THREE.Group(); g.add(vox(0.035, 0.035, 0.8, 0x8a5a2b, 0, -0.0175, -0.4), cone(0.06, 0.16, 0xdfe3ea, 0, 0, 0.0, 4), vox(0.1, 0.012, 0.16, 0xc0392b, 0, -0.006, -0.78), vox(0.012, 0.1, 0.16, 0xc0392b, 0, -0.05, -0.78)); g.children[1].rotation.x = Math.PI / 2; g.children[1].position.set(0, 0, 0.08); g.scale.setScalar(1.7); g.visible = false; this.group.add(g); return g; });
+    this.arrows = Array.from({ length: 8 }, () => { const g = new THREE.Group(); g.add(vox(0.035, 0.035, 0.8, 0x8a5a2b, 0, -0.0175, -0.4), cone(0.06, 0.16, 0xdfe3ea, 0, 0, 0.0, 4), vox(0.1, 0.012, 0.16, 0xc0392b, 0, -0.006, -0.78), vox(0.012, 0.1, 0.16, 0xc0392b, 0, -0.05, -0.78)); g.children[1].rotation.x = Math.PI / 2; g.children[1].position.set(0, 0, 0.08); g.scale.setScalar(0.7); g.visible = false; this.group.add(g); return g; });
     this.bolts = Array.from({ length: 6 }, () => { const g = new THREE.Group(); g.userData.parts = Array.from({ length: 7 }, (_, i) => { const m = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false })); g.add(m); return m; }); g.visible = false; this.group.add(g); return g; });
     this.rings = Array.from({ length: 6 }, () => { const m = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.75, 20), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false })); m.rotation.x = -Math.PI / 2; m.visible = false; this.group.add(m); return m; });
     this.spark = Array.from({ length: 8 }, () => { const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.3), new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.9 })); m.visible = false; this.group.add(m); return m; });
@@ -430,7 +432,7 @@ export class Expedition {
     else if (eh && T - eh.t < 0.75) { name = 'impact'; t = T - eh.t; }
     else if (cast) { name = cast[0]; t = cast[1]; }
     else if (env > 0.02) { name = 'runCalm'; t = T * 1.4; if (!fwd) rotY = -Math.PI / 2; }      // run to the enemy, then back
-    else if (moving) { name = 'runCalm'; t = T * 1.35 + h * 0.3; if (retreat) rotY = -Math.PI / 2; }
+    else if (moving) { const v = this.vMarch || RUN_SPEED; name = v >= 2.8 ? 'runCalm' : 'walkCalm'; t = T * (v >= 2.8 ? Math.max(0.8, Math.min(1.5, v / 3.2)) : Math.max(0.7, v / 1.35)) + h * 0.3; if (retreat) rotY = -Math.PI / 2; }
     o.m.userData.anim.drive(name, t, rdt);
     m.rotation.set(0, rotY, 0); m.position.set(x, 0, z);
     this.setBar(o.bar, m.position, 2.15, hp, dead);
@@ -484,15 +486,22 @@ export class Expedition {
     const w = S.win, n = this.hero.length, stand = ARENA.map(a => a - 2.6), dive = !!S.dive;
     // party march: walking segments between fights (a dive keeps the party in place after the walk-in)
     let px = -19, moving = false, retreat = false;
-    if (dive) { const rd = Math.min(w[0].a, Math.abs(stand[0] + 19) / RUN_SPEED); if (T < rd) { px = lerp(-19, stand[0], T / rd); moving = true; } else px = stand[0]; }
+    // The party runs to each fight so that it arrives just as the enemy does (the enemy runs in too, see below), never
+    // waiting around: it leaves late and runs fast, or - if the gap is long - sets off after a short pause at a jog.
+    this.vMarch = RUN_SPEED;
+    const leg = (t0, t1, x0, x1, fight) => {
+      const dist = Math.abs(x1 - x0), by = fight ? t1 - 0.25 : t1, avail = Math.max(0.5, by - t0);
+      let rd = fight ? Math.max(Math.min(avail, dist / RUN_SPEED), avail - MAX_IDLE) : Math.min(avail, dist / RUN_SPEED);
+      rd = Math.max(0.5, rd); const start = fight ? by - rd : t0;
+      if (T >= by) { px = x1; return true; }
+      if (T >= start) { const u = clamp((T - start) / rd, 0, 1); px = lerp(x0, x1, u); moving = u < 1; this.vMarch = dist / rd; } else px = x0;
+      return false;
+    };
+    if (dive) leg(0, w[0].a, -19, stand[0], true);
     else {
-      const segs = [[0, w[0].a, -19, stand[0]], [w[0].b, w[1].a, stand[0], stand[1]], [w[1].b, w[2].a, stand[1], stand[2]]];
-      segs.push(q.ok ? [w[2].b, S.dur * 0.93, stand[2], CHEST_X - 2.6] : [w[2].b, S.dur, stand[2], stand[2] - 6]);
-      // the party sprints to the next fight (then waits for the enemy) instead of ambling for the whole window
-      for (const [t0, t1, x0, x1] of segs) {
-        const rd = Math.max(0.5, Math.min(t1 - t0, Math.abs(x1 - x0) / RUN_SPEED));
-        if (T >= t1) px = x1; else { if (T >= t0) { const u = clamp((T - t0) / rd, 0, 1); px = lerp(x0, x1, u); moving = u < 1; } else px = x0; break; }
-      }
+      const segs = [[0, w[0].a, -19, stand[0], true], [w[0].b, w[1].a, stand[0], stand[1], true], [w[1].b, w[2].a, stand[1], stand[2], true]];
+      segs.push(q.ok ? [w[2].b, S.dur * 0.93, stand[2], CHEST_X - 2.6, false] : [w[2].b, S.dur, stand[2], stand[2] - 6, false]);
+      for (const sg of segs) if (!leg(...sg)) break;
       retreat = !q.ok && T > w[2].b;
     }
     // heroes
@@ -521,9 +530,9 @@ export class Expedition {
     this.foe.forEach((o, k) => {
       if (o.gone) return;
       const E = S.enemies[k], m = o.m, hp = enemyHp(S, k, T), dying = T >= E.D;
-      const encEnd = S.encs[E.enc].e, show = T >= E.s && (T <= encEnd + 1.2 || (!isFinite(E.D) && T <= S.dur));
+      const appear = Math.max(E.s, E.a - ENEMY_RUN), encEnd = S.encs[E.enc].e, show = T >= appear && (T <= encEnd + 1.2 || (!isFinite(E.D) && T <= S.dur));
       m.visible = show; o.dead = dying; if (!show) { o.bar.style.display = 'none'; return; }
-      const info = m.userData; const approach = clamp((T - E.s) / (E.a - E.s), 0, 1), walking = approach < 1 && !dying;
+      const info = m.userData; const approach = clamp((T - appear) / Math.max(0.3, E.a - appear), 0, 1), walking = approach < 1 && !dying;
       if (info.anim) {      // rigged raider: walk in, swing, flinch, fall — all from clips
         const approach2 = approach, hitsE = this.ehitsBy[k] || [], cl = info.clips || {}, atkName = cl.attack || 'attack1', ci = clipInfo(atkName); let name = 'idleEase', t = T + k * 0.6, atk = null, lunge2 = 0;
         for (let i = firstAfter(hitsE, T - 1.6); i < hitsE.length; i++) { const s0 = hitsE[i].t - ci.hit; if (s0 > T) break; if (T < s0 + ci.d) atk = T - s0; }
@@ -531,7 +540,7 @@ export class Expedition {
         if (dying) { name = 'die'; t = T - E.D; }
         else if (atk !== null) { name = atkName; t = atk; lunge2 = -0.9 * Math.sin(clamp(atk / ci.d, 0, 1) * Math.PI); }
         else if (hh && T - hh.t < 0.7) { name = 'impact'; t = T - hh.t; }
-        else if (approach2 < 1) { name = cl.walk || 'walkCalm'; t = T * (cl.walkSpeed || 1.15); }
+        else if (approach2 < 1) { name = cl.run || 'runCalm'; t = T * (cl.runSpeed || 1.35) + k * 0.4; }
         info.anim.drive(name, t, rdt); m.rotation.set(0, -Math.PI / 2, 0); m.scale.setScalar(m.userData.s0 ??= m.scale.x);
         m.position.set(E.home.x + 9 * (1 - approach2) + lunge2, 0, E.home.z); this.setBar(o.bar, m.position, ENEMY[E.kind].h, hp, dying); return;
       }

@@ -116,6 +116,8 @@ const BUILD = {
 };
 
 const PROG = {
+  'Move building (free)': '건물 이동 (무료)', '🧭 Move building (free)': '🧭 건물 이동 (무료)', 'Move': '이동',
+
   'Characters': '캐릭터', 'Rigged · blocky': '관절형 · 각진 몸', 'Rigged · rounded': '관절형 · 둥근 몸', 'Classic': '클래식',
   'Body style. Rigged bodies use motion-capture clips (walk, run, sword, bow, magic, heal). Changing it reloads the game (progress is saved).': '몸 스타일. 관절형 몸은 모션 클립(걷기, 달리기, 검, 활, 마법, 치유)을 사용합니다. 바꾸면 게임이 다시 로드됩니다(진행 상황은 저장됨).',
 

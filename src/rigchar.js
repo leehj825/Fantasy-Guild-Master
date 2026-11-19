@@ -226,7 +226,7 @@ export function makeRigGolem() {
   g.userData.rig = { root, hips: j.hips, j, hipsRest: J.hips[1] };
   const dummy = () => new THREE.Group(); g.userData.legs = [dummy(), dummy()]; g.userData.arms = [dummy(), dummy()];
   g.userData.anim = new Animator(g.userData.rig);
-  g.userData.clips = { attack: 'attack3', walk: 'walkCalm', walkSpeed: 0.7 };     // heavy swing, slow stride
+  g.userData.clips = { attack: 'attack3', walk: 'walkCalm', walkSpeed: 0.7, run: 'runCalm', runSpeed: 0.9 };     // heavy swing, slow stride
   return g;
 }
 
@@ -261,6 +261,6 @@ export function makeRigOgre() {
   g.userData.rig = { root, hips: j.hips, j, hipsRest: J.hips[1] };
   const dummy = () => new THREE.Group(); g.userData.legs = [dummy(), dummy()]; g.userData.arms = [dummy(), dummy()];
   g.userData.anim = new Animator(g.userData.rig);
-  g.userData.clips = { attack: 'attack3', walk: 'walkCalm', walkSpeed: 0.8 };
+  g.userData.clips = { attack: 'attack3', walk: 'walkCalm', walkSpeed: 0.8, run: 'runCalm', runSpeed: 0.9 };
   return g;
 }

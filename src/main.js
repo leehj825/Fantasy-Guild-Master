@@ -1226,6 +1226,7 @@ function modalContent() {
       if (b.type === 'tavern') h += `<div class="s">Meal price: ${mealGold(b).toFixed(1)}g · Passive: ${b.level * 0.25}g/s</div>`;
       const uc = 150 * b.level + 100;
       if (['forge', 'alchemy', 'tavern', 'warehouse', 'smelter'].includes(b.type)) h += `</div><button class="act" data-act="upBuilding" data-id="${b.id}" ${G.gold < uc || G.wood < 5 * b.level || b.level >= maxLevel() || !hasRare(upReq(b)) ? 'disabled' : ''}>${b.level >= maxLevel() ? (G.rank < 3 ? 'Raise guild rank' : 'Max level') : `Upgrade<br>${uc}g + ${5 * b.level}🪵 ${rareTags(upReq(b))}`}</button></div>`; else h += '</div></div>';
+      if (b.type !== 'hall') h += `<button class="act red" data-act="moveB" data-id="${b.id}" style="margin:6px 0">🧭 Move building (free)</button>`;
       if (b.type === 'portal') h += `<div class="s">Deepest dive so far: floor <b>${G.diveBest}</b></div><button class="act" data-act="open" data-k="quests" style="margin:6px 0">Open the Endless Dive</button>`;
       if (b.type === 'hall') h += `<button class="act" data-act="open" data-k="quests" style="margin:6px 0">Open Quest Board</button>`;
       if (b.type === 'market') {
@@ -1284,6 +1285,7 @@ const ACT = {
   openMerchant() { openModal('merchant'); },
   deliver(d) { deliverOrder(+d.id); },
   place(d) { startPlacement(d.k); closeModal(); },
+  moveB(d) { const b = G.buildings.find(x => x.id === +d.id); if (b && b.type !== 'hall') { startPlacement(b.type, b); closeModal(); } },
   dispatch(d) { dispatch(+d.q, false); },
   dispatchE(d) { dispatch(+d.q, true); },
   flyer() { if (G.gold >= 60 && spawnHero()) { G.gold -= 60; toast('A new hero answers your flyer!'); } },
@@ -1326,9 +1328,10 @@ function buildGrid() {
   boundsLine = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([[B.x0, B.z0], [B.x1, B.z0], [B.x1, B.z1], [B.x0, B.z1]].map(([x, z]) => new THREE.Vector3(x, 0.08, z))), new THREE.LineBasicMaterial({ color: 0xffd24a, transparent: true, opacity: 0.45 })); scene.add(boundsLine);
 }
 buildGrid();
-let placing = null, ghost = null, ghostCell = [0, 0], ghostRot = 0;
-function startPlacement(type) {
-  cancelPlacement(); placing = type; ghostRot = 0;
+let placing = null, ghost = null, ghostCell = [0, 0], ghostRot = 0, moving = null, moveVer = 0;   // moving: the building being relocated (free), hidden while its ghost is placed
+function startPlacement(type, mv = null) {
+  cancelPlacement(); placing = type; ghostRot = mv ? mv.rot : 0;
+  if (mv) { moving = mv; for (let x = mv.cx; x < mv.cx + mv.w; x++) for (let z = mv.cz; z < mv.cz + mv.d; z++) occ.delete(key(x, z)); mv.group.visible = false; }
   const t = BUILDINGS[type];
   ghost = new THREE.Group(); const pivot = new THREE.Group(); ghost.add(pivot); ghost.userData.pivot = pivot;
   // translucent golden preview of the real model on a glowing tiled plot
@@ -1348,11 +1351,12 @@ function startPlacement(type) {
   pivot.add(preview, plane, arrow); ghost.userData.mats = [gm, pm];
   scene.add(ghost); grid.visible = true;
   $('placeHint').classList.remove('hidden'); $('placeBar').classList.remove('hidden'); $('toolbar').classList.add('hidden'); document.body.classList.add('placing');
-  $('placeCost').textContent = t.cost; $('placeName').textContent = tr(t.name);
-  const [w, d] = footprint(type, 0);
-  moveGhost(Math.floor(camTarget.x - w / 2 + 0.5), Math.floor(camTarget.z - d / 2 + 0.5));
+  $('placeCost').textContent = mv ? 0 : t.cost; $('placeName').textContent = (mv ? tr('Move') + ': ' + tr(t.name) : tr(t.name));
+  const [w, d] = footprint(type, ghostRot);
+  if (mv) moveGhost(mv.cx, mv.cz); else moveGhost(Math.floor(camTarget.x - w / 2 + 0.5), Math.floor(camTarget.z - d / 2 + 0.5));
 }
 function cancelPlacement() {
+  if (moving) { const b = moving; moving = null; b.group.visible = true; for (let x = b.cx; x < b.cx + b.w; x++) for (let z = b.cz; z < b.cz + b.d; z++) occ.add(key(x, z)); }
   placing = null; if (ghost) { scene.remove(ghost); ghost = null; } grid.visible = false;
   $('placeHint').classList.add('hidden'); $('placeBar').classList.add('hidden'); $('toolbar').classList.remove('hidden'); document.body.classList.remove('placing');
 }
@@ -1362,7 +1366,7 @@ function moveGhost(cx, cz) {
   ghostCell = [cx, cz];
   ghost.position.set(cx + w / 2, 0, cz + d / 2);
   ghost.userData.pivot.rotation.y = ghostRot * Math.PI / 2;
-  const ok = canPlace(placing, cx, cz, ghostRot) && G.gold >= t.cost;
+  const ok = canPlace(placing, cx, cz, ghostRot) && (moving || G.gold >= t.cost);
   ghost.userData.mats.forEach((m, i) => m.color.setHex(i === 1 ? (ok ? 0xffffff : 0xff6060) : (ok ? 0xffd24a : 0xff4040)));
   ghost.userData.ok = ok; $('placeOk').disabled = !ok;
   const bonus = previewBonus(placing, cx, cz, ghostRot); $('placeHint').innerHTML = trHtml(bonus.length ? '✦ Here: ' + bonus.join(' · ') : 'Drag the golden plot (or tap the ground) to move it · rotate with ⟲ ⟳ · place buildings near partners for bonuses');
@@ -1377,7 +1381,15 @@ function rotateGhost(dir) {
 function confirmPlacement() {
   if (!placing) return;
   const t = BUILDINGS[placing];
-  if (!ghost.userData.ok) return toast(G.gold < t.cost ? 'Not enough gold.' : 'Cannot build there.');
+  if (!ghost.userData.ok) return toast(G.gold < t.cost && !moving ? 'Not enough gold.' : 'Cannot build there.');
+  if (moving) {       // relocate: same building, new spot and facing
+    const b = moving, [w, d] = footprint(b.type, ghostRot), th = ghostRot * Math.PI / 2, [cx, cz] = ghostCell; moving = null;
+    b.cx = cx; b.cz = cz; b.w = w; b.d = d; b.rot = ghostRot;
+    b.group.position.set(cx + w / 2, 0, cz + d / 2); b.group.rotation.y = th; b.group.visible = true;
+    b.door.set(cx + w / 2 + Math.sin(th) * (t.d / 2 + 0.7), 0, cz + d / 2 + Math.cos(th) * (t.d / 2 + 0.7));
+    for (let x = cx; x < cx + w; x++) for (let z = cz; z < cz + d; z++) occ.add(key(x, z));
+    occVersion++; moveVer++; sfx('build'); toast(`${t.name} moved.`); cancelPlacement(); saveGame(); return;
+  }
   sfx('build'); G.gold -= t.cost; const b = addBuilding(placing, ghostCell[0], ghostCell[1], ghostRot);
   floatText(new THREE.Vector3(b.cx + b.w / 2, 1, b.cz + b.d / 2), `-${t.cost} Gold`, '#ff9a9a');
   toast(`${t.name} constructed!`); cancelPlacement();
@@ -1473,7 +1485,7 @@ addEventListener('keydown', e => {
  * ------------------------------------------------------------------ */
 const staffMeshes = []; let staffSig = '';
 function syncStaff() {
-  const sig = JSON.stringify(G.staff) + G.buildings.length;
+  const sig = JSON.stringify(G.staff) + G.buildings.length + ':' + moveVer;
   if (sig === staffSig) return; staffSig = sig;
   staffMeshes.forEach(s => scene.remove(s.mesh)); staffMeshes.length = 0;
   const spot = (type, dx, dz, fallback) => { const b = first(type) || fallback || G.buildings[0]; return [b.cx + b.w / 2 + dx, b.cz + b.d + dz]; };
@@ -1758,4 +1770,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__api = { FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__api = { openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
