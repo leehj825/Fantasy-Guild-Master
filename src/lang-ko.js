@@ -274,6 +274,15 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^Lavish \(−(\d+)g\)$/, n => `성대하게 (−${n}골드)`],
+    [/^Modest \(−(\d+)g\)$/, n => `소박하게 (−${n}골드)`],
+    [/^💪 (.+) finished intensive training\.$/, n => `💪 ${f(n)} 영웅이 집중 훈련을 마쳤습니다.`],
+    [/^🏋 (.+) begins intensive training\.$/, n => `🏋 ${f(n)} 영웅이 집중 훈련을 시작했습니다.`],
+    [/^⚒ (.+)'s gear is now \+(\d+)\.$/, (n, k) => `⚒ ${f(n)} 영웅의 장비가 +${k}가 되었습니다.`],
+    [/^⚒ Gear \+(\d+)\/(\d+)$/, (a, b) => `⚒ 장비 +${a}/${b}`],
+    [/^Next: (\d+)g, (\d+) ore(?:, (\d+) ingots)?$/, (g, o, i) => `다음 단계: ${g}골드, 광석 ${o}${i ? ', 주괴 ' + i : ''}`],
+    [/^Training… (\d+)s left$/, n => `훈련 중… ${n}초 남음`],
+    [/^80 s of drills for (\d+)g — heroes in training cannot go on quests\.$/, g => `80초 훈련에 ${g}골드 — 훈련 중인 영웅은 퀘스트에 나갈 수 없습니다.`],
     [/^(.) The villagers want to hold the (.+)!$/u, (i, n) => `${i} 주민들이 ${f(n)}을(를) 열고 싶어 합니다!`],
     [/^(.) (.+) is on! Tavern meals pay 50% more\.$/u, (i, n) => `${i} ${f(n)} 진행 중! 술집 식사 수입 +50%.`],
     [/^📖 (.+) has something to tell you\.$/, n => `📖 ${f(n)} 영웅이 할 말이 있습니다.`],
