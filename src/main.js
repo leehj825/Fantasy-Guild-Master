@@ -1099,7 +1099,7 @@ const CHAT = {
   glutton: ['Is there any more stew?'], lucky: ['I have a good feeling about today!'], clumsy: ['Oops… did I drop that?'], brave: ['Bring on the monsters!'], scholar: ['Fascinating architecture.'],
   tired: ['I need a rest…'], unhappy: ['This place could be better.'],
 };
-let chatT = 12;
+let chatT = 12, saveBuf = '';
 const decorBonus = () => Math.min(0.3, 0.05 * (ofType('fountain').length + ofType('banner').length + ofType('statue').length) + 0.01 * Math.min(10, ofType('lamp').length + ofType('campfire').length));
 function tickChat(dt) {
   chatT -= dt; if (chatT > 0) return; chatT = 14 + Math.random() * 22;
@@ -1245,6 +1245,7 @@ function modalContent() {
     case 'settings': return ['⚙ Settings & Save', `
       <div class="row"><div class="grow"><div class="t">🔊 Sound</div><div class="s">Procedural sound effects and music (no downloads).</div></div><button class="act ${getPrefs().sfx ? '' : 'red'}" data-act="sfxtoggle">Effects: ${getPrefs().sfx ? 'On' : 'Off'}</button><button class="act ${getPrefs().music ? '' : 'red'}" data-act="musictoggle">Music: ${getPrefs().music ? 'On' : 'Off'}</button></div>
       <div class="row"><div class="grow"><div class="t">🌐 Language</div><div class="s">English / 한국어</div></div>${Object.entries(LANGS).map(([k, n]) => `<button class="act ${getLang() === k ? '' : 'red'}" style="${getLang() === k ? 'outline:2px solid #fff8' : ''}" data-act="lang" data-l="${k}">${n}</button>`).join('')}</div>
+      <div class="row"><div class="grow"><div class="t">📂 Save slots & export</div><div class="s">Three extra slots, plus copy/paste a save between devices.</div></div><button class="act" data-act="saveio">Open</button></div>
       <div class="row"><div class="grow"><div class="t">📖 Guild Chronicle</div><div class="s">The diary of your guild's big moments.</div></div><button class="act" data-act="chron">Open</button></div>
       <div class="row"><div class="grow"><div class="t">🔔 Notifications</div><div class="s">Alert when a quest ends or a raid arrives while the game is in the background (browser only; needs permission).</div></div><button class="act ${G.flags.notif ? '' : 'red'}" data-act="notiftoggle">${G.flags.notif ? 'On' : 'Off'}</button></div>
       <div class="row"><div class="grow"><div class="t">🧍 Characters</div><div class="s">Body style. Rigged bodies use motion-capture clips (walk, run, sword, bow, magic, heal). Changing it reloads the game (progress is saved).</div></div>${Object.entries(CHAR_STYLES).map(([k, n]) => `<button class="act ${charStyle === k ? '' : 'red'}" style="${charStyle === k ? 'outline:2px solid #fff8' : ''}" data-act="cstyle" data-s="${k}">${n}</button>`).join('')}</div>
@@ -1253,6 +1254,13 @@ function modalContent() {
       <div class="row"><div class="grow"><div class="t">🗑 New game</div><div class="s">${modalArg === 'confirm' ? '<b style="color:#ff9a9a">This erases your saved guild. Tap again to confirm.</b>' : 'Delete the save and start a fresh guild.'}</div></div><button class="act red" data-act="newgame">${modalArg === 'confirm' ? 'Really erase' : 'New game'}</button></div>
       <div class="s" style="margin-top:8px">Quests keep running for up to 10 minutes while you are away.</div>
       <div class="sec">✝ Hall of the Fallen</div>${G.fallen.length ? [...G.fallen].reverse().slice(0, 12).map(f => `<div class="s">${f.vip ? '⭐ ' : ''}<b>${f.name}</b> — level ${f.level} ${f.cls}, ${f.quests} expeditions; ${f.deed} (day ${f.day})</div>`).join('') : '<div class="s">No heroes have fallen. Yet.</div>'}`];
+    case 'saveio': {  // (saveBuf keeps the text across the window's refreshes)
+      const slot = n => { try { const d = JSON.parse(localStorage.getItem(SAVE_KEY + '-s' + n) || 'null'); return d ? `${d.g.gold ? Math.round(d.g.gold) : 0}g · ${d.heroes.length} heroes · ${new Date(d.savedAt).toLocaleString()}` : 'empty'; } catch (e) { return 'empty'; } };
+      let h = '<div class="s">Keep up to three extra copies of your guild, or move a save to another device by copying the text below.</div>';
+      for (const n of [1, 2, 3]) h += `<div class="row"><div class="grow"><div class="t">Slot ${n}</div><div class="s">${slot(n)}</div></div><button class="act" data-act="slotsave" data-n="${n}">Save here</button><button class="act red" data-act="slotload" data-n="${n}">Load</button></div>`;
+      h += `<div class="sec">Export / import</div><textarea id="saveText" rows="4" style="width:100%;box-sizing:border-box;font:11px monospace" placeholder="Press Export, or paste a save here and press Import">${saveBuf}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="act" data-act="exportsave">Export</button><button class="act red" data-act="importsave">Import (replaces your guild)</button></div>`;
+      return ['💾 Save slots', h];
+    }
     case 'chronicle': return ['📖 Guild Chronicle', (G.flags.chron || []).length ? [...G.flags.chron].reverse().map(c => `<div class="row"><div class="s" style="min-width:48px">Day ${c.d}</div><div class="grow"><div class="t" style="font-weight:400">${c.t}</div></div></div>`).join('') : '<div class="s">Nothing has been written yet. Great deeds will appear here.</div>'];
     case 'legend': return ['🏆 A Legend of the Realm', `<div class="s" style="font-size:14px;line-height:1.5">The Ember Colossus is no more. Bards in every tavern sing of your guild, and the kingdom sends its thanks: <b>+5000 gold, +20 renown, +3 Mythril</b>.<br><br>Your guild is a legend — but its story is not over. Keep building, keep exploring, and see how deep the Endless Dive goes.</div><button class="act" data-act="close" style="margin-top:10px">Continue</button>`];
     case 'relic': {
@@ -1395,6 +1403,11 @@ const ACT = {
   dispatch(d) { dispatch(+d.q, false); },
   sendall() { sendAll(0); },
   chron() { openModal('chronicle'); },
+  saveio() { openModal('saveio'); },
+  slotsave(d) { try { saveGame(); localStorage.setItem(SAVE_KEY + '-s' + d.n, localStorage.getItem(SAVE_KEY)); toast(`💾 Saved to slot ${d.n}.`); } catch (e) { toast('Could not save (storage unavailable).'); } },
+  slotload(d) { const v = localStorage.getItem(SAVE_KEY + '-s' + d.n); if (!v) return toast('That slot is empty.'); window.__noSave = true; localStorage.setItem(SAVE_KEY, v); location.reload(); },
+  exportsave() { saveGame(); saveBuf = btoa(unescape(encodeURIComponent(localStorage.getItem(SAVE_KEY) || ''))); setTimeout(() => { const t = document.getElementById('saveText'); if (t) { t.select(); try { document.execCommand('copy'); toast('Save text copied.'); } catch (e) { /* select it for the user */ } } }, 60); },
+  importsave() { const t = document.getElementById('saveText'); try { const raw = decodeURIComponent(escape(atob(t.value.trim()))), d = JSON.parse(raw); if (!d || !d.g || !d.buildings) throw 0; window.__noSave = true; localStorage.setItem(SAVE_KEY, raw); location.reload(); } catch (e) { toast('That does not look like a valid save.'); } },
   close() { closeModal(); },
   autoq() { G.flags.autoQ = G.flags.autoQ ? 0 : 1; toast(G.flags.autoQ ? '⏱ Auto-send on: parties leave when the odds are good.' : 'Auto-send off.'); },
   automin() { const o = [40, 50, 60, 70, 80, 90], i = o.indexOf(G.flags.autoMin || 60); G.flags.autoMin = o[(i + 1) % o.length]; },

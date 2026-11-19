@@ -116,6 +116,11 @@ const BUILD = {
 };
 
 const PROG = {
+  '💾 Save slots': '💾 저장 슬롯', '📂 Save slots & export': '📂 저장 슬롯 및 내보내기', 'Three extra slots, plus copy/paste a save between devices.': '추가 슬롯 3개와, 저장 데이터를 복사해 다른 기기로 옮기는 기능입니다.',
+  'Keep up to three extra copies of your guild, or move a save to another device by copying the text below.': '길드의 복사본을 최대 3개 더 보관하거나, 아래 텍스트를 복사해 다른 기기로 옮길 수 있습니다.',
+  'Slot 1': '슬롯 1', 'Slot 2': '슬롯 2', 'Slot 3': '슬롯 3', 'Save here': '여기에 저장', 'Load': '불러오기', 'empty': '비어 있음', 'Export / import': '내보내기 / 가져오기', 'Export': '내보내기', 'Import (replaces your guild)': '가져오기 (현재 길드를 대체)',
+  'That slot is empty.': '그 슬롯은 비어 있습니다.', 'Save text copied.': '저장 텍스트를 복사했습니다.', 'That does not look like a valid save.': '올바른 저장 데이터가 아닙니다.',
+
   'Fountain': '분수', 'Guild Banner': '길드 깃발', 'Hero Statue': '영웅 동상',
   'Decor. A bubbling fountain: heroes keep their spirits up (+5% happiness upkeep each, up to 30% with other decor).': '장식. 졸졸 흐르는 분수: 영웅들의 사기가 유지됩니다(각각 행복도 유지 +5%, 다른 장식과 합쳐 최대 30%).',
   'Decor. Your colours on a tall pole (+5% happiness upkeep).': '장식. 높은 깃대에 걸린 길드 깃발(행복도 유지 +5%).', 'Decor. A monument to the guild’s heroes (+5% happiness upkeep).': '장식. 길드 영웅들을 기리는 기념비(행복도 유지 +5%).',

@@ -2,5 +2,5 @@
   "name": "fantasy-guild-master",
   "private": true,
   "type": "module",
-  "scripts": { "test": "node --test tests/logic.test.mjs" }
+  "scripts": { "test": "node --test tests/logic.test.mjs tests/i18n.test.mjs" }
 }
