@@ -336,16 +336,43 @@ function gainXp(h, n) {
   while (h.xp >= h.level + 1) { h.xp -= h.level + 1; h.level++; sfx('level'); floatText(h.pos, `⬆ ${h.name} Lv${h.level}`, '#9bff9b'); if (h.level === 3 || h.level === 6) toast(`✨ ${h.name} can choose a new talent! (tap the hero)`); }
 }
 function addPromoGear(h) { h.mesh.add(vox(0.46, 0.5, 0.05, 0xe8c04a, 0, 0.3, -0.2), vox(0.1, 0.1, 0.06, 0xc0392b, 0, 0.62, -0.23)); }
-function assignBonds(h) {   // friendships and rivalries make party choice matter
-  h.bonds = h.bonds || {}; const others = G.heroes.filter(x => x !== h).sort(() => Math.random() - 0.5).slice(0, 2);
-  for (const o of others) { const r = Math.random(), kind = r < 0.28 ? 'friend' : r < 0.42 ? 'rival' : null; if (kind) { h.bonds[o.id] = kind; o.bonds = o.bonds || {}; o.bonds[h.id] = kind; } }
+// Bonds come from a number: affinity, -100..100, kept on both heroes (h.aff[otherId]). It grows by questing together and by chatting in the
+// guild; the bond KIND (friend, rival, sweethearts, mentor/apprentice) is derived from it and announced when it changes.
+const BOND_ICON = { friend: '🤝 Friends with ', rival: '⚡ Rival of ', sweet: '💘 Sweethearts with ', mentor: '🎓 Mentor of ', apprentice: '🎓 Apprentice of ' };
+function recomputeBond(a, b, quiet) {
+  const v = (a.aff || {})[b.id] || 0; let ka = null, kb = null;
+  if (v >= 30) { ka = kb = 'friend'; if (v >= 60 && ((a.tags || []).includes('romantic') || (b.tags || []).includes('romantic'))) ka = kb = 'sweet'; else if (v >= 40 && Math.abs(a.level - b.level) >= 3) { ka = a.level > b.level ? 'mentor' : 'apprentice'; kb = ka === 'mentor' ? 'apprentice' : 'mentor'; } }
+  else if (v <= -30) ka = kb = 'rival';
+  const before = (a.bonds || {})[b.id]; a.bonds = a.bonds || {}; b.bonds = b.bonds || {};
+  if (ka) { a.bonds[b.id] = ka; b.bonds[a.id] = kb; } else { delete a.bonds[b.id]; delete b.bonds[a.id]; }
+  if (!quiet && ka && ka !== before) {
+    if (ka === 'sweet') { toast(`💘 ${a.name} and ${b.name} have grown close.`); chron(`💘 ${a.name} and ${b.name} fell for each other.`); }
+    else if (ka === 'mentor' || ka === 'apprentice') { const m = ka === 'mentor' ? a : b, ap = m === a ? b : a; toast(`🎓 ${m.name} has taken ${ap.name} under their wing.`); chron(`🎓 ${m.name} became ${ap.name}'s mentor.`); }
+    else if (ka === 'rival' && before !== 'rival') toast(`⚡ ${a.name} and ${b.name} have become rivals.`);
+    else if (ka === 'friend' && !before) toast(`🤝 ${a.name} and ${b.name} became friends.`);
+  }
+}
+function addAff(a, b, v, quiet) {
+  if (v > 0) v *= tagMods(a.tags).affinity * tagMods(b.tags).affinity; else v *= Math.max(tagMods(a.tags).rivalry, tagMods(b.tags).rivalry);
+  a.aff = a.aff || {}; b.aff = b.aff || {}; const n = Math.max(-100, Math.min(100, ((a.aff[b.id] || 0) + v))); a.aff[b.id] = n; b.aff[a.id] = n; recomputeBond(a, b, quiet);
+}
+function assignBonds(h) {   // a new hero arrives already knowing a couple of people
+  h.aff = h.aff || {}; const others = G.heroes.filter(x => x !== h).sort(() => Math.random() - 0.5).slice(0, 2);
+  for (const o of others) { const r = Math.random(); if (r < 0.28) addAff(h, o, 35, true); else if (r < 0.42) addAff(h, o, -35, true); }
+}
+// after a quest: partners who fight together grow closer, rivals who win together reconcile, losing together strains the rivals
+function bondGrow(heroes, ok) {
+  for (let i = 0; i < heroes.length; i++) for (let j = i + 1; j < heroes.length; j++) { const a = heroes[i], b = heroes[j]; if (!G.heroes.includes(a) || !G.heroes.includes(b)) continue; const v = (a.aff || {})[b.id] || 0; addAff(a, b, ok ? (v < 0 ? 8 : 6) : (v < 0 ? -4 : 2)); }
+}
+function grieve(dead) {   // the death of a close companion hurts
+  for (const h of G.heroes) { if (h === dead) continue; const v = (h.aff || {})[dead.id] || 0; if (v < 40) continue; h.happy = Math.max(0, h.happy - 25); floatText(h.pos, '💔', '#ff7a7a'); toast(`💔 ${h.name} mourns ${dead.name}.`); if (Math.random() < 0.4) { h.vow = dead.name; } delete h.aff[dead.id]; if (h.bonds) delete h.bonds[dead.id]; }
 }
 function bondInfo(party) {
-  let d = 0; const notes = [];
-  for (let i = 0; i < party.length; i++) for (let j = i + 1; j < party.length; j++) { const k = (party[i].bonds || {})[party[j].id]; if (k === 'friend') { d += 0.04; notes.push(`🤝 ${party[i].name} & ${party[j].name} (+4%)`); } else if (k === 'rival') { d -= 0.05; notes.push(`⚡ ${party[i].name} & ${party[j].name} (−5%)`); } }
+  let d = 0; const notes = [], PAIR = { friend: [0.04, '🤝'], sweet: [0.06, '💘'], mentor: [0.05, '🎓'], apprentice: [0.05, '🎓'], rival: [-0.05, '⚡'] };
+  for (let i = 0; i < party.length; i++) for (let j = i + 1; j < party.length; j++) { const k = (party[i].bonds || {})[party[j].id], f = PAIR[k]; if (!f) continue; d += f[0]; notes.push(`${f[1]} ${party[i].name} & ${party[j].name} (${f[0] > 0 ? '+' : '−'}${Math.abs(Math.round(f[0] * 100))}%)`); }
   return { d, notes };
 }
-function memorialize(h, deed) { sfx('die'); chron(`✝ ${h.name} ${deed}.`); G.fallen.push({ name: h.name, cls: heroLabel(h), level: h.level, quests: h.quests || 0, vip: !!h.vip, deed, day: Math.floor(G.time / 60) }); if (G.fallen.length > 40) G.fallen.shift(); }
+function memorialize(h, deed) { sfx('die'); chron(`✝ ${h.name} ${deed}.`); grieve(h); G.fallen.push({ name: h.name, cls: heroLabel(h), level: h.level, quests: h.quests || 0, vip: !!h.vip, deed, day: Math.floor(G.time / 60) }); if (G.fallen.length > 40) G.fallen.shift(); }
 // ---- guild specialization (light faction): perks plus a different-looking Guild Hall
 const FACTIONS = {
   vanguard: { name: 'Iron Vanguard', icon: '⚔️', type: 'combat', cls: 'knight', desc: 'Masters of the front line. Iron spikes and shields adorn the hall.', perk: '+10% success on combat quests · Knights +10% power · Forge +15% speed' },
@@ -370,11 +397,11 @@ function createHero(d) {
   const bub = document.createElement('div'); bub.className = 'bub hidden'; worldEl.appendChild(bub);
   const h = {
     id: d.id ?? G.nextId++, cls: d.cls, variant: d.variant, name: d.name, level: d.level ?? 1, xp: d.xp ?? 0, stamina: d.stamina ?? rnd(60, 100), happy: d.happy ?? 100, gear: !!d.gear,
-    quests: d.quests || 0, vip: d.vip || null, gearTier: d.gearTier || 1, promo: !!d.promo, talents: d.talents || [], bonds: d.bonds || {},
+    quests: d.quests || 0, aff: d.aff || null, vow: d.vow || null, vip: d.vip || null, gearTier: d.gearTier || 1, promo: !!d.promo, talents: d.talents || [], bonds: d.bonds || {},
     mesh, pos: mesh.position, bub, state: 'idle', target: null, onArrive: null, timer: 0, onDone: null, cool: 0, phase: Math.random() * 6, vis: true,
   };
   if (d.tags) { h.tags = d.tags; h.bio = d.bio; h.likes = d.likes; h.dislikes = d.dislikes; } else Object.assign(h, makeProfile(h.cls));
-  mesh.userData.hid = h.id; G.heroes.push(h); if (h.vip) addStar(h); if (h.promo) addPromoGear(h); if (d.bonds === undefined) assignBonds(h);
+  mesh.userData.hid = h.id; G.heroes.push(h); if (h.vip) addStar(h); if (h.promo) addPromoGear(h); if (d.bonds === undefined) assignBonds(h); else if (!h.aff) { h.aff = {}; for (const [id, k] of Object.entries(h.bonds || {})) h.aff[id] = k === 'rival' ? -35 : 35; }
   return h;
 }
 function spawnHero(cls, atHall = false) {
@@ -688,11 +715,14 @@ function resolveQuest(q) {
     if (!ok && q.deaths.includes(h.id)) { memorialize(h, `fell on "${q.name}"`); if (h.vip) G.renown = Math.max(0, G.renown - 1); removeHero(h, h.vip ? `☠ ${h.name} — a legend of the guild — has fallen!` : `${h.name} the ${CLASSES[h.cls].label} fell in battle...`); return; }
     h.quests = (h.quests || 0) + 1;
     if (ok) gainXp(h, traitOf(h) === 'scholar' ? 2 : 1);
+    if (ok && h.bonds && Object.entries(h.bonds).some(([id, k]) => k === 'apprentice' && q.heroes.some(x => x.id === +id))) gainXp(h, 1);   // a mentor in the party teaches
+    if (ok && h.vow) { h.happy = Math.min(100, h.happy + 20); chron(`🗡 ${h.name} honoured ${h.vow}.`); toast(`🗡 ${h.name} honoured ${h.vow}'s memory.`); h.vow = null; }
     if (h.likes && h.likes.type === q.type) { h.happy = Math.min(100, h.happy + 8); floatText(h.pos, '💕', '#ff9ac8'); } else if (h.dislikes && h.dislikes.type === q.type) { h.happy = Math.max(0, h.happy - 8); floatText(h.pos, '💢', '#ff7a7a'); }
     if (Math.random() < (ok ? 0.5 : 1)) h.gear = false;
     h.happy = Math.min(100, h.happy + (ok ? 20 : -10));
     alive.push(h);
   });
+  bondGrow(q.heroes, ok);
   if (ok) {
     const g = questPay(q);
     if (q.mods && q.mods.includes('elite') && Math.random() < 0.35) { G.rare.mythril++; toast('💀 The elite foe dropped a Mythril shard!'); }
@@ -1103,6 +1133,13 @@ const CHAT = {
   glutton: ['Is there any more stew?'], lucky: ['I have a good feeling about today!'], clumsy: ['Oops… did I drop that?'], brave: ['Bring on the monsters!'], scholar: ['Fascinating architecture.'],
   tired: ['I need a rest…'], unhappy: ['This place could be better.'],
 };
+const SCENE = {
+  friend: { e: ['🤝', '😄'], a: ['Care to share a table?', 'Good to see you!'], b: ['Always!', 'Pull up a chair.'] },
+  sweet: { e: ['💘', '💕'], a: ['You look lovely today.', 'Walk with me?'], b: ['You always say that…', 'Of course.'] },
+  rival: { e: ['⚡', '💢'], a: ['Think you can keep up?', 'I saw how you fought.'], b: ['Try me.', 'Lucky shot.'] },
+  mentor: { e: ['🎓', '📖'], a: ['Keep your guard up.', 'Again, from the start.'], b: ['Yes, teacher!', 'I think I understand.'] },
+};
+SCENE.apprentice = { e: SCENE.mentor.e.slice().reverse(), a: SCENE.mentor.b, b: SCENE.mentor.a };
 let chatT = 12, saveBuf = '';
 // what a hero likes and dislikes: a liked building in the guild or a liked season lifts the mood, a disliked season lowers it
 const likeDelta = h => { let d = 0; const L = h.likes || {}, D = h.dislikes || {}, s = seasonIdx(); if (L.bld && first(L.bld)) d += 0.04; if (L.season === s) d += 0.05; if (D.season === s) d -= 0.05; return d; };
@@ -1110,6 +1147,12 @@ const decorBonus = () => Math.min(0.3, 0.05 * (ofType('fountain').length + ofTyp
 function tickChat(dt) {
   chatT -= dt; if (chatT > 0) return; chatT = 14 + Math.random() * 22;
   const c = G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving' && h.mesh.visible); if (!c.length) return; const h = pick(c);
+  if (Math.random() < 0.4) {   // two bonded heroes meet in the guild: a little scene (emoji, a line, a bit more affinity)
+    const pairs = []; for (const a of c) for (const [id, k] of Object.entries(a.bonds || {})) { const b = c.find(x => x.id === +id); if (b && a.id < b.id) pairs.push([a, b, k]); }
+    if (pairs.length) {
+      const [a, b, k] = pick(pairs), L = SCENE[k] || SCENE.friend; floatText(a.pos, L.e[0] + ' ' + tr(pick(L.a)), '#fff'); floatText(b.pos, L.e[1] + ' ' + tr(pick(L.b)), '#fff'); addAff(a, b, k === 'rival' ? 0.6 : 1.2, true); return;
+    }
+  }
   if (h.bio && Math.random() < 0.25) return floatText(h.pos, '“' + tr(h.bio[1]) + '”', '#fff');
   const pool = [...CHAT.any, ...(CHAT[h.cls] || []), ...(h.tags || []).flatMap(t => (TAGS[t] ? TAGS[t].chat : [])), ...(h.stamina < 40 ? CHAT.tired : []), ...(h.happy < 35 ? CHAT.unhappy : []), ...(traitOf(h) ? CHAT[traitOf(h)] || [] : [])];
   floatText(h.pos, '“' + tr(pick(pool)) + '”', '#fff');
@@ -1268,6 +1311,15 @@ function modalContent() {
       h += `<div class="sec">Export / import</div><textarea id="saveText" rows="4" style="width:100%;box-sizing:border-box;font:11px monospace" placeholder="Press Export, or paste a save here and press Import">${saveBuf}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="act" data-act="exportsave">Export</button><button class="act red" data-act="importsave">Import (replaces your guild)</button></div>`;
       return ['💾 Save slots', h];
     }
+    case 'relmap': {
+      const hs = G.heroes.slice(0, 14), W = 340, H = 300, cx = W / 2, cy = H / 2, R = 108, pos = hs.map((x, i) => [cx + R * Math.cos(i / hs.length * 6.283 - 1.57), cy + R * Math.sin(i / hs.length * 6.283 - 1.57)]);
+      const COL = { friend: '#5be35b', sweet: '#ff7ac8', mentor: '#8fd4ff', apprentice: '#8fd4ff', rival: '#e0503a' };
+      let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:420px;background:#0003;border-radius:10px">`;
+      hs.forEach((a, i) => hs.forEach((b, j) => { const k = (a.bonds || {})[b.id]; if (j > i && k) svg += `<line x1="${pos[i][0]}" y1="${pos[i][1]}" x2="${pos[j][0]}" y2="${pos[j][1]}" stroke="${COL[k]}" stroke-width="3" ${k === 'rival' ? 'stroke-dasharray="5 4"' : ''} opacity=".85"/>`; }));
+      hs.forEach((a, i) => { svg += `<g><circle cx="${pos[i][0]}" cy="${pos[i][1]}" r="15" fill="#3a2a18" stroke="#e8c04a" stroke-width="2"/><text x="${pos[i][0]}" y="${pos[i][1] + 5}" text-anchor="middle" font-size="15">${CLASSES[a.cls].icon}</text><text x="${pos[i][0]}" y="${pos[i][1] + 30}" text-anchor="middle" font-size="9" fill="#fff">${a.name.split(' ')[0]}</text></g>`; });
+      svg += '</svg>';
+      return ['🕸 Relations map', `<div class="s">🟩 friends · 🩷 sweethearts · 🟦 mentor/apprentice · 🟥 rivals (dashed)</div>${svg}<button class="act" data-act="open" data-k="quests" style="margin-top:8px">Open Quest Board</button>`];
+    }
     case 'chronicle': return ['📖 Guild Chronicle', (G.flags.chron || []).length ? [...G.flags.chron].reverse().map(c => `<div class="row"><div class="s" style="min-width:48px">Day ${c.d}</div><div class="grow"><div class="t" style="font-weight:400">${c.t}</div></div></div>`).join('') : '<div class="s">Nothing has been written yet. Great deeds will appear here.</div>'];
     case 'legend': return ['🏆 A Legend of the Realm', `<div class="s" style="font-size:14px;line-height:1.5">The Ember Colossus is no more. Bards in every tavern sing of your guild, and the kingdom sends its thanks: <b>+5000 gold, +20 renown, +3 Mythril</b>.<br><br>Your guild is a legend — but its story is not over. Keep building, keep exploring, and see how deep the Endless Dive goes.</div><button class="act" data-act="close" style="margin-top:10px">Continue</button>`];
     case 'relic': {
@@ -1311,7 +1363,9 @@ function modalContent() {
       if ((h.talents || []).length) body += `<div class="s">Talents: ${(h.talents || []).map(id => { const t = talentDef(h.cls, id); return t ? `<span class="tag" title="${t[2]}">${t[1]}</span>` : ''; }).join('')}</div>`;
       if (pend) { const tier = TALENTS[h.cls][(h.talents || []).length]; body += `<div class="sec">✨ Choose a talent</div>` + tier.map(t => `<div class="row" style="border-color:#8fd4ff"><div class="grow"><div class="t">${t[1]}</div><div class="s">${t[2]}</div></div><button class="act" data-act="talent" data-id="${h.id}" data-t="${t[0]}">Learn</button></div>`).join(''); }
       const bondNames = Object.entries(h.bonds || {}).map(([id, k]) => [G.heroes.find(x => x.id === +id), k]).filter(([x]) => x);
-      if (bondNames.length) body += `<div class="s" style="margin-top:6px">${bondNames.map(([x, k]) => (k === 'friend' ? '🤝 Friends with ' : '⚡ Rival of ') + x.name).join(' · ')} <span style="opacity:.7">(same party: +4% / −5%)</span></div>`;
+      if (bondNames.length) body += `<div class="s" style="margin-top:6px">${bondNames.map(([x, k]) => (BOND_ICON[k] || '🤝 ') + x.name).join(' · ')} <span style="opacity:.7">(same party: friends +4%, sweethearts +6%, mentor +5%, rivals −5%)</span></div>`;
+      if (G.heroes.length > 1) body += `<button class="act" data-act="relmap" style="margin:6px 0">🕸 Relations map</button>`;
+      if (h.vow) body += `<div class="s" style="color:#ffb0b0">🗡 Has sworn to honour ${h.vow}.</div>`;
       if (tr) body += `<div class="row" style="border-color:#ffd24a"><div style="font-size:30px">${tr.icon}</div><div class="grow"><div class="t">VIP trait: ${tr.label}</div><div class="s">${tr.desc}</div></div></div>`;
       if (h.tags) { const L = h.likes || {}, D = h.dislikes || {}; body += `<div class="row"><div class="grow"><div class="t">Personality</div><div class="s">${h.tags.map(t => `<span class="tag" title="${TAGS[t].desc}">${TAGS[t].icon} ${TAGS[t].label}</span>`).join(' ')}</div><div class="s" style="margin-top:4px">${h.bio[0]}</div><div class="s" style="margin-top:4px">❤ Likes: ${L.type} quests · ${L.bld && BUILDINGS[L.bld] ? BUILDINGS[L.bld].name : ''} · ${SEASON_NAMES[L.season]} · ${L.food}</div><div class="s">💢 Dislikes: ${D.type} quests · ${SEASON_NAMES[D.season]}</div></div></div>`; }
       body += `<div class="s" style="margin-top:6px">Experience ${h.xp}/${h.level + 1}</div>${bar(h.xp / (h.level + 1) * 100, '#8fd4ff')}
@@ -1411,6 +1465,7 @@ const ACT = {
   dispatch(d) { dispatch(+d.q, false); },
   sendall() { sendAll(0); },
   chron() { openModal('chronicle'); },
+  relmap() { openModal('relmap'); },
   saveio() { openModal('saveio'); },
   slotsave(d) { try { saveGame(); localStorage.setItem(SAVE_KEY + '-s' + d.n, localStorage.getItem(SAVE_KEY)); toast(`💾 Saved to slot ${d.n}.`); } catch (e) { toast('Could not save (storage unavailable).'); } },
   slotload(d) { const v = localStorage.getItem(SAVE_KEY + '-s' + d.n); if (!v) return toast('That slot is empty.'); window.__noSave = true; localStorage.setItem(SAVE_KEY, v); location.reload(); },
@@ -1647,7 +1702,7 @@ function serialize() {
   return {
     v: 1, savedAt: Date.now(), g,
     buildings: G.buildings.map(b => ({ type: b.type, cx: b.cx, cz: b.cz, rot: b.rot || 0, level: b.level, stock: b.stock, progress: b.progress })),
-    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, promo: h.promo, talents: h.talents, bonds: h.bonds, quests: h.quests, vip: h.vip, tags: h.tags, bio: h.bio, likes: h.likes, dislikes: h.dislikes, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
+    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, promo: h.promo, talents: h.talents, bonds: h.bonds, aff: h.aff, vow: h.vow, quests: h.quests, vip: h.vip, tags: h.tags, bio: h.bio, likes: h.likes, dislikes: h.dislikes, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
     quests: G.quests.map(q => { const o = {}; for (const [k, v] of Object.entries(q)) if (k !== 'heroes' && k !== 'script') o[k] = v; o.heroIds = (q.heroes || []).map(h => h.id); return o; }),
     extra: serializeExtra(),
   };
@@ -1927,4 +1982,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__api = { legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__api = { addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };

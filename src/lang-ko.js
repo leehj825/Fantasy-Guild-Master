@@ -274,6 +274,12 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^💘 (.+) and (.+) have grown close\.$/, (a, b) => `💘 ${f(a)} 영웅과 ${f(b)} 영웅이 가까워졌습니다.`],
+    [/^🎓 (.+) has taken (.+) under their wing\.$/, (a, b) => `🎓 ${f(a)} 영웅이 ${f(b)} 영웅을 제자로 받아들였습니다.`],
+    [/^⚡ (.+) and (.+) have become rivals\.$/, (a, b) => `⚡ ${f(a)} 영웅과 ${f(b)} 영웅이 라이벌이 되었습니다.`],
+    [/^🤝 (.+) and (.+) became friends\.$/, (a, b) => `🤝 ${f(a)} 영웅과 ${f(b)} 영웅이 친구가 되었습니다.`],
+    [/^💔 (.+) mourns (.+)\.$/, (a, b) => `💔 ${f(a)} 영웅이 ${f(b)} 영웅을 애도합니다.`],
+    [/^🗡 (.+) honoured (.+)'s memory\.$/, (a, b) => `🗡 ${f(a)} 영웅이 ${f(b)} 영웅의 넋을 기렸습니다.`],
     [/^✨ (.+) can choose a new talent! \(tap the hero\)$/, n => `✨ ${f(n)} 영웅이 새 재능을 고를 수 있습니다! (영웅을 누르세요)`],
     [/^⭐ (.+) has arrived at your guild! \((.+)\)$/, (n, t) => `⭐ ${f(n)} 영웅이 길드에 도착했습니다! (${f(t)})`],
     [/^(.+) the (.+) got fed up and left\.$/, (n, c) => `${f(n)} ${f(c)} 영웅이 질려서 떠났습니다.`],

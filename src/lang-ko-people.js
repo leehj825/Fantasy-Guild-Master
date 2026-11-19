@@ -37,5 +37,12 @@ export const KO_PEOPLE = {
   // hero panel
   'Personality': '성격', 'Background': '배경', 'Likes': '좋아하는 것', 'Dislikes': '싫어하는 것', 'quests': '퀘스트', 'loves': '좋아함', 'hates': '싫어함',
   'Likes:': '좋아함:', 'Dislikes:': '싫어함:', 'combat quests': '전투 퀘스트', 'gather quests': '채집 퀘스트', 'arcane quests': '비전 퀘스트', 'spring': '봄', 'summer': '여름', 'autumn': '가을', 'winter': '겨울',
+  'Friends with': '친구:', 'Rival of': '라이벌:', 'Sweethearts with': '연인:', 'Mentor of': '스승:', 'Apprentice of': '제자:', '🕸 Relations map': '🕸 관계도', 'Relations map': '관계도',
+  '(same party: friends +4%, sweethearts +6%, mentor +5%, rivals −5%)': '(같은 파티: 친구 +4%, 연인 +6%, 스승·제자 +5%, 라이벌 −5%)',
+  '🟩 friends · 🩷 sweethearts · 🟦 mentor/apprentice · 🟥 rivals (dashed)': '🟩 친구 · 🩷 연인 · 🟦 스승·제자 · 🟥 라이벌(점선)',
+  'Care to share a table?': '같이 앉아서 먹을래요?', 'Good to see you!': '만나서 반가워요!', 'Always!': '언제든지!', 'Pull up a chair.': '의자 가져와요.',
+  'You look lovely today.': '오늘 참 멋져 보여요.', 'Walk with me?': '같이 걸을래요?', 'You always say that…': '항상 그렇게 말하더라…', 'Of course.': '물론이죠.',
+  'Think you can keep up?': '따라올 수 있겠어?', 'I saw how you fought.': '네 싸우는 걸 봤어.', 'Try me.': '덤벼 봐.', 'Lucky shot.': '운이 좋았을 뿐이야.',
+  'Keep your guard up.': '방어를 풀지 마라.', 'Again, from the start.': '처음부터 다시.', 'Yes, teacher!': '네, 스승님!', 'I think I understand.': '이제 알 것 같아요.',
   'hearty stew': '푸짐한 스튜', 'roast boar': '멧돼지 구이', 'honey bread': '꿀빵', 'mushroom pie': '버섯 파이', 'herbal tea': '약초차',
 };
