@@ -298,6 +298,12 @@ function genFloor(q, S) {
   S.encs.push({ name: boss ? `${ENEMY[bossKind].name} (Boss)` : [...new Set(kinds.map(x => ENEMY[x].name))].join(', '), idxs, s, e });
   scanDeaths(q, S, f); setEnemyTimes(S, f); genFloorEvents(q, S, f, -Infinity);
 }
+// When the show is over: a won quest ends once the chest has opened and the coins have flown, a lost one once the party has
+// fallen back. The quest completes then, instead of idling until the progress bar fills (the outcome is already decided).
+export function questEnd(q) {
+  if (q.dive || !q.script || !q.script.win) return q.dur;
+  return Math.min(q.dur, q.ok ? q.dur * 0.93 + 3.0 : q.script.win[2].b + 3.5);
+}
 export function ensureFloors(q, now) {
   const S = q.script; let guard = 0;
   while (!S.wiped && guard++ < 60 && (S.floors.length === 0 || S.floors[S.floors.length - 1].e < now + 20)) genFloor(q, S);
