@@ -274,6 +274,9 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^🏘 (.+) has a request: (.+)$/, (w, n) => `🏘 ${f(w)}의 부탁: ${f(n)}`],
+    [/^🏘 (.+) thanks you warmly\. \(\+(\d+) town reputation\)$/, (w, n) => `🏘 ${f(w)}이(가) 진심으로 고마워합니다. (마을 평판 +${n})`],
+    [/^🏘 The villagers now consider you (.+)!$/, n => `🏘 주민들이 이제 길드를 '${f(n)}'(으)로 여깁니다!`],
     [/^💘 (.+) and (.+) have grown close\.$/, (a, b) => `💘 ${f(a)} 영웅과 ${f(b)} 영웅이 가까워졌습니다.`],
     [/^🎓 (.+) has taken (.+) under their wing\.$/, (a, b) => `🎓 ${f(a)} 영웅이 ${f(b)} 영웅을 제자로 받아들였습니다.`],
     [/^⚡ (.+) and (.+) have become rivals\.$/, (a, b) => `⚡ ${f(a)} 영웅과 ${f(b)} 영웅이 라이벌이 되었습니다.`],
