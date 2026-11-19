@@ -116,6 +116,10 @@ const BUILD = {
 };
 
 const PROG = {
+  'Fountain': '분수', 'Guild Banner': '길드 깃발', 'Hero Statue': '영웅 동상',
+  'Decor. A bubbling fountain: heroes keep their spirits up (+5% happiness upkeep each, up to 30% with other decor).': '장식. 졸졸 흐르는 분수: 영웅들의 사기가 유지됩니다(각각 행복도 유지 +5%, 다른 장식과 합쳐 최대 30%).',
+  'Decor. Your colours on a tall pole (+5% happiness upkeep).': '장식. 높은 깃대에 걸린 길드 깃발(행복도 유지 +5%).', 'Decor. A monument to the guild’s heroes (+5% happiness upkeep).': '장식. 길드 영웅들을 기리는 기념비(행복도 유지 +5%).',
+
   'What a day!': '오늘 하루 정말 길다!', 'Is the tavern open?': '술집 열었나요?', 'I could use a good meal.': '맛있는 식사 한 끼가 필요해.', 'The guild is growing.': '길드가 점점 커지고 있어.',
   'My blade is ready.': '내 검은 준비됐다.', 'For the guild!': '길드를 위하여!', 'No foe shall pass.': '어떤 적도 지나가지 못한다.', 'The woods are quiet today.': '오늘 숲은 조용해.', 'Steady hands, sharp eyes.': '손은 안정되게, 눈은 날카롭게.', 'I hear something out there…': '저기서 뭔가 소리가 나는데…',
   'The stars feel restless.': '별들이 어수선해.', 'Mana is all around us.': '마나가 우리 주위에 가득해.', 'Ah, a fine day for research.': '아, 연구하기 좋은 날이야.', 'Is there any more stew?': '스튜 더 없나요?', 'I have a good feeling about today!': '오늘은 느낌이 좋아!',

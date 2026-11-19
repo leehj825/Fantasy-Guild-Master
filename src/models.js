@@ -40,6 +40,7 @@ function roof(len, width, height, color, y, axis = 'x') {
 }
 
 const STONE = 0x8f9096, STONE2 = 0x74757c, STONE3 = 0xa9aab0;
+const GOLD_B = 0xe8c04a;
 const WOOD = 0x8a5a2b, WOOD_D = 0x5a3a1a, WOOD_L = 0xb98a50, PLASTER = 0xe9d3a6, SHINGLE = 0x9a5428, SHINGLE_D = 0x6e3a18;
 const GLOW = 0xffc860;
 
@@ -286,6 +287,9 @@ export const BUILDINGS = {
   weapons: { name: 'Weapon & Shield Rack',     w: 3, d: 1, cost: 60,  renown: 0, icon: '🛡️', desc: 'Decor. Racks of swords, shields and spears.', decor: true },
   cart:    { name: 'Supply Carts',             w: 3, d: 2, cost: 50,  renown: 0, icon: '🛒', desc: 'Decor. Wooden carts loaded with logs and crates.', decor: true },
   lamp:    { name: 'Lantern Post',             w: 1, d: 1, cost: 15,  renown: 0, icon: '🏮', desc: 'Decor. Warm lantern light.', decor: true },
+  fountain:{ name: 'Fountain',                w: 2, d: 2, cost: 180, renown: 2, icon: '⛲', desc: 'Decor. A bubbling fountain: heroes keep their spirits up (+5% happiness upkeep each, up to 30% with other decor).', decor: true },
+  banner:  { name: 'Guild Banner',             w: 1, d: 1, cost: 40,  renown: 1, icon: '🚩', desc: 'Decor. Your colours on a tall pole (+5% happiness upkeep).', decor: true },
+  statue:  { name: 'Hero Statue',              w: 2, d: 2, cost: 300, renown: 3, icon: '🗽', desc: 'Decor. A monument to the guild’s heroes (+5% happiness upkeep).', decor: true },
   shrooms: { name: 'Giant Mushrooms',          w: 2, d: 2, cost: 25,  renown: 0, icon: '🍄', desc: 'Decor. Whimsical oversized mushrooms.', decor: true },
 };
 
@@ -533,6 +537,9 @@ export function buildBuilding(type, variant = 0) {
     case 'weapons': return grp(at(weaponRack(), 0, 0, 0), at(shieldRack(), 0, 0, 0).translateX(0));
     case 'cart': return grp(at(cartProp(0), -0.7, 0, 0), at(cartProp(1), 0.7, 0, 0.6).rotateY(-0.4));
     case 'lamp': return lantern();
+    case 'fountain': { const g = new THREE.Group(); g.add(cyl(0.95, 1.0, 0.3, 0x9aa0a8, 0, 0, 0, 16), cyl(0.82, 0.82, 0.08, 0x3b8fd8, 0, 0.26, 0, 16, 0x1d5fa8, 0.5), cyl(0.18, 0.22, 0.9, 0xb8bcc4, 0, 0.3, 0, 10), cyl(0.5, 0.2, 0.14, 0xb8bcc4, 0, 1.0, 0, 12), cyl(0.4, 0.4, 0.05, 0x6bbcff, 0, 1.12, 0, 12, 0x3b8fd8, 0.6), sph(0.1, 0xbfe4ff, 0, 1.2, 0, 0x6bbcff, 0.8)); g.position.set(0, 0, 0); return g; }
+    case 'banner': return grp(vox(0.08, 2.2, 0.08, 0x5a3a1a, 0, 0, 0), vox(0.6, 0.9, 0.04, 0xc0392b, 0.34, 1.2, 0), vox(0.5, 0.08, 0.05, GOLD_B, 0.34, 2.05, 0), vox(0.18, 0.18, 0.05, GOLD_B, 0.34, 1.55, 0.03), sph(0.07, GOLD_B, 0, 2.2, 0));
+    case 'statue': { const g = new THREE.Group(); g.add(vox(1.3, 0.35, 1.3, 0x9aa0a8, 0, 0, 0), vox(1.0, 0.25, 1.0, 0xb8bcc4, 0, 0.35, 0)); const c = makeChar({ ...LOOKS.knightA, belt: 0x80848c }); c.traverse(o => { if (o.isMesh) o.material = mat(0xc9ccd2); }); c.scale.setScalar(1.15); c.position.y = 0.6; g.add(c); return g; }
     case 'shrooms': return grp(at(bigMushroom(0xd6336c, 1.0), -0.3, 0, 0.1), at(bigMushroom(0x7b3fb5, 0.8), 0.4, 0, -0.2), at(bigMushroom(0x2aa9a0, 0.6), 0.3, 0, 0.45), at(bigMushroom(0xe07a1f, 0.5), -0.5, 0, -0.45));
   }
   return new THREE.Group();

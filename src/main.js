@@ -500,7 +500,7 @@ function updateHero(h, dt) {
   h.stamina = Math.max(0, h.stamina - 0.7 * (traitOf(h) === 'glutton' ? 1.4 : 1) * (1 - Math.min(0.6, heroMods(h).decay + (G.flags.faction === 'rangers' ? 0.1 : 0))) * dt);
   if (h.mesh.userData.star) h.mesh.userData.star.rotation.y += dt * 2.5;
   const needy = h.stamina < 45 || !h.gear;
-  h.happy = Math.max(0, Math.min(100, h.happy + (needy ? -0.35 * decay : 0.15) * dt));
+  h.happy = Math.max(0, Math.min(100, h.happy + (needy ? -0.35 * decay * (1 - decorBonus()) : 0.15) * dt));
   if (nearCampfire(h)) h.happy = Math.min(100, h.happy + 0.3 * dt);   // cosy fire
   if (h.state === 'leaving') {
     if (stepPath(h, dt, 3)) removeHero(h);
@@ -1100,6 +1100,7 @@ const CHAT = {
   tired: ['I need a rest…'], unhappy: ['This place could be better.'],
 };
 let chatT = 12;
+const decorBonus = () => Math.min(0.3, 0.05 * (ofType('fountain').length + ofType('banner').length + ofType('statue').length) + 0.01 * Math.min(10, ofType('lamp').length + ofType('campfire').length));
 function tickChat(dt) {
   chatT -= dt; if (chatT > 0) return; chatT = 14 + Math.random() * 22;
   const c = G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving' && h.mesh.visible); if (!c.length) return; const h = pick(c);
