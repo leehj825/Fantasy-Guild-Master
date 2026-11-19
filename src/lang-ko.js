@@ -116,6 +116,13 @@ const BUILD = {
 };
 
 const PROG = {
+  'Spring': '봄', 'Summer': '여름', 'Autumn': '가을', 'Winter': '겨울',
+  'Herbs grow twice as fast.': '약초가 두 배 빨리 자랍니다.', 'Quest gold +10%.': '퀘스트 골드 +10%.', 'Ore and wood trickle in 50% faster.': '광석과 목재가 50% 더 빨리 모입니다.', 'Tavern meals pay 25% more.': '술집 식사 수입 +25%.',
+  '📖 Guild Chronicle': '📖 길드 연대기', 'Guild Chronicle': '길드 연대기', "The diary of your guild's big moments.": '길드의 큰 순간들을 적은 일지입니다.', 'Open': '열기',
+  'Nothing has been written yet. Great deeds will appear here.': '아직 기록이 없습니다. 큰 업적이 여기에 쓰입니다.', 'Continue': '계속',
+  '🏆 A Legend of the Realm': '🏆 왕국의 전설', 'The Ember Peak Omen': '불꽃 봉우리의 전조', 'Embers in the Mines': '광산의 불씨', 'Slay the Ember Colossus': '불꽃 거신을 처치하라',
+  '🐉 Whispers of the Ember Colossus reached the guild.': '🐉 불꽃 거신에 대한 소문이 길드에 닿았습니다.',
+
   'Formation': '진형', 'Battle line': '전투 대형', 'Shield wall': '방패 벽', 'Skirmish': '산개 전술',
   'Knights lead, others behind. +4% with a knight and a ranged hero': '기사가 앞, 나머지는 뒤. 기사와 원거리 영웅이 함께 있으면 +4%',
   'Tight ranks: fewer casualties, −3% success': '촘촘한 대열: 사상자 감소, 성공 −3%', 'Spread out: +5% success, more casualties': '넓게 퍼짐: 성공 +5%, 사상자 증가',

@@ -61,6 +61,7 @@ function resetView() { yaw = VIEW0.yaw; pitch = VIEW0.pitch; viewS = VIEW0.zoom;
 function resize() { renderer.setSize(innerWidth, innerHeight, false); updateCamera(); }
 addEventListener('resize', resize);
 
+let groundMesh = null;
 const ambient = new THREE.AmbientLight(0xcfe3ff, 0.75); scene.add(ambient);
 scene.add(new THREE.HemisphereLight(0xbfe6ff, 0x4a7a3a, 0.35));
 const sun = new THREE.DirectionalLight(0xfff1d0, 1.05);
@@ -82,7 +83,7 @@ scene.add(sun, sun.target);
   tex.magFilter = THREE.NearestFilter; tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(N + 160, N + 160);
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(N + 160, N + 160), new THREE.MeshLambertMaterial({ map: tex }));
   ground.rotation.x = -Math.PI / 2; ground.position.set(N / 2, 0, N / 2); ground.receiveShadow = true;
-  scene.add(ground);
+  scene.add(ground); groundMesh = ground;
 }
 // Dirt paths + stone plaza around the hall
 const HALL = { cx: 12, cz: 11 };
@@ -256,8 +257,8 @@ const maxLevel = () => [3, 5, 7, 9][G.rank];
 const boardSlots = () => 3 + G.boardLvl + (G.rank >= 2 ? 1 : 0) + (G.rank >= 3 ? 1 : 0);
 const craftSpeed = () => (1 + 0.25 * G.staff.smith) * (G.research.forging ? 1.3 : 1) * (G.research.mythril ? 1.4 : 1) * (1 + 0.1 * regionPerk('stonepeak')) * (G.flags.faction === 'vanguard' ? 1.15 : 1) * (G.flags.smithTaught ? 1.1 : 1);
 const alchSpeed = () => (1 + 0.25 * G.staff.alch) * (G.research.forging ? 1.15 : 1) * (1 + 0.1 * regionPerk('ashen')) * (G.flags.faction === 'arcane' ? 1.15 : 1);
-const mealGold = tav => { tav = tav || first('tavern'); return 9 * (1 + 0.15 * G.staff.cook) * (1 + 0.3 * ((tav?.level || 1) - 1)) * (tav ? adj(tav).meal : 1); };
-const questGoldMul = () => (G.research.charter ? 1.25 : 1);
+const mealGold = tav => { tav = tav || first('tavern'); return (seasonIdx() === 3 ? 1.25 : 1) * 9 * (1 + 0.15 * G.staff.cook) * (1 + 0.3 * ((tav?.level || 1) - 1)) * (tav ? adj(tav).meal : 1); };
+const questGoldMul = () => (G.research.charter ? 1.25 : 1) * (seasonIdx() === 1 ? 1.1 : 1);
 const trickleMul = () => (1 + 0.5 * G.staff.porter);
 const warehouseBonus = () => ofType('warehouse').reduce((s, w) => s + 6 + 4 * (w.level - 1), 0);
 const stockCap = b => 4 + 2 * b.level + warehouseBonus();
@@ -341,7 +342,7 @@ function bondInfo(party) {
   for (let i = 0; i < party.length; i++) for (let j = i + 1; j < party.length; j++) { const k = (party[i].bonds || {})[party[j].id]; if (k === 'friend') { d += 0.04; notes.push(`🤝 ${party[i].name} & ${party[j].name} (+4%)`); } else if (k === 'rival') { d -= 0.05; notes.push(`⚡ ${party[i].name} & ${party[j].name} (−5%)`); } }
   return { d, notes };
 }
-function memorialize(h, deed) { sfx('die'); G.fallen.push({ name: h.name, cls: heroLabel(h), level: h.level, quests: h.quests || 0, vip: !!h.vip, deed, day: Math.floor(G.time / 60) }); if (G.fallen.length > 40) G.fallen.shift(); }
+function memorialize(h, deed) { sfx('die'); chron(`✝ ${h.name} ${deed}.`); G.fallen.push({ name: h.name, cls: heroLabel(h), level: h.level, quests: h.quests || 0, vip: !!h.vip, deed, day: Math.floor(G.time / 60) }); if (G.fallen.length > 40) G.fallen.shift(); }
 // ---- guild specialization (light faction): perks plus a different-looking Guild Hall
 const FACTIONS = {
   vanguard: { name: 'Iron Vanguard', icon: '⚔️', type: 'combat', cls: 'knight', desc: 'Masters of the front line. Iron spikes and shields adorn the hall.', perk: '+10% success on combat quests · Knights +10% power · Forge +15% speed' },
@@ -698,7 +699,7 @@ function resolveQuest(q) {
     if (q.loot.herbs) G.herbs += Math.round(q.loot.herbs * oreMul / (G.research.prospect ? 1.5 : 1));
     if (q.loot.wood) G.wood += Math.round(q.loot.wood * oreMul / (G.research.prospect ? 1.5 : 1));
     if (q.loot.arcane) G.mana += Math.round(q.loot.arcane * 5 * oreMul / (G.research.prospect ? 1.5 : 1));
-    G.questsDone++;
+    G.questsDone++; if (q.legend) legendWon(q); else if (q.special) chron(`✔ ${q.name}`);
     if (q.region && REGIONS[q.region]) { const rec = (G.regions[q.region] = G.regions[q.region] || { done: 0 }), before = regionLevel(q.region); rec.done++; if (regionLevel(q.region) > before) toast(`🗺 ${REGIONS[q.region].name} mastery level ${regionLevel(q.region)}! ${REGIONS[q.region].perk}`); }
     toast(`✔ ${q.name} complete! +${g}g, +${q.renown}⭐, loot collected.`);
   } else {
@@ -994,10 +995,10 @@ function updateEconomy(dt) {
     t.spawn = Math.max(18, 45 - G.renown * 0.3) / (first('portal') ? 2 : 1);
     if (ofType('tavern').length && G.heroes.length < popCap()) spawnHero();
   }
-  tickAuto(dt);
+  tickAuto(dt); tickSeason(dt);
   // quests
   t.quest -= dt;
-  if (t.quest <= 0) { t.quest = 14; if (G.quests.filter(q => q.state === 'open').length < boardSlots()) genQuest(); }
+  if (t.quest <= 0) { t.quest = 14; if (G.quests.filter(q => q.state === 'open').length < boardSlots()) genQuest(); legendTick(); }
   for (const q of [...G.quests]) if (q.state === 'active') { if (q.dive) diveTick(q, dt); else { q.t -= dt; if (q.t <= 0 || q.dur - q.t >= questEnd(q)) (q.defense ? resolveDefense(q) : resolveQuest(q)); } }
   // events
   t.merchant -= dt; if (t.merchant <= 0) { t.merchant = rnd(150, 220); if (G.renown >= 2 && !G.merchant) startMerchant(); }
@@ -1055,11 +1056,56 @@ function rankReqs(r) {
   if (q.dive) out.push([G.diveBest >= q.dive, `🌀 Endless Dive floor ${q.dive} (best ${G.diveBest})`]);
   return out;
 }
+// ---- seasons: a year is four seasons of 4 minutes; each gives a small perk, a tint and falling petals / leaves / snow
+const SEASONS = [
+  { name: 'Spring', icon: '🌸', desc: 'Herbs grow twice as fast.', tint: [1, 1, 1], emis: [0, 0, 0], part: 0xffb7d5 },
+  { name: 'Summer', icon: '☀️', desc: 'Quest gold +10%.', tint: [1.0, 1.0, 0.92], emis: [0.05, 0.04, 0], part: null },
+  { name: 'Autumn', icon: '🍂', desc: 'Ore and wood trickle in 50% faster.', tint: [1.0, 0.82, 0.62], emis: [0.06, 0.02, 0], part: 0xe87a20 },
+  { name: 'Winter', icon: '❄️', desc: 'Tavern meals pay 25% more.', tint: [0.9, 0.95, 1.0], emis: [0.42, 0.46, 0.52], part: 0xffffff },
+];
+const SEASON_LEN = 240, seasonIdx = () => Math.floor((G.flags.sT || 0) / SEASON_LEN) % 4;
+let seasonShown = -1, seasonAcc = 0;
+function tickSeason(dt) {
+  G.flags.sT = (G.flags.sT || 0) + dt; const i = seasonIdx();
+  if (seasonShown !== i) { if (seasonShown >= 0) { toast(`${SEASONS[i].icon} ${SEASONS[i].name} has come. ${SEASONS[i].desc}`); chron(`${SEASONS[i].icon} ${SEASONS[i].name} began.`); } seasonShown = i; }
+  seasonAcc += dt; if (seasonAcc >= 12) { seasonAcc = 0; if (i === 0 && Math.random() < 0.6) G.herbs++; if (i === 2) { if (Math.random() < 0.4) G.ore++; if (Math.random() < 0.3) G.wood++; } }
+}
+const snow = (() => {   // falling petals / leaves / snow that follow the camera
+  const n = 420, geo = new THREE.BufferGeometry(), pos = new Float32Array(n * 3); for (let i = 0; i < n; i++) { pos[i * 3] = (Math.random() - 0.5) * 30; pos[i * 3 + 1] = Math.random() * 14; pos[i * 3 + 2] = (Math.random() - 0.5) * 30; }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); const m = new THREE.PointsMaterial({ color: 0xffffff, size: 0.16, transparent: true, opacity: 0.85, depthWrite: false });
+  const pts = new THREE.Points(geo, m); pts.frustumCulled = false; pts.visible = false; scene.add(pts); return pts;
+})();
+function updateSeasonFx(rdt) {
+  const S = SEASONS[seasonIdx()], k = 1 - Math.exp(-1.5 * rdt);
+  if (groundMesh) { const c = groundMesh.material.color, e = groundMesh.material.emissive; c.r += (S.tint[0] - c.r) * k; c.g += (S.tint[1] - c.g) * k; c.b += (S.tint[2] - c.b) * k; e.r += (S.emis[0] - e.r) * k; e.g += (S.emis[1] - e.g) * k; e.b += (S.emis[2] - e.b) * k; }
+  snow.visible = !!S.part && !watching; if (!snow.visible) return; snow.material.color.setHex(S.part);
+  const a = snow.geometry.attributes.position, fall = seasonIdx() === 3 ? 1.6 : 0.9;
+  for (let i = 0; i < a.count; i++) { let y = a.getY(i) - rdt * fall * (0.6 + (i % 5) * 0.12), x = a.getX(i) + Math.sin(performance.now() / 900 + i) * rdt * 0.4; if (y < 0) { y = 14; x = (Math.random() - 0.5) * 30; a.setZ(i, (Math.random() - 0.5) * 30); } a.setXYZ(i, x, y, a.getZ(i)); }
+  a.needsUpdate = true; snow.position.set(camTarget.x, 0, camTarget.z);
+}
+// ---- guild chronicle: a short diary of the big moments
+const chron = text => { const c = (G.flags.chron ||= []); c.push({ d: Math.floor(G.time / 60) + 1, t: text }); if (c.length > 80) c.shift(); };
+// ---- the legend: after reaching Fortress, three escalating special quests end with the Ember Colossus
+const LEGEND = [
+  { name: 'The Ember Peak Omen', type: 'arcane', minH: 2, mods: ['elite'], goldMul: 2 },
+  { name: 'Embers in the Mines', type: 'combat', minH: 3, mods: ['elite', 'hoard'], goldMul: 2.5 },
+  { name: 'Slay the Ember Colossus', type: 'arcane', minH: 3, mods: ['elite', 'bounty'], goldMul: 4 },
+];
+function legendTick() {
+  const st = G.flags.legend || 0; if (G.rank < 3 || st >= 3 || G.quests.some(q => q.legend)) return;
+  const L = LEGEND[st], q = makeQuest({ type: L.type, minH: L.minH, mods: L.mods, name: L.name, special: true, goldMul: L.goldMul }); q.legend = st + 1; q.diff *= 1 + 0.3 * st;
+  toast(`🐉 A legendary quest awaits: ${L.name}`); if (st === 0) chron('🐉 Whispers of the Ember Colossus reached the guild.');
+}
+function legendWon(q) {
+  G.flags.legend = q.legend; chron(`🐉 ${q.name} — done.`);
+  if (q.legend >= 3) { G.gold += 5000; G.renown += 20; G.rare.mythril += 3; G.flags.legendDone = 1; chron('🏆 The Ember Colossus fell. The guild became a legend.'); sfx('goal'); openModal('legend'); }
+  else toast(`🐉 The legend deepens… (${q.legend}/3)`);
+}
 function rankUp() {
   if (G.rank >= 3) return; const r = G.rank + 1, reqs = rankReqs(r);
   if (!reqs.every(x => x[0])) return toast('Requirements for the next rank are not met yet.');
   const q = RANKS[r].req; G.gold -= q.gold; if (q.wood) G.wood -= q.wood; if (q.ore) G.ore -= q.ore; if (q.rare) spendRare(q.rare);
-  G.rank = r; floatText(G.buildings[0].door, `${RANKS[r].icon} ${RANKS[r].name}!`, '#ffd24a'); toast(`${RANKS[r].icon} The guild is now a ${RANKS[r].name}! ${RANKS[r].perks}`);
+  chron(`${RANKS[r].icon} The guild became a ${RANKS[r].name}.`); G.rank = r; floatText(G.buildings[0].door, `${RANKS[r].icon} ${RANKS[r].name}!`, '#ffd24a'); toast(`${RANKS[r].icon} The guild is now a ${RANKS[r].name}! ${RANKS[r].perks}`);
 }
 // ---- market prices drift and spike; you can buy low and sell high
 const BASE_PRICE = { ore: 8, herbs: 6, wood: 6 };
@@ -1077,6 +1123,7 @@ function updateHUD() {
   $('hRenown').textContent = G.renown;
   $('hMana').textContent = G.mana;
   $('hPop').textContent = `${G.heroes.length}/${popCap()}`;
+  { const S = SEASONS[seasonIdx()]; $('hSeason').textContent = S.icon + ' ' + tr(S.name); $('seasonPill').title = tr(S.desc); }
   $('hReady').textContent = readyHeroes().length; $('hOpen').textContent = G.quests.filter(q => q.state === 'open').length;
   { const r = G.rare; $('hRare').classList.toggle('hidden', !(r.mythril || r.scale || r.feather)); $('hMyth').textContent = r.mythril; $('hScale').textContent = r.scale; $('hFeather').textContent = r.feather; }
   $('hIngot').classList.toggle('hidden', !first('smelter') && G.ingots === 0); $('hIng').textContent = G.ingots;
@@ -1174,6 +1221,7 @@ function modalContent() {
     case 'settings': return ['⚙ Settings & Save', `
       <div class="row"><div class="grow"><div class="t">🔊 Sound</div><div class="s">Procedural sound effects and music (no downloads).</div></div><button class="act ${getPrefs().sfx ? '' : 'red'}" data-act="sfxtoggle">Effects: ${getPrefs().sfx ? 'On' : 'Off'}</button><button class="act ${getPrefs().music ? '' : 'red'}" data-act="musictoggle">Music: ${getPrefs().music ? 'On' : 'Off'}</button></div>
       <div class="row"><div class="grow"><div class="t">🌐 Language</div><div class="s">English / 한국어</div></div>${Object.entries(LANGS).map(([k, n]) => `<button class="act ${getLang() === k ? '' : 'red'}" style="${getLang() === k ? 'outline:2px solid #fff8' : ''}" data-act="lang" data-l="${k}">${n}</button>`).join('')}</div>
+      <div class="row"><div class="grow"><div class="t">📖 Guild Chronicle</div><div class="s">The diary of your guild's big moments.</div></div><button class="act" data-act="chron">Open</button></div>
       <div class="row"><div class="grow"><div class="t">🔔 Notifications</div><div class="s">Alert when a quest ends or a raid arrives while the game is in the background (browser only; needs permission).</div></div><button class="act ${G.flags.notif ? '' : 'red'}" data-act="notiftoggle">${G.flags.notif ? 'On' : 'Off'}</button></div>
       <div class="row"><div class="grow"><div class="t">🧍 Characters</div><div class="s">Body style. Rigged bodies use motion-capture clips (walk, run, sword, bow, magic, heal). Changing it reloads the game (progress is saved).</div></div>${Object.entries(CHAR_STYLES).map(([k, n]) => `<button class="act ${charStyle === k ? '' : 'red'}" style="${charStyle === k ? 'outline:2px solid #fff8' : ''}" data-act="cstyle" data-s="${k}">${n}</button>`).join('')}</div>
       <div class="row"><div class="grow"><div class="t">💾 Save</div><div class="s">The game autosaves every 15 seconds and when you leave. Last save: ${lastSaved ? Math.round((Date.now() - lastSaved) / 1000) + 's ago' : 'not yet'}.</div></div><button class="act" data-act="save">Save now</button></div>
@@ -1181,6 +1229,8 @@ function modalContent() {
       <div class="row"><div class="grow"><div class="t">🗑 New game</div><div class="s">${modalArg === 'confirm' ? '<b style="color:#ff9a9a">This erases your saved guild. Tap again to confirm.</b>' : 'Delete the save and start a fresh guild.'}</div></div><button class="act red" data-act="newgame">${modalArg === 'confirm' ? 'Really erase' : 'New game'}</button></div>
       <div class="s" style="margin-top:8px">Quests keep running for up to 10 minutes while you are away.</div>
       <div class="sec">✝ Hall of the Fallen</div>${G.fallen.length ? [...G.fallen].reverse().slice(0, 12).map(f => `<div class="s">${f.vip ? '⭐ ' : ''}<b>${f.name}</b> — level ${f.level} ${f.cls}, ${f.quests} expeditions; ${f.deed} (day ${f.day})</div>`).join('') : '<div class="s">No heroes have fallen. Yet.</div>'}`];
+    case 'chronicle': return ['📖 Guild Chronicle', (G.flags.chron || []).length ? [...G.flags.chron].reverse().map(c => `<div class="row"><div class="s" style="min-width:48px">Day ${c.d}</div><div class="grow"><div class="t" style="font-weight:400">${c.t}</div></div></div>`).join('') : '<div class="s">Nothing has been written yet. Great deeds will appear here.</div>'];
+    case 'legend': return ['🏆 A Legend of the Realm', `<div class="s" style="font-size:14px;line-height:1.5">The Ember Colossus is no more. Bards in every tavern sing of your guild, and the kingdom sends its thanks: <b>+5000 gold, +20 renown, +3 Mythril</b>.<br><br>Your guild is a legend — but its story is not over. Keep building, keep exploring, and see how deep the Endless Dive goes.</div><button class="act" data-act="close" style="margin-top:10px">Continue</button>`];
     case 'relic': {
       const q = G.quests.find(x => x.dive && x.offer); if (!q) return ['🎁 Relics', '<div class="s">No relic is waiting.</div>'];
       return ['🎁 Choose a relic (floor ' + q.cleared + ' reached)', '<div class="s">Relics last for the rest of this dive. Pick one before the next checkpoint (or it is chosen for you).</div>' + q.offer.map((id, i) => `<div class="row" style="border-color:#b070ff"><div style="font-size:30px">${RELICS[id].icon}</div><div class="grow"><div class="t">${RELICS[id].name}</div><div class="s">${RELICS[id].desc}</div></div><button class="act" data-act="relicpick" data-i="${i}">Take</button></div>`).join('') + ((q.relics || []).length ? `<div class="s" style="margin-top:8px">Owned: ${q.relics.map(r => RELICS[r.id].icon + ' ' + RELICS[r.id].name).join(', ')}</div>` : '')];
@@ -1320,6 +1370,8 @@ const ACT = {
   moveB(d) { const b = G.buildings.find(x => x.id === +d.id); if (b && b.type !== 'hall') { startPlacement(b.type, b); closeModal(); } },
   dispatch(d) { dispatch(+d.q, false); },
   sendall() { sendAll(0); },
+  chron() { openModal('chronicle'); },
+  close() { closeModal(); },
   autoq() { G.flags.autoQ = G.flags.autoQ ? 0 : 1; toast(G.flags.autoQ ? '⏱ Auto-send on: parties leave when the odds are good.' : 'Auto-send off.'); },
   automin() { const o = [40, 50, 60, 70, 80, 90], i = o.indexOf(G.flags.autoMin || 60); G.flags.autoMin = o[(i + 1) % o.length]; },
   notiftoggle() { G.flags.notif = G.flags.notif ? 0 : 1; if (G.flags.notif && typeof Notification !== 'undefined' && Notification.permission === 'default') Notification.requestPermission(); if (G.flags.notif && typeof Notification === 'undefined') toast('This device does not support notifications.'); },
@@ -1725,7 +1777,7 @@ $('wBack').onclick = endWatch; $('pipFrame').onclick = endWatch;
 $('wFollow').onclick = () => { if (watching) { watching.follow = !watching.follow; updateWatchHUD(); } };
 $('wPipBtn').onclick = () => { if (watching) { watching.pip = !watching.pip; updateWatchHUD(); } };
 $('wSpeed').onclick = () => $('speedBtn').click();
-$('wRelic').onclick = () => openModal('relic'); $('wEnchant').onclick = watchEnchant; $('wPotion').onclick = watchPotion; $('wRecall').onclick = watchRecall; $('wSkills').onclick = e => { const b = e.target.closest('[data-skill]'); if (b && !b.disabled) watchSkill(b.dataset.skill); }; $('readyPill').onclick = () => openModal('quests');
+$('wRelic').onclick = () => openModal('relic'); $('wEnchant').onclick = watchEnchant; $('wPotion').onclick = watchPotion; $('wRecall').onclick = watchRecall; $('wSkills').onclick = e => { const b = e.target.closest('[data-skill]'); if (b && !b.disabled) watchSkill(b.dataset.skill); }; $('readyPill').onclick = () => openModal('quests'); $('seasonPill').onclick = () => openModal('chronicle');
 function renderPip() {
   const w = watching; if (!w || w.exiting || !w.pip || !watchSaved) return;
   const r = $('pipFrame').getBoundingClientRect(); if (r.width < 10) return;
@@ -1746,6 +1798,7 @@ function frame() {
   updateEconomy(dt);
   G.heroes.slice().forEach(h => updateHero(h, dt));
   updateGoblins(dt);
+  updateSeasonFx(rdt);
   if (charStyle !== 'classic') { heroGroup.children.forEach(m => autoAnim(m, rdt)); staffMeshes.forEach(x => autoAnim(x.mesh, rdt)); G.goblins.forEach(x => autoAnim(x.mesh, rdt)); }
   // animation: building pop-in, light flicker
   for (const b of G.buildings) {
@@ -1829,4 +1882,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__api = { openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__api = { legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
