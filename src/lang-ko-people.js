@@ -200,5 +200,6 @@ export const KO_PEOPLE = {
   'Fresh bread at dawn, as always.': '새벽엔 늘 갓 구운 빵이죠.',
   'Have you tried Marta’s stew?': '마르타의 스튜 먹어 봤어요?',
   'Good day to you!': '좋은 하루 보내세요!',
+  'Dismiss': '닫기',
   'hearty stew': '푸짐한 스튜', 'roast boar': '멧돼지 구이', 'honey bread': '꿀빵', 'mushroom pie': '버섯 파이', 'herbal tea': '약초차',
 };

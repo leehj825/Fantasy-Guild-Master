@@ -987,7 +987,8 @@ function renderBanner() {
   if (!ids.length) return el.classList.add('hidden');
   const id = ids[ids.length - 1], b = banners[id];
   el.className = id === 'merchant' ? 'merchant' : '';
-  el.innerHTML = trHtml(`<span>${b.text}</span>` + b.buttons.map(([l, a, c]) => `<button class="act ${c}" data-act="${a}">${l}</button>`).join(''));
+  const closable = !['raid', 'poach'].includes(id);   // decisions that matter cannot be waved away
+  el.innerHTML = trHtml(`<span>${b.text}</span>` + b.buttons.map(([l, a, c]) => `<button class="act ${c}" data-act="${a}">${l}</button>`).join('')) + (closable ? `<button class="bx" data-act="bannerx" data-id="${id}" title="${tr('Dismiss')}" aria-label="Dismiss">✕</button>` : '');
 }
 
 /* ------------------------------------------------------------------ *
@@ -1564,6 +1565,7 @@ const ACT = {
   sendall() { sendAll(0); },
   chron() { openModal('chronicle'); },
   relmap() { openModal('relmap'); },
+  bannerx(d) { hideBanner(d.id); },
   festL() { startFest('L'); }, festM() { startFest('M'); }, festS() { hideBanner('fest'); },
   hstoryopen(d) { const id = d.id ? +d.id : G.flags.hs; if (id) openModal('heroStory', id); },
   hstorypick(d) { const h = G.heroes.find(x => x.id === modalArg), ch = h && storyChapter(h), c = ch && ch.choices[+d.i]; if (!c) return; if (c.cost && G.gold < c.cost) return toast('Not enough gold.'); if (c.cost) G.gold -= c.cost; applyFx(h, c.fx); h.arc.ch++; if (G.flags.hs === h.id) { G.flags.hs = null; hideBanner('hstory'); } sfx('goal'); toast(`📖 ${h.name}: ${(h.arc.ch >= ARCS[h.arc.id].ch.length ? 'their story reaches its end.' : 'the story goes on…')}`); closeModal(); },
