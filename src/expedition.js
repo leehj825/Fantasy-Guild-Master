@@ -484,6 +484,47 @@ export class Expedition {
     const fo = this.foe[e.e], idx = (this.hitsBy[e.h] || []).indexOf(e), fire = idx % 2 === 1, r = this.rings[n % this.rings.length], f = age / 0.4;
     r.visible = true; r.position.set(fo.m.position.x, 0.06, fo.m.position.z); r.scale.setScalar(0.4 + f * (fire ? 2.4 : 1.8)); r.material.opacity = 0.8 * (1 - f); r.material.color.setHex(fire ? 0xff7a30 : 0x7affff);
   }
+  // Heal beams, ward bubbles, boss-slam dust and scorch marks. All pure functions of T, so scrubbing and speed-ups stay correct.
+  buildFx() {
+    const mk = (geo, color, op, add) => { const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: op, depthWrite: false, blending: add ? THREE.AdditiveBlending : THREE.NormalBlending })); m.visible = false; this.group.add(m); return m; };
+    this.hfx = this.hero.map(() => ({ col: mk(new THREE.CylinderGeometry(0.3, 0.3, 1.7, 14, 1, true), 0xffd96a, 0.4, true), orb: mk(new THREE.SphereGeometry(0.14, 8, 6), 0xfff2a0, 0.9, true),
+      sparks: Array.from({ length: 6 }, () => mk(new THREE.SphereGeometry(0.05, 6, 4), 0xfff2a0, 0.9, true)), bub: mk(new THREE.SphereGeometry(0.7, 14, 10), 0x9ad8ff, 0.25, true), halo: mk(new THREE.RingGeometry(0.45, 0.6, 20), 0x9ad8ff, 0.6, true) }));
+    this.hfx.forEach(f => { f.halo.rotation.x = -Math.PI / 2; });
+    this.dust = Array.from({ length: 10 }, () => mk(new THREE.SphereGeometry(0.18, 7, 5), 0xb09a78, 0.55, false));
+    this.scorch = Array.from({ length: 4 }, () => { const m = mk(new THREE.CircleGeometry(0.9, 16), 0x1a1208, 0.5, false); m.rotation.x = -Math.PI / 2; return m; });
+  }
+  fxUpdate(T) {
+    if (!this.hfx) this.buildFx();
+    const q = this.q, S = this.S; this.shake = 0;
+    this.hfx.forEach(f => { f.col.visible = f.orb.visible = f.bub.visible = f.halo.visible = false; f.sparks.forEach(m => { m.visible = false; }); });
+    this.dust.forEach(m => { m.visible = false; }); this.scorch.forEach(m => { m.visible = false; });
+    const healer = Math.max(0, q.party.findIndex(p => p.cls === 'wizard')), src = this.hero[healer] && this.hero[healer].m.position;
+    const casts = [...(q.heals || []).map(e => ({ t: e.t, ward: false })), ...(q.enchants || []).map(e => ({ t: e.t, ward: true }))];
+    for (const c of casts) {
+      const age = T - c.t; if (age < 0 || age > 1.8) continue;
+      this.hero.forEach((o, h) => {
+        const f = this.hfx[h], H = S.heroes[h]; if (!o.m.visible || (H.dies && T >= H.D)) return; const pos = o.m.position;
+        if (c.ward) {
+          const k = Math.sin(clamp(age / 1.8, 0, 1) * Math.PI); f.bub.visible = f.halo.visible = true; f.bub.position.set(pos.x, 0.5, pos.z); f.bub.scale.setScalar(0.85 + 0.12 * Math.sin(age * 9)); f.bub.material.opacity = 0.32 * k;
+          f.halo.position.set(pos.x, 0.05, pos.z); f.halo.scale.setScalar(0.8 + age * 0.5); f.halo.material.opacity = 0.7 * k; return;
+        }
+        if (age < 0.4 && src) { const u = age / 0.4; f.orb.visible = true; f.orb.position.set(lerp(src.x, pos.x, u), 1.0 + Math.sin(u * Math.PI) * 0.5, lerp(src.z, pos.z, u)); return; }
+        const a = (age - 0.4) / 1.4, k = Math.sin(clamp(a, 0, 1) * Math.PI);
+        f.col.visible = true; f.col.position.set(pos.x, 0.85, pos.z); f.col.scale.set(1 - 0.35 * a, 1, 1 - 0.35 * a); f.col.material.opacity = 0.45 * k;
+        f.sparks.forEach((m, i) => { m.visible = true; const ang = a * 5 + i * 1.05, r = 0.32 * (1 - a * 0.4); m.position.set(pos.x + Math.cos(ang) * r, ((a * 1.4 + i * 0.17) % 1.5), pos.z + Math.sin(ang) * r); m.material.opacity = 0.9 * k; });
+      });
+    }
+    // boss blows: the camera shakes, dust bursts and a scorch mark stays on the ground where the hero stood
+    let di = 0, sc = 0;
+    for (let i = firstAfter(S.events, T - 3.2); i < S.events.length; i++) {
+      const e = S.events[i]; if (e.t > T + 0.1) break; if (e.type !== 'ehit') continue;
+      const E = S.enemies[e.e]; if (!E || !E.boss) continue; const ho = this.hero[e.h]; if (!ho) continue;
+      const age = T - (e.t + 0.28), p = ho.m.position;
+      if (age >= 0 && age < 0.4) this.shake = Math.max(this.shake, 0.16 * (1 - age / 0.4));
+      if (age >= 0 && age < 0.8) for (let j = 0; j < 4 && di < this.dust.length; j++, di++) { const m = this.dust[di], ang = (e.id || i) * 0.7 + j * 1.6, r = 0.3 + age * 1.6; m.visible = true; m.position.set(p.x + Math.cos(ang) * r, 0.15 + age * 0.9, p.z + Math.sin(ang) * r); m.scale.setScalar(0.7 + age * 1.8); m.material.opacity = 0.5 * (1 - age / 0.8); }
+      if (age >= 0 && age < 3.0 && sc < this.scorch.length) { const m = this.scorch[sc++]; m.visible = true; m.position.set(p.x, 0.04, p.z); m.scale.setScalar(0.8 + (E.kind === 'golem' ? 0.4 : 0.2)); m.material.opacity = 0.45 * (1 - age / 3.0); }
+    }
+  }
   update(T, rdt) {
     const q = this.q, S = q.script; T = clamp(T, 0, S.dur); this.T = T;
     if (S !== this.S) { this.S = S; this.fired.clear(); this.syncFoes(T); this.index(); }
@@ -570,6 +611,7 @@ export class Expedition {
       m.position.set(x + lunge, y, z);
       this.setBar(o.bar, m.position, ENEMY[E.kind].h, hp, dying);
     });
+    this.fxUpdate(T);
     // chest, coins, swirl, flicker
     const ch = this.stage.chest, lidT = dive ? -1 : T - S.dur * 0.93;
     if (!dive && q.ok && lidT > 0 && !this.chestHeard) { this.chestHeard = true; sfx('chest'); }

@@ -39,12 +39,14 @@ const clampView = () => {
   pitch = Math.max(0.28, Math.min(1.42, pitch)); viewS = Math.max(3.5, Math.min(24, viewS));
   if (!watching) { const B = landBounds(); camTarget.x = Math.max(B.x0, Math.min(B.x1, camTarget.x)); camTarget.z = Math.max(B.z0, Math.min(B.z1, camTarget.z)); }
 };
+let camShake = 0;   // boss blows shake the camera a little (set from the stage)
 function updateCamera() {
   clampView();
   const a = innerWidth / innerHeight;
   const dir = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
   const dist = viewS / Math.tan(THREE.MathUtils.degToRad(FOV / 2));
   perspCam.aspect = a; perspCam.position.copy(camTarget).addScaledVector(dir, dist);
+  if (camShake > 0) perspCam.position.add(new THREE.Vector3((Math.random() - 0.5) * camShake, (Math.random() - 0.5) * camShake, (Math.random() - 0.5) * camShake));
   camera.lookAt(camTarget); camera.updateProjectionMatrix(); camera.updateMatrixWorld();
 }
 // ground-plane pan along the current view axes (px -> world)
@@ -1622,7 +1624,7 @@ function endWatch() {
   flyTo({ yaw: watchSaved.yaw, pitch: watchSaved.pitch, viewS: watchSaved.viewS, x: watchSaved.x, z: watchSaved.z }, 1.0);
 }
 function cleanupWatch() {
-  if (!watching) return; watching.exp.dispose(); watching = null;
+  if (!watching) return; watching.exp.dispose(); watching = null; camShake = 0;
   scene.background.setHex(0x2f7a32); sun.position.set(N / 2 + 18, 30, N / 2 + 8); sun.target.position.set(N / 2, 0, N / 2); sun.intensity = 1.05; ambient.intensity = 0.75;
   updateCamera();
 }
@@ -1765,6 +1767,7 @@ function frame() {
       if (w.recallArm > 0) { w.recallArm -= rdt; if (w.recallArm <= 0) updateWatchHUD(); }
       const T = nowT(w);
       w.exp.update(T, rdt);
+      { const sh = w.exp.shake || 0; if (sh > 0 || camShake > 0) { camShake = sh; updateCamera(); } }
       if (w.lastScript !== q.script) logReset(w, T);
       const ev = q.script.events; while (ev[w.logIdx] && ev[w.logIdx].t <= T) addLog(ev[w.logIdx++]);
       if (w.follow && !viewFly) { const f = w.exp.focus(T), k = 1 - Math.exp(-4 * rdt); camTarget.x += (f.x - camTarget.x) * k; camTarget.z += (f.z - camTarget.z) * k; updateCamera(); }
