@@ -267,7 +267,8 @@ const PROG = {
   '✨ Here': '✨ 여기', 'load failed': '불러오기 실패', 'Cancel': '취소', 'Auto': '자동',
 };
 
-export const KO_DICT = Object.assign({}, UI, BUILD, PROG);
+import { KO_PEOPLE } from './lang-ko-people.js';
+export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 
 // full-sentence patterns with variables (T translates names/phrases inside the captures)
 export function makeKoRules(T) {

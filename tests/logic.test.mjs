@@ -75,3 +75,15 @@ test('Korean translation: exact, sentence rule and untranslated fallthrough', { 
   assert.equal(tr('50g'), '50골드');
   setLang('en'); assert.equal(getLang(), 'en');
 });
+
+const People = await import('../src/people.js');
+test('hero profiles: two compatible tags, a background, likes that differ from dislikes', () => {
+  for (let i = 0; i < 200; i++) {
+    const cls = ['knight', 'ranger', 'wizard'][i % 3], p = People.makeProfile(cls);
+    assert.equal(p.tags.length, 2); assert.notEqual(p.tags[0], p.tags[1]);
+    assert.ok(!(p.tags.includes('cheerful') && p.tags.includes('gloomy')));
+    assert.ok(p.bio[0] && p.bio[1]); assert.notEqual(p.likes.type, p.dislikes.type); assert.notEqual(p.likes.season, p.dislikes.season);
+  }
+  const m = People.tagMods(['ambitious', 'hothead']);
+  assert.ok(Math.abs(m.xp - 1.15) < 1e-9 && Math.abs(m.pw - 1.05) < 1e-9 && Math.abs(m.survive + 0.05) < 1e-9);
+});

@@ -2,6 +2,7 @@ import * as THREE from '../vendor/three.module.js';
 import { factionDecor, BUILDINGS, buildBuilding, buildHero, buildStaff, buildGoblin, buildMerchantCart, vox, mat, PROPS, setCharMaker } from './models.js';
 import { makeRigChar, makeRigGolem, makeRigOgre, autoAnim } from './rigchar.js';
 import { createTutorial } from './tutorial.js';
+import { TAGS, makeProfile, tagMods, SEASON_NAMES } from './people.js';
 import { sfx, unlock, setPref, getPrefs, setMusicMood, audioState } from './audio.js';
 import { tr, trHtml, initLang, setLang, getLang, onLangChange, translateStatic, LANGS } from './i18n.js';
 import { Expedition, questEnd, setBigMakers, genScript, STAGE_X, heroHp, phaseText, newDiveScript, ensureFloors, rebuildDive, diveFloorIndex, diveCheckpoint, rewardText, RELICS, relicMods, relicOffer } from './expedition.js';
@@ -322,7 +323,8 @@ const TALENTS = {
 const talentSlots = h => (h.level >= 3 ? 1 : 0) + (h.level >= 6 ? 1 : 0);
 const talentDef = (cls, id) => TALENTS[cls].flat().find(t => t[0] === id);
 function heroMods(h) {
-  const m = { pw: 1, pwType: {}, survive: 0, loot: 0, mana: 0, decay: 0, succ: 0 };
+  const m = { pw: 1, pwType: {}, survive: 0, loot: 0, mana: 0, decay: 0, succ: 0, xp: 1, happy: 1 };
+  { const tm = tagMods(h.tags); m.pw *= tm.pw; m.survive += tm.survive; m.loot += tm.loot; m.decay += tm.decay; m.succ += tm.succ; m.xp = tm.xp; m.happy = tm.happy; }
   if (h.promo) { const P = PROMO[h.cls]; m.pw *= P.pw; m.survive += P.survive || 0; m.loot += P.loot || 0; m.mana += P.mana || 0; }
   for (const id of h.talents || []) { const t = talentDef(h.cls, id); if (!t) continue; const f = t[3]; if (f.pw) m.pw *= f.pw; if (f.pwType) for (const k of Object.keys(f.pwType)) m.pwType[k] = (m.pwType[k] || 1) * f.pwType[k]; m.survive += f.survive || 0; m.loot += f.loot || 0; m.mana += f.mana || 0; m.decay += f.decay || 0; m.succ += f.succ || 0; }
   return m;
@@ -330,7 +332,7 @@ function heroMods(h) {
 const survBonus = h => (traitOf(h) === 'brave' ? 0.35 : 0) + heroMods(h).survive;
 const heroLabel = h => h.promo ? PROMO[h.cls].name : CLASSES[h.cls].label;
 function gainXp(h, n) {
-  h.xp += n;
+  h.xp += n * heroMods(h).xp;
   while (h.xp >= h.level + 1) { h.xp -= h.level + 1; h.level++; sfx('level'); floatText(h.pos, `⬆ ${h.name} Lv${h.level}`, '#9bff9b'); if (h.level === 3 || h.level === 6) toast(`✨ ${h.name} can choose a new talent! (tap the hero)`); }
 }
 function addPromoGear(h) { h.mesh.add(vox(0.46, 0.5, 0.05, 0xe8c04a, 0, 0.3, -0.2), vox(0.1, 0.1, 0.06, 0xc0392b, 0, 0.62, -0.23)); }
@@ -371,6 +373,7 @@ function createHero(d) {
     quests: d.quests || 0, vip: d.vip || null, gearTier: d.gearTier || 1, promo: !!d.promo, talents: d.talents || [], bonds: d.bonds || {},
     mesh, pos: mesh.position, bub, state: 'idle', target: null, onArrive: null, timer: 0, onDone: null, cool: 0, phase: Math.random() * 6, vis: true,
   };
+  if (d.tags) { h.tags = d.tags; h.bio = d.bio; h.likes = d.likes; h.dislikes = d.dislikes; } else Object.assign(h, makeProfile(h.cls));
   mesh.userData.hid = h.id; G.heroes.push(h); if (h.vip) addStar(h); if (h.promo) addPromoGear(h); if (d.bonds === undefined) assignBonds(h);
   return h;
 }
@@ -500,7 +503,7 @@ function updateHero(h, dt) {
   h.stamina = Math.max(0, h.stamina - 0.7 * (traitOf(h) === 'glutton' ? 1.4 : 1) * (1 - Math.min(0.6, heroMods(h).decay + (G.flags.faction === 'rangers' ? 0.1 : 0))) * dt);
   if (h.mesh.userData.star) h.mesh.userData.star.rotation.y += dt * 2.5;
   const needy = h.stamina < 45 || !h.gear;
-  h.happy = Math.max(0, Math.min(100, h.happy + (needy ? -0.35 * decay * (1 - decorBonus()) : 0.15) * dt));
+  h.happy = Math.max(0, Math.min(100, h.happy + ((needy ? -0.35 * decay * (1 - decorBonus()) * heroMods(h).happy : 0.15) + likeDelta(h)) * dt));
   if (nearCampfire(h)) h.happy = Math.min(100, h.happy + 0.3 * dt);   // cosy fire
   if (h.state === 'leaving') {
     if (stepPath(h, dt, 3)) removeHero(h);
@@ -685,6 +688,7 @@ function resolveQuest(q) {
     if (!ok && q.deaths.includes(h.id)) { memorialize(h, `fell on "${q.name}"`); if (h.vip) G.renown = Math.max(0, G.renown - 1); removeHero(h, h.vip ? `☠ ${h.name} — a legend of the guild — has fallen!` : `${h.name} the ${CLASSES[h.cls].label} fell in battle...`); return; }
     h.quests = (h.quests || 0) + 1;
     if (ok) gainXp(h, traitOf(h) === 'scholar' ? 2 : 1);
+    if (h.likes && h.likes.type === q.type) { h.happy = Math.min(100, h.happy + 8); floatText(h.pos, '💕', '#ff9ac8'); } else if (h.dislikes && h.dislikes.type === q.type) { h.happy = Math.max(0, h.happy - 8); floatText(h.pos, '💢', '#ff7a7a'); }
     if (Math.random() < (ok ? 0.5 : 1)) h.gear = false;
     h.happy = Math.min(100, h.happy + (ok ? 20 : -10));
     alive.push(h);
@@ -1100,11 +1104,14 @@ const CHAT = {
   tired: ['I need a rest…'], unhappy: ['This place could be better.'],
 };
 let chatT = 12, saveBuf = '';
+// what a hero likes and dislikes: a liked building in the guild or a liked season lifts the mood, a disliked season lowers it
+const likeDelta = h => { let d = 0; const L = h.likes || {}, D = h.dislikes || {}, s = seasonIdx(); if (L.bld && first(L.bld)) d += 0.04; if (L.season === s) d += 0.05; if (D.season === s) d -= 0.05; return d; };
 const decorBonus = () => Math.min(0.3, 0.05 * (ofType('fountain').length + ofType('banner').length + ofType('statue').length) + 0.01 * Math.min(10, ofType('lamp').length + ofType('campfire').length));
 function tickChat(dt) {
   chatT -= dt; if (chatT > 0) return; chatT = 14 + Math.random() * 22;
   const c = G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving' && h.mesh.visible); if (!c.length) return; const h = pick(c);
-  const pool = [...CHAT.any, ...(CHAT[h.cls] || []), ...(h.stamina < 40 ? CHAT.tired : []), ...(h.happy < 35 ? CHAT.unhappy : []), ...(traitOf(h) ? CHAT[traitOf(h)] || [] : [])];
+  if (h.bio && Math.random() < 0.25) return floatText(h.pos, '“' + tr(h.bio[1]) + '”', '#fff');
+  const pool = [...CHAT.any, ...(CHAT[h.cls] || []), ...(h.tags || []).flatMap(t => (TAGS[t] ? TAGS[t].chat : [])), ...(h.stamina < 40 ? CHAT.tired : []), ...(h.happy < 35 ? CHAT.unhappy : []), ...(traitOf(h) ? CHAT[traitOf(h)] || [] : [])];
   floatText(h.pos, '“' + tr(pick(pool)) + '”', '#fff');
 }
 // ---- guild chronicle: a short diary of the big moments
@@ -1306,6 +1313,7 @@ function modalContent() {
       const bondNames = Object.entries(h.bonds || {}).map(([id, k]) => [G.heroes.find(x => x.id === +id), k]).filter(([x]) => x);
       if (bondNames.length) body += `<div class="s" style="margin-top:6px">${bondNames.map(([x, k]) => (k === 'friend' ? '🤝 Friends with ' : '⚡ Rival of ') + x.name).join(' · ')} <span style="opacity:.7">(same party: +4% / −5%)</span></div>`;
       if (tr) body += `<div class="row" style="border-color:#ffd24a"><div style="font-size:30px">${tr.icon}</div><div class="grow"><div class="t">VIP trait: ${tr.label}</div><div class="s">${tr.desc}</div></div></div>`;
+      if (h.tags) { const L = h.likes || {}, D = h.dislikes || {}; body += `<div class="row"><div class="grow"><div class="t">Personality</div><div class="s">${h.tags.map(t => `<span class="tag" title="${TAGS[t].desc}">${TAGS[t].icon} ${TAGS[t].label}</span>`).join(' ')}</div><div class="s" style="margin-top:4px">${h.bio[0]}</div><div class="s" style="margin-top:4px">❤ Likes: ${L.type} quests · ${L.bld && BUILDINGS[L.bld] ? BUILDINGS[L.bld].name : ''} · ${SEASON_NAMES[L.season]} · ${L.food}</div><div class="s">💢 Dislikes: ${D.type} quests · ${SEASON_NAMES[D.season]}</div></div></div>`; }
       body += `<div class="s" style="margin-top:6px">Experience ${h.xp}/${h.level + 1}</div>${bar(h.xp / (h.level + 1) * 100, '#8fd4ff')}
         <div class="s" style="margin-top:6px">Stamina ${Math.round(h.stamina)}</div>${bar(h.stamina, h.stamina < 45 ? '#e0503a' : '#5be35b')}
         <div class="s" style="margin-top:6px">Happiness ${Math.round(h.happy)}</div>${bar(h.happy, h.happy < 30 ? '#e0503a' : '#f0c040')}
@@ -1639,7 +1647,7 @@ function serialize() {
   return {
     v: 1, savedAt: Date.now(), g,
     buildings: G.buildings.map(b => ({ type: b.type, cx: b.cx, cz: b.cz, rot: b.rot || 0, level: b.level, stock: b.stock, progress: b.progress })),
-    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, promo: h.promo, talents: h.talents, bonds: h.bonds, quests: h.quests, vip: h.vip, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
+    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, promo: h.promo, talents: h.talents, bonds: h.bonds, quests: h.quests, vip: h.vip, tags: h.tags, bio: h.bio, likes: h.likes, dislikes: h.dislikes, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
     quests: G.quests.map(q => { const o = {}; for (const [k, v] of Object.entries(q)) if (k !== 'heroes' && k !== 'script') o[k] = v; o.heroIds = (q.heroes || []).map(h => h.id); return o; }),
     extra: serializeExtra(),
   };
