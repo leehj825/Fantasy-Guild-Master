@@ -274,6 +274,8 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^(.) The villagers want to hold the (.+)!$/u, (i, n) => `${i} 주민들이 ${f(n)}을(를) 열고 싶어 합니다!`],
+    [/^(.) (.+) is on! Tavern meals pay 50% more\.$/u, (i, n) => `${i} ${f(n)} 진행 중! 술집 식사 수입 +50%.`],
     [/^📖 (.+) has something to tell you\.$/, n => `📖 ${f(n)} 영웅이 할 말이 있습니다.`],
     [/^📖 (.+): (.+)$/, (n, t) => `📖 ${f(n)}: ${t === 'their story reaches its end.' ? '이야기가 끝을 맞았습니다.' : t === 'the story goes on…' ? '이야기는 계속됩니다…' : f(t)}`],
     [/^📨 A rival guild is trying to hire (.+)!$/, n => `📨 경쟁 길드가 ${f(n)} 영웅을 데려가려 합니다!`],

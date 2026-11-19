@@ -1,7 +1,9 @@
 # Ideas: living heroes and a living town
 
-Status: **proposal, not implemented.** Written so the next session (or another contributor) can pick it up.
-Recommended order is at the end.
+Status: **implemented** (all six steps of the suggested order). Code: `src/people.js` (data and helpers), `src/lang-ko-people.js` (Korean), and the
+people systems in `src/main.js` (search for `makeProfile`, `recomputeBond`, `syncResidents`, `townTick`, `tickPeople`, `tickFestival`).
+Not done from this document: villager romance/mentor ties with named residents, protecting villagers in raids, relations map as a full screen, and
+second promotion titles. The text below is the original proposal.
 
 ## Where the game is today
 

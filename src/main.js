@@ -254,12 +254,12 @@ G.buildings[0].pop = 1; G.buildings[0].group.scale.setScalar(1);
 /* ------------------------------------------------------------------ *
  *  Derived stats
  * ------------------------------------------------------------------ */
-const popCap = () => 4 + ofType('tent').length * 3 + ofType('tavern').length * 4 + G.outpost * 3 + G.rank * 4 + 2 * regionPerk('greenwood');
+const popCap = () => 4 + ofType('tent').length * 3 + ofType('cottage').length + ofType('tavern').length * 4 + G.outpost * 3 + G.rank * 4 + 2 * regionPerk('greenwood');
 const maxLevel = () => [3, 5, 7, 9][G.rank];
 const boardSlots = () => 3 + G.boardLvl + (G.rank >= 2 ? 1 : 0) + (G.rank >= 3 ? 1 : 0);
 const craftSpeed = () => (1 + 0.25 * G.staff.smith) * (G.research.forging ? 1.3 : 1) * (G.research.mythril ? 1.4 : 1) * (1 + 0.1 * regionPerk('stonepeak')) * (G.flags.faction === 'vanguard' ? 1.15 : 1) * (G.flags.smithTaught ? 1.1 : 1);
 const alchSpeed = () => (1 + 0.25 * G.staff.alch) * (G.research.forging ? 1.15 : 1) * (1 + 0.1 * regionPerk('ashen')) * (G.flags.faction === 'arcane' ? 1.15 : 1);
-const mealGold = tav => { tav = tav || first('tavern'); return (seasonIdx() === 3 ? 1.25 : 1) * 9 * (1 + 0.15 * G.staff.cook) * (1 + 0.3 * ((tav?.level || 1) - 1)) * (tav ? adj(tav).meal : 1); };
+const mealGold = tav => { tav = tav || first('tavern'); return (G.flags.fest ? 1.5 : 1) * (seasonIdx() === 3 ? 1.25 : 1) * 9 * (1 + 0.15 * G.staff.cook) * (1 + 0.3 * ((tav?.level || 1) - 1)) * (tav ? adj(tav).meal : 1); };
 const questGoldMul = () => (G.research.charter ? 1.25 : 1) * (seasonIdx() === 1 ? 1.1 : 1) * (1 + 0.002 * (G.flags.rep ?? 10));
 const trickleMul = () => (1 + 0.5 * G.staff.porter);
 const warehouseBonus = () => ofType('warehouse').reduce((s, w) => s + 6 + 4 * (w.level - 1), 0);
@@ -1036,7 +1036,7 @@ function updateEconomy(dt) {
     t.spawn = Math.max(18, 45 - G.renown * 0.3) / (first('portal') ? 2 : 1) * (1 - 0.004 * (G.flags.rep ?? 10));
     if (ofType('tavern').length && G.heroes.length < popCap()) spawnHero();
   }
-  tickAuto(dt); tickSeason(dt);
+  tickAuto(dt); tickSeason(dt); tickFestival(dt); { const cot = ofType('cottage').length; if (cot) G.gold += cot * 0.06 * dt * (1 + 0.004 * (G.flags.rep ?? 10)); }
   // quests
   t.quest -= dt;
   if (t.quest <= 0) { t.quest = 14; if (G.quests.filter(q => q.state === 'open').length < boardSlots()) genQuest(); legendTick(); }
@@ -1161,6 +1161,31 @@ function townTick(dt) {
   const who = residents.map(r => r.def.name), opts = TOWN_JOBS.filter(j => who.includes(j.who) && !G.quests.some(q => q.name === j.name)); if (!opts.length) return;
   const j = pick(opts), q = makeQuest({ type: j.type, minH: 1, mods: [], name: j.name, goldMul: 0.5 }); q.town = true; q.who = j.who; q.dur = Math.round(rnd(20, 30)); q.diff *= 0.6; q.rep = 3; q.renown = Math.max(0, q.renown - 1);
   toast(`🏘 ${j.who} has a request: ${j.name}`);
+}
+// ---- festivals: once per season the villagers offer to hold one; it costs gold and pays back in town reputation and mood
+const FEST = [{ name: 'Blossom Fair', icon: '🌸' }, { name: 'Midsummer Games', icon: '🏅' }, { name: 'Harvest Feast', icon: '🍂' }, { name: 'Lantern Night', icon: '🏮' }];
+const confetti = (() => {
+  const n = 160, geo = new THREE.BufferGeometry(), pos = new Float32Array(n * 3), col = new Float32Array(n * 3), C = [0xff6a6a, 0xffd24a, 0x6ad8ff, 0x9bff9b, 0xff9aff];
+  for (let i = 0; i < n; i++) { pos[i * 3] = (Math.random() - 0.5) * 8; pos[i * 3 + 1] = Math.random() * 5; pos[i * 3 + 2] = (Math.random() - 0.5) * 8; const c = new THREE.Color(C[i % 5]); col.set([c.r, c.g, c.b], i * 3); }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.14, vertexColors: true, transparent: true, opacity: 0.95, depthWrite: false })); pts.frustumCulled = false; pts.visible = false; pts.position.set(HALL.cx + 2.5, 0, HALL.cz + 4); scene.add(pts); return pts;
+})();
+function tickFestival(dt) {
+  const f = G.flags, i = seasonIdx(), key = Math.floor((f.sT || 0) / SEASON_LEN), into = (f.sT || 0) % SEASON_LEN;
+  if (f.fest) { f.fest.t -= dt; if (f.fest.t <= 0) { f.fest = null; hideBanner('feston'); toast('🎉 The festival is over. What a night!'); } }
+  if (banners.fest && f.festOffer !== key) hideBanner('fest');
+  if (!f.fest && f.festOffer !== key && into >= 90 && G.buildings.length > 3 && !banners.fest) { f.festOffer = key; const F = FEST[i]; showBanner('fest', `${F.icon} The villagers want to hold the ${F.name}!`, [['Lavish (−300g)', 'festL', 'red'], ['Modest (−100g)', 'festM', ''], ['Skip', 'festS', '']]); }
+}
+function startFest(kind) {
+  const F = FEST[seasonIdx()], lavish = kind === 'L', cost = lavish ? 300 : 100; hideBanner('fest');
+  if (G.gold < cost) return toast('Not enough gold.');
+  G.gold -= cost; G.flags.fest = { name: F.name, t: lavish ? 60 : 40 }; repGain(lavish ? 6 : 2); if (lavish) G.renown += 2;
+  for (const h of G.heroes) { h.happy = Math.min(100, h.happy + (lavish ? 25 : 10)); h.loy = Math.min(100, (h.loy ?? 60) + (lavish ? 5 : 2)); }
+  chron(`${F.icon} The guild held the ${F.name}${lavish ? ' with great pomp' : ''}.`); sfx('goal'); showBanner('feston', `${F.icon} ${F.name} is on! Tavern meals pay 50% more.`, []);
+}
+function updateConfetti(rdt) {
+  const on = !!G.flags.fest && !watching; confetti.visible = on; if (!on) return;
+  const a = confetti.geometry.attributes.position; for (let i = 0; i < a.count; i++) { let y = a.getY(i) - rdt * (0.7 + (i % 4) * 0.2); if (y < 0) y += 5; a.setY(i, y); a.setX(i, a.getX(i) + Math.sin(performance.now() / 700 + i) * rdt * 0.5); } a.needsUpdate = true;
 }
 // ---- personal stories, loyalty and conflict
 const sub = (t, h) => t.replace(/\{n\}/g, h.name);
@@ -1375,7 +1400,7 @@ function modalContent() {
       return ['📖 ' + ARCS[h.arc.id].title, `<div class="s" style="font-size:14px;line-height:1.5">${sub(tr(ch.text), h)}</div>` + ch.choices.map((c, i) => `<div class="row" style="border-color:#c9a0ff"><div class="grow"><div class="t">${sub(tr(c.label), h)}</div></div><button class="act" data-act="hstorypick" data-i="${i}" ${c.cost && G.gold < c.cost ? 'disabled' : ''}>Choose</button></div>`).join('')];
     }
     case 'resident': {
-      const def = RESIDENTS.find(x => x.id === modalArg); if (!def) return ['', ''];
+      const def = [...RESIDENTS, ...villagerDefs].find(x => x && x.id === modalArg); if (!def) return ['', ''];
       let h = `<div class="row"><div style="font-size:34px">${def.icon}</div><div class="grow"><div class="t">${def.name}</div><div class="s">${def.role}</div></div></div><div class="s" style="margin:6px 0">${def.bio}</div><div class="s" style="font-size:14px">“${def.lines[Math.floor(G.time / 20) % def.lines.length]}”</div>`;
       h += `<div class="s" style="margin-top:6px">🏘 Town reputation: <b>${REP_NAMES[repLevel()]}</b> (${Math.round(G.flags.rep ?? 10)}/100) — quest gold +${(0.2 * (G.flags.rep ?? 10)).toFixed(0)}%, heroes arrive ${(0.4 * (G.flags.rep ?? 10)).toFixed(0)}% faster. Do villagers’ requests to raise it.</div>`;
       if (def.hint) { const g = GOALS.map((x, i) => [x, i]).find(([, i]) => !G.goalsDone[i]); h += g ? `<div class="sec">Bram’s advice</div><div class="s">“You could try this: <b>${g[0][0]}</b>.”</div>` : '<div class="sec">Bram’s advice</div><div class="s">“You have done everything I have written down. Go write your own story.”</div>'; }
@@ -1539,6 +1564,7 @@ const ACT = {
   sendall() { sendAll(0); },
   chron() { openModal('chronicle'); },
   relmap() { openModal('relmap'); },
+  festL() { startFest('L'); }, festM() { startFest('M'); }, festS() { hideBanner('fest'); },
   hstoryopen(d) { const id = d.id ? +d.id : G.flags.hs; if (id) openModal('heroStory', id); },
   hstorypick(d) { const h = G.heroes.find(x => x.id === modalArg), ch = h && storyChapter(h), c = ch && ch.choices[+d.i]; if (!c) return; if (c.cost && G.gold < c.cost) return toast('Not enough gold.'); if (c.cost) G.gold -= c.cost; applyFx(h, c.fx); h.arc.ch++; if (G.flags.hs === h.id) { G.flags.hs = null; hideBanner('hstory'); } sfx('goal'); toast(`📖 ${h.name}: ${(h.arc.ch >= ARCS[h.arc.id].ch.length ? 'their story reaches its end.' : 'the story goes on…')}`); closeModal(); },
   poachPay() { const h = G.heroes.find(x => x.id === G.flags.poach); G.flags.poach = null; hideBanner('poach'); if (!h) return; if (G.gold < 200) { toast('Not enough gold.'); h.loy = Math.max(0, h.loy - 15); return; } G.gold -= 200; h.loy = Math.min(100, (h.loy ?? 60) + 35); h.happy = Math.min(100, h.happy + 15); toast(`🤝 ${h.name} chose to stay.`); },
@@ -1753,10 +1779,21 @@ addEventListener('keydown', e => {
 // ---- named residents: villagers with a job who live around the buildings (see people.js); tap one to hear what they have to say
 const residentGroup = new THREE.Group(); scene.add(residentGroup);
 const residents = []; let resSig = '';
+// ordinary villagers: one family per cottage, plus one for every 25 points of town reputation (up to 8)
+const VNAMES = ['Hob', 'Mina', 'Garr', 'Lotte', 'Fenwick', 'Orla', 'Jem', 'Tilda'], VROLES = [['Farmer', '🌾'], ['Woodcutter', '🪓'], ['Weaver', '🧵'], ['Baker', '🥖'], ['Fisher', '🎣'], ['Potter', '🏺'], ['Shepherd', '🐑'], ['Miller', '⚙️']];
+const VLOOK = [{ shirt: 0xf4f0e6, vest: 0x3b6cc0, hair: 0x6b4a2a }, { shirt: 0xe6c8a0, vest: 0xb06a3a, hair: 0x4a2c12, hat: 'cap', hatColor: 0x8a5a2b }, { shirt: 0xd8d0c0, vest: 0x7ab648, hair: 0xf0d46a, longHair: true }, { shirt: 0xf4f0e6, apron: 0xf4f0e6, hair: 0xdcdcdc }];
+const VLINES = ['Lovely weather for a walk.', 'The guild keeps the road safe — thank you.', 'My little one wants to be a hero.', 'Fresh bread at dawn, as always.', 'Have you tried Marta’s stew?', 'Good day to you!'];
+const villagerDefs = [];
+function villagerDef(i) {
+  if (!villagerDefs[i]) { const [role, icon] = VROLES[i % VROLES.length]; villagerDefs[i] = { id: 'v' + i, vil: i, name: VNAMES[i % VNAMES.length], role, icon, anchor: ['cottage', 'market', 'hall'], speed: 0.9, scale: 1, wander: 3.5, look: { skin: 0xf0c8a0, pants: 0x5a4636, ...VLOOK[i % VLOOK.length] }, bio: 'Settled here for a quiet life — right next to a guild of heroes.', lines: [VLINES[i % VLINES.length], VLINES[(i + 2) % VLINES.length], VLINES[(i + 4) % VLINES.length]] }; }
+  return villagerDefs[i];
+}
+const villagerCount = () => Math.min(8, ofType('cottage').length + Math.floor((G.flags.rep ?? 10) / 25));
 function syncResidents() {
-  const sig = G.buildings.length + ':' + G.rank + ':' + moveVer; if (sig === resSig) return; resSig = sig;
-  for (const def of RESIDENTS) {
-    const here = residents.find(r => r.def === def), ok = residentHome(def, G, first);
+  const sig = G.buildings.length + ':' + G.rank + ':' + moveVer + ':' + villagerCount(); if (sig === resSig) return; resSig = sig;
+  const defs = [...RESIDENTS, ...Array.from({ length: 8 }, (_, i) => villagerDef(i))];
+  for (const def of defs) {
+    const here = residents.find(r => r.def === def), ok = def.vil !== undefined ? def.vil < villagerCount() : residentHome(def, G, first);
     if (here && !ok) { residentGroup.remove(here.mesh); residents.splice(residents.indexOf(here), 1); }
     else if (!here && ok) {
       const mesh = buildChar(def.look); mesh.scale.multiplyScalar(def.scale); const a = residentAnchor(def, 0); mesh.position.set(a.x + rnd(-1, 1), 0, a.z + rnd(0.5, 1.5)); mesh.userData.rid = def.id; residentGroup.add(mesh);
@@ -2009,7 +2046,7 @@ function frame() {
   updateEconomy(dt);
   G.heroes.slice().forEach(h => updateHero(h, dt));
   updateGoblins(dt);
-  updateSeasonFx(rdt); updateDayNight(); tickChat(dt); tickResidents(dt); residentGroup.children.forEach(m => autoAnim(m, rdt));
+  updateSeasonFx(rdt); updateConfetti(rdt); updateDayNight(); tickChat(dt); tickResidents(dt); residentGroup.children.forEach(m => autoAnim(m, rdt));
   if (charStyle !== 'classic') { heroGroup.children.forEach(m => autoAnim(m, rdt)); staffMeshes.forEach(x => autoAnim(x.mesh, rdt)); G.goblins.forEach(x => autoAnim(x.mesh, rdt)); }
   // animation: building pop-in, light flicker
   for (const b of G.buildings) {
@@ -2093,4 +2130,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__api = { tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__api = { startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };

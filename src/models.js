@@ -278,6 +278,7 @@ export const BUILDINGS = {
   smelter: { name: 'Smeltery',                w: 3, d: 2, cost: 350, renown: 3, rank: 1, icon: '🔩', desc: 'Smelts 2 Iron Ore into 1 Ingot. Steel and Mythril weapons need ingots. Next to a Forge: +25% speed for both.' },
   tower:   { name: 'Guard Tower',              w: 2, d: 2, cost: 400, renown: 3, rank: 1, icon: '🗼', desc: 'Archers add +6 defense and fight beside your guards when raiders attack.' },
   market:  { name: 'Market Stall',             w: 3, d: 2, cost: 120, renown: 0, icon: '🛒', desc: 'Buy raw materials. Boosts passive gold slightly.' },
+  cottage: { name: 'Cottage',                 w: 2, d: 2, cost: 140, renown: 1, rank: 1, icon: '🏠', desc: 'Homes for villagers: +1 population capacity, a family moves in and pays a little tax.' },
   tent:    { name: 'Hero Tent',                w: 2, d: 2, cost: 80,  renown: 0, icon: '⛺', desc: 'Cheap lodging: +3 population capacity.' },
   // decor / minor facilities
   garden:  { name: 'Herb Garden',              w: 3, d: 2, cost: 90,  renown: 0, icon: '🌿', desc: 'Planter boxes: +1 Herb every few seconds.', decor: true },
@@ -536,6 +537,7 @@ export function buildBuilding(type, variant = 0) {
     case 'campfire': return campfire();
     case 'weapons': return grp(at(weaponRack(), 0, 0, 0), at(shieldRack(), 0, 0, 0).translateX(0));
     case 'cart': return grp(at(cartProp(0), -0.7, 0, 0), at(cartProp(1), 0.7, 0, 0.6).rotateY(-0.4));
+    case 'cottage': { const g = new THREE.Group(); g.add(vox(1.7, 0.2, 1.5, 0x8a8f98, 0, 0, 0), vox(1.5, 0.85, 1.3, PLASTER, 0, 0.2, 0), vox(0.34, 0.6, 0.06, 0x6b4a2a, 0, 0.2, 0.67), vox(0.3, 0.3, 0.06, 0x8fd4ff, -0.5, 0.55, 0.67, 0xffd24a, 0.4), vox(0.3, 0.3, 0.06, 0x8fd4ff, 0.5, 0.55, 0.67, 0xffd24a, 0.4), vox(0.26, 0.5, 0.26, 0x8a8f98, 0.5, 1.0, -0.3)); g.add(roof(1.9, 1.7, 0.8, SHINGLE, 1.05, 'x')); return g; }
     case 'lamp': return lantern();
     case 'fountain': { const g = new THREE.Group(); g.add(cyl(0.95, 1.0, 0.3, 0x9aa0a8, 0, 0, 0, 16), cyl(0.82, 0.82, 0.08, 0x3b8fd8, 0, 0.26, 0, 16, 0x1d5fa8, 0.5), cyl(0.18, 0.22, 0.9, 0xb8bcc4, 0, 0.3, 0, 10), cyl(0.5, 0.2, 0.14, 0xb8bcc4, 0, 1.0, 0, 12), cyl(0.4, 0.4, 0.05, 0x6bbcff, 0, 1.12, 0, 12, 0x3b8fd8, 0.6), sph(0.1, 0xbfe4ff, 0, 1.2, 0, 0x6bbcff, 0.8)); g.position.set(0, 0, 0); return g; }
     case 'banner': return grp(vox(0.08, 2.2, 0.08, 0x5a3a1a, 0, 0, 0), vox(0.6, 0.9, 0.04, 0xc0392b, 0.34, 1.2, 0), vox(0.5, 0.08, 0.05, GOLD_B, 0.34, 2.05, 0), vox(0.18, 0.18, 0.05, GOLD_B, 0.34, 1.55, 0.03), sph(0.07, GOLD_B, 0, 2.2, 0));
