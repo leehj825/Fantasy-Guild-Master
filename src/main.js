@@ -644,8 +644,24 @@ function dispatch(qid, enchant, partyOverride, extra = {}) {
   sfx('horn'); toast(`Party of ${party.length} dispatched: ${q.name}`);
   renderModal(true);
 }
+// ---- sending parties in bulk: "Send all possible" and the optional auto-queue (min success chance in G.flags.autoMin)
+function sendAll(minChance = 0, quiet = false) {
+  let sent = 0;
+  for (let guard = 0; guard < 12; guard++) {
+    const opts = G.quests.filter(q => q.state === 'open' && !q.special).map(q => { const party = bestParty(q); return { q, party, c: party.length >= q.minH ? chanceFor(q, party, { potion: false }) : -1 }; }).filter(o => o.c >= minChance / 100 && o.c >= 0).sort((a, b) => b.c - a.c);
+    if (!opts.length) break; dispatch(opts[0].q.id, false, opts[0].party); sent++;
+  }
+  if (sent && !quiet) toast(`📜 Sent ${sent} part${sent > 1 ? 'ies' : 'y'} out.`); else if (!sent && !quiet) toast('No quest has enough ready heroes right now.');
+  return sent;
+}
+let autoT = 0;
+function tickAuto(dt) { if (!G.flags.autoQ) return; autoT -= dt; if (autoT > 0) return; autoT = 3; if (sendAll(G.flags.autoMin || 60, true)) renderModal(true); }
+// ---- notifications (only while the page is hidden; needs the browser's permission)
+function notify(title, body) {
+  try { if (G.flags.notif && document.hidden && typeof Notification !== 'undefined' && Notification.permission === 'granted') new Notification(tr(title), { body: tr(body || '') }); } catch (e) { /* unsupported */ }
+}
 function resolveQuest(q) {
-  const ok = q.ok; sfx(ok ? 'win' : 'lose');
+  const ok = q.ok; sfx(ok ? 'win' : 'lose'); notify(ok ? '🏆 Quest complete' : '☠ Quest failed', q.name);
   onQuestEnd(q, ok);
   const hp = new THREE.Vector3(HALL.cx + 2.5, 0, HALL.cz + 5);
   q.state = 'done'; G.quests.splice(G.quests.indexOf(q), 1);
@@ -827,7 +843,7 @@ function startRaid() {
   const { party } = defenderParty(false);
   const q = { id: G.nextId++, name: bossRaid ? 'Warchief Raid at the Gates' : 'Raid at the Gates', type: 'defense', defense: true, state: 'active', heroes: [], party, raidCount: count, bossRaid, minH: Math.max(1, Math.min(3, count - 1)), maxH: 4, dur: 28, t: 28, gold: 0, renown: 0, loot: {}, mods: [], heals: [], deaths: [], enchant: false, seed: (Math.random() * 1e9) | 0, special: true };
   q.chance = Math.max(0.05, Math.min(0.97, defense(false) / raidThreat(q))); q.ok = Math.random() < q.chance; q.script = genScript(q); G.quests.push(q); G.alarm = false;
-  sfx('raid'); showBanner('raid', `👹 ${bossRaid ? 'WARCHIEF RAID' : 'Raid'}! ${count} raiders at the gates — odds ${Math.round(q.chance * 100)}%`, [['Muster heroes', 'alarm', 'red'], ['Watch', 'watchRaid', '']]);
+  sfx('raid'); notify('👹 Raid!', 'Raiders are at the gates of your guild.'); showBanner('raid', `👹 ${bossRaid ? 'WARCHIEF RAID' : 'Raid'}! ${count} raiders at the gates — odds ${Math.round(q.chance * 100)}%`, [['Muster heroes', 'alarm', 'red'], ['Watch', 'watchRaid', '']]);
   toast(bossRaid ? '🐗 A warchief leads the raiders!' : 'Raiders at the perimeter!');
 }
 function defense(muster) {
@@ -968,6 +984,7 @@ function updateEconomy(dt) {
     t.spawn = Math.max(18, 45 - G.renown * 0.3) / (first('portal') ? 2 : 1);
     if (ofType('tavern').length && G.heroes.length < popCap()) spawnHero();
   }
+  tickAuto(dt);
   // quests
   t.quest -= dt;
   if (t.quest <= 0) { t.quest = 14; if (G.quests.filter(q => q.state === 'open').length < boardSlots()) genQuest(); }
@@ -1050,6 +1067,7 @@ function updateHUD() {
   $('hRenown').textContent = G.renown;
   $('hMana').textContent = G.mana;
   $('hPop').textContent = `${G.heroes.length}/${popCap()}`;
+  $('hReady').textContent = readyHeroes().length; $('hOpen').textContent = G.quests.filter(q => q.state === 'open').length;
   { const r = G.rare; $('hRare').classList.toggle('hidden', !(r.mythril || r.scale || r.feather)); $('hMyth').textContent = r.mythril; $('hScale').textContent = r.scale; $('hFeather').textContent = r.feather; }
   $('hIngot').classList.toggle('hidden', !first('smelter') && G.ingots === 0); $('hIng').textContent = G.ingots;
   $('hOre').textContent = G.ore; $('hWood').textContent = G.wood; $('hHerbs').textContent = G.herbs;
@@ -1113,6 +1131,7 @@ function modalContent() {
       const rd = readyHeroes();
       const open = G.quests.filter(q => q.state === 'open'), act = G.quests.filter(q => q.state === 'active');
       let h = `<div class="s">Ready heroes (geared & rested): <b>${rd.length}</b> / ${G.heroes.length}</div>`;
+      h += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0"><button class="act" data-act="sendall">▶ Send all possible</button><button class="act ${G.flags.autoQ ? '' : 'red'}" data-act="autoq">${G.flags.autoQ ? '⏱ Auto-send: ON' : '⏱ Auto-send: OFF'}</button>${G.flags.autoQ ? `<button class="act red" data-act="automin">min ${G.flags.autoMin || 60}%</button>` : ''}</div>`;
       if (first('portal')) {
         const dq = G.quests.find(q => q.dive);
         h += `<div class="sec">Waystone Portal</div><div class="row" style="border-color:#b070ff"><div style="font-size:30px">🌀</div><div class="grow"><div class="t">Endless Dive</div><div class="s">Send 2–4 geared heroes through the portal. Floors get harder forever: <b>recall to bank your loot</b> or fight on for rare materials (💎 🐉 🪶). Loot is banked automatically every 5 floors; a wipe-out loses what is unbanked. Best: floor ${G.diveBest}.</div></div><button class="act" data-act="dive" ${dq || rd.length < 2 ? 'disabled' : ''}>${dq ? 'In progress' : (rd.length < 2 ? 'Need 2 ready' : 'Dive!')}</button></div>`;
@@ -1145,6 +1164,7 @@ function modalContent() {
     case 'settings': return ['⚙ Settings & Save', `
       <div class="row"><div class="grow"><div class="t">🔊 Sound</div><div class="s">Procedural sound effects and music (no downloads).</div></div><button class="act ${getPrefs().sfx ? '' : 'red'}" data-act="sfxtoggle">Effects: ${getPrefs().sfx ? 'On' : 'Off'}</button><button class="act ${getPrefs().music ? '' : 'red'}" data-act="musictoggle">Music: ${getPrefs().music ? 'On' : 'Off'}</button></div>
       <div class="row"><div class="grow"><div class="t">🌐 Language</div><div class="s">English / 한국어</div></div>${Object.entries(LANGS).map(([k, n]) => `<button class="act ${getLang() === k ? '' : 'red'}" style="${getLang() === k ? 'outline:2px solid #fff8' : ''}" data-act="lang" data-l="${k}">${n}</button>`).join('')}</div>
+      <div class="row"><div class="grow"><div class="t">🔔 Notifications</div><div class="s">Alert when a quest ends or a raid arrives while the game is in the background (browser only; needs permission).</div></div><button class="act ${G.flags.notif ? '' : 'red'}" data-act="notiftoggle">${G.flags.notif ? 'On' : 'Off'}</button></div>
       <div class="row"><div class="grow"><div class="t">🧍 Characters</div><div class="s">Body style. Rigged bodies use motion-capture clips (walk, run, sword, bow, magic, heal). Changing it reloads the game (progress is saved).</div></div>${Object.entries(CHAR_STYLES).map(([k, n]) => `<button class="act ${charStyle === k ? '' : 'red'}" style="${charStyle === k ? 'outline:2px solid #fff8' : ''}" data-act="cstyle" data-s="${k}">${n}</button>`).join('')}</div>
       <div class="row"><div class="grow"><div class="t">💾 Save</div><div class="s">The game autosaves every 15 seconds and when you leave. Last save: ${lastSaved ? Math.round((Date.now() - lastSaved) / 1000) + 's ago' : 'not yet'}.</div></div><button class="act" data-act="save">Save now</button></div>
       <div class="row"><div class="grow"><div class="t">🎓 Tutorial</div><div class="s">Show the first-run guide again.</div></div><button class="act" data-act="tutorial">Replay</button></div>
@@ -1287,6 +1307,10 @@ const ACT = {
   place(d) { startPlacement(d.k); closeModal(); },
   moveB(d) { const b = G.buildings.find(x => x.id === +d.id); if (b && b.type !== 'hall') { startPlacement(b.type, b); closeModal(); } },
   dispatch(d) { dispatch(+d.q, false); },
+  sendall() { sendAll(0); },
+  autoq() { G.flags.autoQ = G.flags.autoQ ? 0 : 1; toast(G.flags.autoQ ? '⏱ Auto-send on: parties leave when the odds are good.' : 'Auto-send off.'); },
+  automin() { const o = [40, 50, 60, 70, 80, 90], i = o.indexOf(G.flags.autoMin || 60); G.flags.autoMin = o[(i + 1) % o.length]; },
+  notiftoggle() { G.flags.notif = G.flags.notif ? 0 : 1; if (G.flags.notif && typeof Notification !== 'undefined' && Notification.permission === 'default') Notification.requestPermission(); if (G.flags.notif && typeof Notification === 'undefined') toast('This device does not support notifications.'); },
   dispatchE(d) { dispatch(+d.q, true); },
   flyer() { if (G.gold >= 60 && spawnHero()) { G.gold -= 60; toast('A new hero answers your flyer!'); } },
   hire(d) { const c = staffCost(d.k); if (G.gold >= c && G.staff[d.k] < maxStaff) { G.gold -= c; G.staff[d.k]++; } },
@@ -1667,7 +1691,7 @@ $('wBack').onclick = endWatch; $('pipFrame').onclick = endWatch;
 $('wFollow').onclick = () => { if (watching) { watching.follow = !watching.follow; updateWatchHUD(); } };
 $('wPipBtn').onclick = () => { if (watching) { watching.pip = !watching.pip; updateWatchHUD(); } };
 $('wSpeed').onclick = () => $('speedBtn').click();
-$('wRelic').onclick = () => openModal('relic'); $('wEnchant').onclick = watchEnchant; $('wPotion').onclick = watchPotion; $('wRecall').onclick = watchRecall;
+$('wRelic').onclick = () => openModal('relic'); $('wEnchant').onclick = watchEnchant; $('wPotion').onclick = watchPotion; $('wRecall').onclick = watchRecall; $('readyPill').onclick = () => openModal('quests');
 function renderPip() {
   const w = watching; if (!w || w.exiting || !w.pip || !watchSaved) return;
   const r = $('pipFrame').getBoundingClientRect(); if (r.width < 10) return;

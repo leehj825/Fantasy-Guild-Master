@@ -116,6 +116,13 @@ const BUILD = {
 };
 
 const PROG = {
+  '▶ Send all possible': '▶ 가능한 모두 파견', '⏱ Auto-send: ON': '⏱ 자동 파견: 켜짐', '⏱ Auto-send: OFF': '⏱ 자동 파견: 꺼짐',
+  'Notifications': '알림', 'On': '켜짐', 'Off': '꺼짐', 'No quest has enough ready heroes right now.': '지금은 파견할 준비된 영웅이 충분한 퀘스트가 없습니다.',
+  '⏱ Auto-send on: parties leave when the odds are good.': '⏱ 자동 파견 켜짐: 성공 확률이 좋으면 파티가 출발합니다.', 'Auto-send off.': '자동 파견 꺼짐.',
+  'Alert when a quest ends or a raid arrives while the game is in the background (browser only; needs permission).': '게임이 백그라운드일 때 퀘스트가 끝나거나 약탈이 오면 알려줍니다(브라우저 전용, 권한 필요).',
+  'This device does not support notifications.': '이 기기는 알림을 지원하지 않습니다.', '🏆 Quest complete': '🏆 퀘스트 완료', '☠ Quest failed': '☠ 퀘스트 실패', '👹 Raid!': '👹 약탈!', 'Raiders are at the gates of your guild.': '약탈자들이 길드 문 앞에 왔습니다.',
+  'Ready heroes / open quests (tap for the quest board)': '준비된 영웅 / 열린 퀘스트 (눌러서 퀘스트 보드 열기)',
+
   'Move building (free)': '건물 이동 (무료)', '🧭 Move building (free)': '🧭 건물 이동 (무료)', 'Move': '이동',
 
   'Characters': '캐릭터', 'Rigged · blocky': '관절형 · 각진 몸', 'Rigged · rounded': '관절형 · 둥근 몸', 'Classic': '클래식',
