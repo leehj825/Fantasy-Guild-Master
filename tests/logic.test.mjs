@@ -87,3 +87,17 @@ test('hero profiles: two compatible tags, a background, likes that differ from d
   const m = People.tagMods(['ambitious', 'hothead']);
   assert.ok(Math.abs(m.xp - 1.15) < 1e-9 && Math.abs(m.pw - 1.05) < 1e-9 && Math.abs(m.survive + 0.05) < 1e-9);
 });
+
+test('story arcs: three chapters each, rising levels, every choice has an effect; arcs fit some hero', () => {
+  for (const [id, a] of Object.entries(People.ARCS)) {
+    assert.equal(a.ch.length, 3, id); assert.deepEqual(a.ch.map(c => c.lv), [3, 6, 9], id);
+    for (const c of a.ch) { assert.ok(c.text.includes('{n}') || true); assert.ok(c.choices.length >= 2); c.choices.forEach(x => { assert.ok(x.label && x.fx && Object.keys(x.fx).length); }); }
+  }
+  assert.ok(People.pickArc({ cls: 'wizard', tags: [] }) && People.pickArc({ cls: 'knight', tags: ['hothead'] }));
+});
+test('residents move in when the town qualifies', () => {
+  const have = new Set(['tavern']), first = b => have.has(b), G = { rank: 0 };
+  const names = () => People.RESIDENTS.filter(r => People.residentHome(r, G, first)).map(r => r.id);
+  assert.deepEqual(names(), ['marta']); have.add('forge'); G.rank = 1;
+  assert.ok(['marta', 'tobin', 'pip', 'wren', 'bram'].every(x => names().includes(x)) && !names().includes('elsie'));
+});

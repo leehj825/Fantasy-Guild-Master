@@ -2,7 +2,7 @@ import * as THREE from '../vendor/three.module.js';
 import { buildChar, factionDecor, BUILDINGS, buildBuilding, buildHero, buildStaff, buildGoblin, buildMerchantCart, vox, mat, PROPS, setCharMaker } from './models.js';
 import { makeRigChar, makeRigGolem, makeRigOgre, autoAnim } from './rigchar.js';
 import { createTutorial } from './tutorial.js';
-import { TAGS, makeProfile, tagMods, SEASON_NAMES, RESIDENTS, residentHome } from './people.js';
+import { TAGS, makeProfile, tagMods, SEASON_NAMES, RESIDENTS, residentHome, ARCS, pickArc } from './people.js';
 import { sfx, unlock, setPref, getPrefs, setMusicMood, audioState } from './audio.js';
 import { tr, trHtml, initLang, setLang, getLang, onLangChange, translateStatic, LANGS } from './i18n.js';
 import { Expedition, questEnd, setBigMakers, genScript, STAGE_X, heroHp, phaseText, newDiveScript, ensureFloors, rebuildDive, diveFloorIndex, diveCheckpoint, rewardText, RELICS, relicMods, relicOffer } from './expedition.js';
@@ -324,6 +324,8 @@ const talentSlots = h => (h.level >= 3 ? 1 : 0) + (h.level >= 6 ? 1 : 0);
 const talentDef = (cls, id) => TALENTS[cls].flat().find(t => t[0] === id);
 function heroMods(h) {
   const m = { pw: 1, pwType: {}, survive: 0, loot: 0, mana: 0, decay: 0, succ: 0, xp: 1, happy: 1 };
+  if (h.boon) { m.pw *= h.boon.pw || 1; m.succ += h.boon.succ || 0; m.loot += h.boon.loot || 0; m.survive += h.boon.survive || 0; }
+  if ((h.loy ?? 60) >= 80) m.pw *= 1.04; else if ((h.loy ?? 60) <= 25) m.pw *= 0.96;
   { const tm = tagMods(h.tags); m.pw *= tm.pw; m.survive += tm.survive; m.loot += tm.loot; m.decay += tm.decay; m.succ += tm.succ; m.xp = tm.xp; m.happy = tm.happy; }
   if (h.promo) { const P = PROMO[h.cls]; m.pw *= P.pw; m.survive += P.survive || 0; m.loot += P.loot || 0; m.mana += P.mana || 0; }
   for (const id of h.talents || []) { const t = talentDef(h.cls, id); if (!t) continue; const f = t[3]; if (f.pw) m.pw *= f.pw; if (f.pwType) for (const k of Object.keys(f.pwType)) m.pwType[k] = (m.pwType[k] || 1) * f.pwType[k]; m.survive += f.survive || 0; m.loot += f.loot || 0; m.mana += f.mana || 0; m.decay += f.decay || 0; m.succ += f.succ || 0; }
@@ -365,7 +367,7 @@ function bondGrow(heroes, ok) {
   for (let i = 0; i < heroes.length; i++) for (let j = i + 1; j < heroes.length; j++) { const a = heroes[i], b = heroes[j]; if (!G.heroes.includes(a) || !G.heroes.includes(b)) continue; const v = (a.aff || {})[b.id] || 0; addAff(a, b, ok ? (v < 0 ? 8 : 6) : (v < 0 ? -4 : 2)); }
 }
 function grieve(dead) {   // the death of a close companion hurts
-  for (const h of G.heroes) { if (h === dead) continue; const v = (h.aff || {})[dead.id] || 0; if (v < 40) continue; h.happy = Math.max(0, h.happy - 25); floatText(h.pos, '💔', '#ff7a7a'); toast(`💔 ${h.name} mourns ${dead.name}.`); if (Math.random() < 0.4) { h.vow = dead.name; } delete h.aff[dead.id]; if (h.bonds) delete h.bonds[dead.id]; }
+  for (const h of G.heroes) { if (h === dead) continue; const v = (h.aff || {})[dead.id] || 0; if (v < 40) continue; h.happy = Math.max(0, h.happy - 25); h.loy = Math.max(0, (h.loy ?? 60) - 3); floatText(h.pos, '💔', '#ff7a7a'); toast(`💔 ${h.name} mourns ${dead.name}.`); if (Math.random() < 0.4) { h.vow = dead.name; } delete h.aff[dead.id]; if (h.bonds) delete h.bonds[dead.id]; }
 }
 function bondInfo(party) {
   let d = 0; const notes = [], PAIR = { friend: [0.04, '🤝'], sweet: [0.06, '💘'], mentor: [0.05, '🎓'], apprentice: [0.05, '🎓'], rival: [-0.05, '⚡'] };
@@ -401,6 +403,7 @@ function createHero(d) {
     mesh, pos: mesh.position, bub, state: 'idle', target: null, onArrive: null, timer: 0, onDone: null, cool: 0, phase: Math.random() * 6, vis: true,
   };
   if (d.tags) { h.tags = d.tags; h.bio = d.bio; h.likes = d.likes; h.dislikes = d.dislikes; } else Object.assign(h, makeProfile(h.cls));
+  h.loy = d.loy ?? 60; h.title = d.title || null; h.boon = d.boon || null; h.arc = d.arc || { id: pickArc(h), ch: 0 };
   mesh.userData.hid = h.id; G.heroes.push(h); if (h.vip) addStar(h); if (h.promo) addPromoGear(h); if (d.bonds === undefined) assignBonds(h); else if (!h.aff) { h.aff = {}; for (const [id, k] of Object.entries(h.bonds || {})) h.aff[id] = k === 'rival' ? -35 : 35; }
   return h;
 }
@@ -716,6 +719,7 @@ function resolveQuest(q) {
     h.quests = (h.quests || 0) + 1;
     if (ok) gainXp(h, traitOf(h) === 'scholar' ? 2 : 1);
     if (ok && h.bonds && Object.entries(h.bonds).some(([id, k]) => k === 'apprentice' && q.heroes.some(x => x.id === +id))) gainXp(h, 1);   // a mentor in the party teaches
+    h.loy = Math.max(0, Math.min(100, (h.loy ?? 60) + (ok ? 1 : -1)));
     if (ok && h.vow) { h.happy = Math.min(100, h.happy + 20); chron(`🗡 ${h.name} honoured ${h.vow}.`); toast(`🗡 ${h.name} honoured ${h.vow}'s memory.`); h.vow = null; }
     if (h.likes && h.likes.type === q.type) { h.happy = Math.min(100, h.happy + 8); floatText(h.pos, '💕', '#ff9ac8'); } else if (h.dislikes && h.dislikes.type === q.type) { h.happy = Math.max(0, h.happy - 8); floatText(h.pos, '💢', '#ff7a7a'); }
     if (Math.random() < (ok ? 0.5 : 1)) h.gear = false;
@@ -1036,7 +1040,7 @@ function updateEconomy(dt) {
   // quests
   t.quest -= dt;
   if (t.quest <= 0) { t.quest = 14; if (G.quests.filter(q => q.state === 'open').length < boardSlots()) genQuest(); legendTick(); }
-  townTick(dt);
+  townTick(dt); tickPeople(dt);
   for (const q of [...G.quests]) if (q.state === 'active') { if (q.dive) diveTick(q, dt); else { q.t -= dt; if (q.t <= 0 || q.dur - q.t >= questEnd(q)) (q.defense ? resolveDefense(q) : resolveQuest(q)); } }
   // events
   t.merchant -= dt; if (t.merchant <= 0) { t.merchant = rnd(150, 220); if (G.renown >= 2 && !G.merchant) startMerchant(); }
@@ -1157,6 +1161,36 @@ function townTick(dt) {
   const who = residents.map(r => r.def.name), opts = TOWN_JOBS.filter(j => who.includes(j.who) && !G.quests.some(q => q.name === j.name)); if (!opts.length) return;
   const j = pick(opts), q = makeQuest({ type: j.type, minH: 1, mods: [], name: j.name, goldMul: 0.5 }); q.town = true; q.who = j.who; q.dur = Math.round(rnd(20, 30)); q.diff *= 0.6; q.rep = 3; q.renown = Math.max(0, q.renown - 1);
   toast(`🏘 ${j.who} has a request: ${j.name}`);
+}
+// ---- personal stories, loyalty and conflict
+const sub = (t, h) => t.replace(/\{n\}/g, h.name);
+function applyFx(h, fx) {
+  if (fx.loy) h.loy = Math.max(0, Math.min(100, (h.loy ?? 60) + fx.loy)); if (fx.happy) h.happy = Math.max(0, Math.min(100, h.happy + fx.happy)); if (fx.stamina) h.stamina = Math.max(0, Math.min(100, h.stamina + fx.stamina));
+  if (fx.rep) repGain(fx.rep); if (fx.renown) G.renown += fx.renown; if (fx.gold) G.gold += fx.gold;
+  if (fx.boon) { const b = (h.boon = h.boon || {}); for (const [k, v] of Object.entries(fx.boon)) { if (k === 'pw') b.pw = (b.pw || 1) * v; else b[k] = (b[k] || 0) + v; } }
+  if (fx.title) h.title = fx.title; if (fx.chron) chron('📖 ' + sub(fx.chron, h));
+}
+function storyChapter(h) { const a = ARCS[h.arc && h.arc.id]; return a && h.arc.ch < a.ch.length ? a.ch[h.arc.ch] : null; }
+let storyT = 6, stepT = 0;
+function tickPeople(dt) {
+  stepT += dt; storyT -= dt;
+  if (stepT >= 5) {   // loyalty drifts with mood
+    stepT = 0; for (const h of G.heroes) { const l = h.loy ?? 60; h.loy = Math.max(0, Math.min(100, l + (h.happy > 70 ? 0.5 : h.happy < 35 ? -1 : 0))); }
+  }
+  if (storyT > 0) return; storyT = 8;
+  if (!G.flags.hs) {   // a hero has reached their next chapter
+    const h = G.heroes.find(x => x.state !== 'quest' && x.state !== 'leaving' && storyChapter(x) && x.level >= storyChapter(x).lv);
+    if (h) { G.flags.hs = h.id; showBanner('hstory', `📖 ${h.name} has something to tell you.`, [['Listen', 'hstoryopen', '']]); sfx('chime'); }
+  }
+  if (!G.flags.poach && Math.random() < 0.2) {   // a rival guild tries to hire a disloyal hero
+    const h = G.heroes.find(x => (x.loy ?? 60) < 30 && x.state !== 'quest');
+    if (h) { G.flags.poach = h.id; showBanner('poach', `📨 A rival guild is trying to hire ${h.name}!`, [['Counter-offer (−200g)', 'poachPay', 'red'], ['Let them go', 'poachGo', '']]); }
+  }
+  for (const h of G.heroes.slice()) if ((h.loy ?? 60) <= 5 && h.state !== 'quest') { chron(`🚪 ${h.name} left the guild for good.`); return removeHero(h, `🚪 ${h.name} lost faith in the guild and left.`); }
+  if (Math.random() < 0.1) {   // two rivals quarrel
+    const idle = G.heroes.filter(x => x.state !== 'quest' && x.state !== 'leaving'), pair = []; for (const a of idle) for (const [id, k] of Object.entries(a.bonds || {})) { const b = idle.find(x => x.id === +id); if (k === 'rival' && b && a.id < b.id) pair.push([a, b]); }
+    if (pair.length) { const [a, b] = pick(pair); a.happy = Math.max(0, a.happy - 10); b.happy = Math.max(0, b.happy - 10); a.loy = Math.max(0, (a.loy ?? 60) - 2); b.loy = Math.max(0, (b.loy ?? 60) - 2); addAff(a, b, -5, true); floatText(a.pos, '💢', '#ff7a7a'); floatText(b.pos, '💢', '#ff7a7a'); toast(`💢 ${a.name} and ${b.name} had a loud quarrel.`); }
+  }
 }
 const SCENE = {
   friend: { e: ['🤝', '😄'], a: ['Care to share a table?', 'Good to see you!'], b: ['Always!', 'Pull up a chair.'] },
@@ -1336,6 +1370,10 @@ function modalContent() {
       h += `<div class="sec">Export / import</div><textarea id="saveText" rows="4" style="width:100%;box-sizing:border-box;font:11px monospace" placeholder="Press Export, or paste a save here and press Import">${saveBuf}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="act" data-act="exportsave">Export</button><button class="act red" data-act="importsave">Import (replaces your guild)</button></div>`;
       return ['💾 Save slots', h];
     }
+    case 'heroStory': {
+      const h = G.heroes.find(x => x.id === modalArg), ch = h && storyChapter(h); if (!h || !ch) return ['', '<div class="s">No story to tell right now.</div>'];
+      return ['📖 ' + ARCS[h.arc.id].title, `<div class="s" style="font-size:14px;line-height:1.5">${sub(tr(ch.text), h)}</div>` + ch.choices.map((c, i) => `<div class="row" style="border-color:#c9a0ff"><div class="grow"><div class="t">${sub(tr(c.label), h)}</div></div><button class="act" data-act="hstorypick" data-i="${i}" ${c.cost && G.gold < c.cost ? 'disabled' : ''}>Choose</button></div>`).join('')];
+    }
     case 'resident': {
       const def = RESIDENTS.find(x => x.id === modalArg); if (!def) return ['', ''];
       let h = `<div class="row"><div style="font-size:34px">${def.icon}</div><div class="grow"><div class="t">${def.name}</div><div class="s">${def.role}</div></div></div><div class="s" style="margin:6px 0">${def.bio}</div><div class="s" style="font-size:14px">“${def.lines[Math.floor(G.time / 20) % def.lines.length]}”</div>`;
@@ -1400,6 +1438,9 @@ function modalContent() {
       if (h.vow) body += `<div class="s" style="color:#ffb0b0">🗡 Has sworn to honour ${h.vow}.</div>`;
       if (tr) body += `<div class="row" style="border-color:#ffd24a"><div style="font-size:30px">${tr.icon}</div><div class="grow"><div class="t">VIP trait: ${tr.label}</div><div class="s">${tr.desc}</div></div></div>`;
       if (h.tags) { const L = h.likes || {}, D = h.dislikes || {}; body += `<div class="row"><div class="grow"><div class="t">Personality</div><div class="s">${h.tags.map(t => `<span class="tag" title="${TAGS[t].desc}">${TAGS[t].icon} ${TAGS[t].label}</span>`).join(' ')}</div><div class="s" style="margin-top:4px">${h.bio[0]}</div><div class="s" style="margin-top:4px">❤ Likes: ${L.type} quests · ${L.bld && BUILDINGS[L.bld] ? BUILDINGS[L.bld].name : ''} · ${SEASON_NAMES[L.season]} · ${L.food}</div><div class="s">💢 Dislikes: ${D.type} quests · ${SEASON_NAMES[D.season]}</div></div></div>`; }
+      { const ch = storyChapter(h), A = ARCS[h.arc && h.arc.id], ready = ch && h.level >= ch.lv;
+        body += `<div class="s" style="margin-top:6px">Loyalty ${Math.round(h.loy ?? 60)}${(h.loy ?? 60) >= 80 ? ' · devoted (+4% power)' : (h.loy ?? 60) <= 25 ? ' · restless (−4% power)' : ''}</div>${bar(h.loy ?? 60, '#ff9ac8')}`;
+        if (A) body += `<div class="row" style="border-color:#c9a0ff"><div style="font-size:26px">📖</div><div class="grow"><div class="t">${A.title}${h.title ? ' · ' + h.title : ''}</div><div class="s">Chapter ${Math.min(h.arc.ch + 1, A.ch.length)}/${A.ch.length}${!ch ? ' · complete' : ready ? ' · ready' : ' · unlocks at level ' + ch.lv}</div></div>${ready && !h.vip ? '' : ''}${ready ? `<button class="act" data-act="hstoryopen" data-id="${h.id}">Read</button>` : ''}</div>`; }
       body += `<div class="s" style="margin-top:6px">Experience ${h.xp}/${h.level + 1}</div>${bar(h.xp / (h.level + 1) * 100, '#8fd4ff')}
         <div class="s" style="margin-top:6px">Stamina ${Math.round(h.stamina)}</div>${bar(h.stamina, h.stamina < 45 ? '#e0503a' : '#5be35b')}
         <div class="s" style="margin-top:6px">Happiness ${Math.round(h.happy)}</div>${bar(h.happy, h.happy < 30 ? '#e0503a' : '#f0c040')}
@@ -1498,6 +1539,10 @@ const ACT = {
   sendall() { sendAll(0); },
   chron() { openModal('chronicle'); },
   relmap() { openModal('relmap'); },
+  hstoryopen(d) { const id = d.id ? +d.id : G.flags.hs; if (id) openModal('heroStory', id); },
+  hstorypick(d) { const h = G.heroes.find(x => x.id === modalArg), ch = h && storyChapter(h), c = ch && ch.choices[+d.i]; if (!c) return; if (c.cost && G.gold < c.cost) return toast('Not enough gold.'); if (c.cost) G.gold -= c.cost; applyFx(h, c.fx); h.arc.ch++; if (G.flags.hs === h.id) { G.flags.hs = null; hideBanner('hstory'); } sfx('goal'); toast(`📖 ${h.name}: ${(h.arc.ch >= ARCS[h.arc.id].ch.length ? 'their story reaches its end.' : 'the story goes on…')}`); closeModal(); },
+  poachPay() { const h = G.heroes.find(x => x.id === G.flags.poach); G.flags.poach = null; hideBanner('poach'); if (!h) return; if (G.gold < 200) { toast('Not enough gold.'); h.loy = Math.max(0, h.loy - 15); return; } G.gold -= 200; h.loy = Math.min(100, (h.loy ?? 60) + 35); h.happy = Math.min(100, h.happy + 15); toast(`🤝 ${h.name} chose to stay.`); },
+  poachGo() { const h = G.heroes.find(x => x.id === G.flags.poach); G.flags.poach = null; hideBanner('poach'); if (!h) return; chron(`🚪 ${h.name} left for a rival guild.`); removeHero(h, `🚪 ${h.name} joined a rival guild.`); },
   saveio() { openModal('saveio'); },
   slotsave(d) { try { saveGame(); localStorage.setItem(SAVE_KEY + '-s' + d.n, localStorage.getItem(SAVE_KEY)); toast(`💾 Saved to slot ${d.n}.`); } catch (e) { toast('Could not save (storage unavailable).'); } },
   slotload(d) { const v = localStorage.getItem(SAVE_KEY + '-s' + d.n); if (!v) return toast('That slot is empty.'); window.__noSave = true; localStorage.setItem(SAVE_KEY, v); location.reload(); },
@@ -1768,7 +1813,7 @@ function serialize() {
   return {
     v: 1, savedAt: Date.now(), g,
     buildings: G.buildings.map(b => ({ type: b.type, cx: b.cx, cz: b.cz, rot: b.rot || 0, level: b.level, stock: b.stock, progress: b.progress })),
-    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, promo: h.promo, talents: h.talents, bonds: h.bonds, aff: h.aff, vow: h.vow, quests: h.quests, vip: h.vip, tags: h.tags, bio: h.bio, likes: h.likes, dislikes: h.dislikes, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
+    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, promo: h.promo, talents: h.talents, bonds: h.bonds, aff: h.aff, vow: h.vow, quests: h.quests, vip: h.vip, tags: h.tags, bio: h.bio, likes: h.likes, dislikes: h.dislikes, loy: h.loy, arc: h.arc, title: h.title, boon: h.boon, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
     quests: G.quests.map(q => { const o = {}; for (const [k, v] of Object.entries(q)) if (k !== 'heroes' && k !== 'script') o[k] = v; o.heroIds = (q.heroes || []).map(h => h.id); return o; }),
     extra: serializeExtra(),
   };
@@ -2048,4 +2093,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__api = { townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__api = { tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };

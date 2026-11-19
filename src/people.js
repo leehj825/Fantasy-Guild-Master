@@ -102,3 +102,49 @@ export const residentHome = (r, G, first) => {   // does the town qualify for th
   if (n.rank && G.rank < n.rank) return false;
   return true;
 };
+
+// ---- personal story lines: three chapters per hero (at levels 3, 6 and 9). {n} stands for the hero's name.
+// fx: loy (loyalty), happy, stamina, rep (town reputation), renown, gold, boon ({pw, succ, loot, survive} kept for good), title, chron (chronicle line)
+export const ARCS = {
+  sibling: { title: 'The Missing Brother', ok: () => true, ch: [
+    { lv: 3, text: '{n} heard a rumour that their brother was last seen on the northern road.', choices: [
+      { label: 'Pay for a search (−100g)', cost: 100, fx: { loy: 15, happy: 10, chron: '{n} began searching for their brother.' } }, { label: 'Say the guild comes first', fx: { loy: -10, happy: -5 } }] },
+    { lv: 6, text: 'A trail leads to a bandit camp. {n} asks to ride out and look.', choices: [
+      { label: 'Give them a free day', fx: { loy: 10, happy: 10, stamina: -20 } }, { label: 'Send help along (−150g)', cost: 150, fx: { loy: 20, rep: 2 } }] },
+    { lv: 9, text: 'The brother is found alive, a changed man. {n} is grateful beyond words.', choices: [
+      { label: 'Invite him to settle in town', fx: { loy: 25, rep: 4, boon: { succ: 0.01 }, title: 'the Reunited', chron: '{n} found their brother and brought him to town.' } }, { label: 'Wish them both well', fx: { loy: 15, boon: { loot: 0.05 }, title: 'the Reunited' } }] },
+  ] },
+  redemption: { title: 'A Second Chance', ok: h => h.cls === 'knight', ch: [
+    { lv: 3, text: '{n} confesses to an old shame: they once abandoned their post.', choices: [
+      { label: 'Forgive them', fx: { loy: 20, happy: 10 } }, { label: 'Ask them to prove themselves', fx: { loy: -5, boon: { survive: 0.03 } } }] },
+    { lv: 6, text: 'A veteran from {n}’s old company arrives and spits at their feet.', choices: [
+      { label: 'Stand by {n}', fx: { loy: 20, rep: -1 } }, { label: 'Let them settle it alone', fx: { loy: 5, happy: -5, boon: { pw: 1.03 } } }] },
+    { lv: 9, text: '{n} saved the veteran’s life on the road. The old shame is gone.', choices: [
+      { label: 'Honour them before the town', fx: { loy: 25, rep: 3, renown: 2, title: 'the Redeemed', boon: { survive: 0.05 }, chron: '{n} was honoured for redeeming their name.' } }, { label: 'Quietly give them a medal', fx: { loy: 15, title: 'the Redeemed', boon: { pw: 1.02 } } }] },
+  ] },
+  forbidden: { title: 'The Forbidden Page', ok: h => h.cls === 'wizard', ch: [
+    { lv: 3, text: '{n} found a torn page of a forbidden spellbook in the market.', choices: [
+      { label: 'Let them study it', fx: { loy: 10, happy: 10, boon: { pw: 1.02 } } }, { label: 'Burn the page', fx: { loy: -10, happy: -10 } }] },
+    { lv: 6, text: 'The page whispers at night. {n} cannot sleep.', choices: [
+      { label: 'Seal it away together', fx: { loy: 15, stamina: -10 } }, { label: 'Let them keep reading', fx: { loy: 5, boon: { succ: 0.01 } } }] },
+    { lv: 9, text: '{n} has mastered the page and bent its power to protect the guild.', choices: [
+      { label: 'Name them Keeper of the Page', fx: { loy: 25, renown: 2, title: 'the Keeper', boon: { pw: 1.04 }, chron: '{n} became the Keeper of the Forbidden Page.' } }, { label: 'Lock the page in the vault', fx: { loy: 15, title: 'the Keeper', boon: { survive: 0.03 } } }] },
+  ] },
+  woods: { title: 'The Call of the Woods', ok: h => h.cls === 'ranger', ch: [
+    { lv: 3, text: '{n} keeps staring toward the forest. Something is calling them.', choices: [
+      { label: 'Let them wander for a day', fx: { loy: 10, happy: 15, stamina: -15 } }, { label: 'Tell them to focus', fx: { loy: -8 } }] },
+    { lv: 6, text: '{n} met a hermit who teaches the old ways of tracking.', choices: [
+      { label: 'Support the lessons (−120g)', cost: 120, fx: { loy: 15, boon: { loot: 0.05 } } }, { label: 'Politely decline', fx: { loy: -3 } }] },
+    { lv: 9, text: 'The forest has chosen {n}: animals follow them like friends.', choices: [
+      { label: 'Let them guard the town edge', fx: { loy: 20, rep: 3, title: 'the Wildcaller', boon: { survive: 0.04 }, chron: '{n} was named Wildcaller by the forest.' } }, { label: 'Take them on bigger hunts', fx: { loy: 15, title: 'the Wildcaller', boon: { loot: 0.08 } } }] },
+  ] },
+  duel: { title: 'An Old Rival', ok: h => (h.tags || []).includes('hothead') || (h.tags || []).includes('proud'), ch: [
+    { lv: 3, text: 'A famous duellist challenged {n} in the tavern.', choices: [
+      { label: 'Let them accept', fx: { loy: 10, happy: 5, stamina: -10 } }, { label: 'Make peace instead', fx: { loy: -5, rep: 2 } }] },
+    { lv: 6, text: '{n} lost the first duel and has been training day and night.', choices: [
+      { label: 'Train with them', fx: { loy: 20, stamina: -15, boon: { pw: 1.02 } } }, { label: 'Tell them to rest', fx: { loy: 5, happy: 5 } }] },
+    { lv: 9, text: 'The rematch drew a crowd. {n} won and shook the duellist’s hand.', choices: [
+      { label: 'Throw a feast in their honour (−150g)', cost: 150, fx: { loy: 25, rep: 4, title: 'the Duellist', boon: { pw: 1.04 }, chron: '{n} won a famous duel before the whole town.' } }, { label: 'Nod and move on', fx: { loy: 10, title: 'the Duellist', boon: { pw: 1.02 } } }] },
+  ] },
+};
+export function pickArc(h, r = Math.random) { const ids = Object.keys(ARCS).filter(id => ARCS[id].ok(h)); return ids[Math.floor(r() * ids.length)]; }

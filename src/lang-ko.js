@@ -274,6 +274,13 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^📖 (.+) has something to tell you\.$/, n => `📖 ${f(n)} 영웅이 할 말이 있습니다.`],
+    [/^📖 (.+): (.+)$/, (n, t) => `📖 ${f(n)}: ${t === 'their story reaches its end.' ? '이야기가 끝을 맞았습니다.' : t === 'the story goes on…' ? '이야기는 계속됩니다…' : f(t)}`],
+    [/^📨 A rival guild is trying to hire (.+)!$/, n => `📨 경쟁 길드가 ${f(n)} 영웅을 데려가려 합니다!`],
+    [/^🤝 (.+) chose to stay\.$/, n => `🤝 ${f(n)} 영웅이 남기로 했습니다.`],
+    [/^🚪 (.+) joined a rival guild\.$/, n => `🚪 ${f(n)} 영웅이 경쟁 길드로 떠났습니다.`],
+    [/^🚪 (.+) lost faith in the guild and left\.$/, n => `🚪 ${f(n)} 영웅이 길드에 대한 믿음을 잃고 떠났습니다.`],
+    [/^💢 (.+) and (.+) had a loud quarrel\.$/, (a, b) => `💢 ${f(a)} 영웅과 ${f(b)} 영웅이 크게 다퉜습니다.`],
     [/^🏘 (.+) has a request: (.+)$/, (w, n) => `🏘 ${f(w)}의 부탁: ${f(n)}`],
     [/^🏘 (.+) thanks you warmly\. \(\+(\d+) town reputation\)$/, (w, n) => `🏘 ${f(w)}이(가) 진심으로 고마워합니다. (마을 평판 +${n})`],
     [/^🏘 The villagers now consider you (.+)!$/, n => `🏘 주민들이 이제 길드를 '${f(n)}'(으)로 여깁니다!`],
