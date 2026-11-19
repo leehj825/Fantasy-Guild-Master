@@ -11,7 +11,11 @@ html,body{margin:0;height:100%;overflow:hidden;background:#2e6b2a;font-family:"T
 #speedBtn{cursor:pointer}
 
 #objectives{position:fixed;top:56px;right:8px;width:210px;background:linear-gradient(#6b4423,#4a2d14);border:2px solid var(--gold);border-radius:8px;padding:8px 10px;z-index:4;box-shadow:0 2px 8px #0008;font-size:13px}
-#objectives h4{margin:0 0 4px;color:var(--gold)}
+#objectives h4{margin:0 0 4px;color:var(--gold);padding-right:30px}
+#objToggle{position:absolute;top:4px;right:4px;width:26px;height:26px;border-radius:50%;border:1px solid #ffd27a88;background:#0005;color:#fff;font-size:13px;cursor:pointer;padding:0;line-height:1}
+#objectives.collapsed{width:auto;padding:4px;background:linear-gradient(#6b4423,#4a2d14)}
+#objectives.collapsed > :not(#objToggle){display:none}
+#objectives.collapsed #objToggle{position:static;width:34px;height:34px;font-size:18px;display:block}
 #objectives ul{margin:0;padding:0;list-style:none}
 #objectives li{padding:2px 0}
 #objectives li.done{opacity:.6;text-decoration:line-through}
