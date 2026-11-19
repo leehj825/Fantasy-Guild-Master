@@ -62,7 +62,7 @@ function bandit(chief) {
   const g = charEnemy(chief
     ? { skin: 0xe6b88a, shirt: 0x55555d, plate: 0x55555d, sleeve: 0x55555d, pants: 0x2a2a2a, hat: 'helm', metal: 0x55555d, plume: 0x8b1d1d, sword: true, cape: 0x6b1d1d, shield: { body: 0x5a3a1a, trim: 0x8b1d1d } }
     : { skin: 0xf0c8a0, shirt: 0x3a3a46, sleeve: 0x3a3a46, pants: 0x2a2a2a, hat: 'hood', hatColor: 0x2a2a30, cape: 0x2a2a30, sword: true }, chief ? 1.45 : 1);
-  if (chief && g.userData.anim) g.userData.clips = { attack: 'slash3', walk: 'walkCalm', walkSpeed: 1.0 };
+  if (chief && g.userData.anim) g.userData.clips = { attack: 'slash3', attacks: ['slash3', 'slash1', 'slash5', 'kick', 'slash3', 'attack2'], walk: 'walkCalm', walkSpeed: 1.0, run: 'runCalm', runSpeed: 1.0 };
   return g;
 }
 function wisp() {
@@ -540,11 +540,14 @@ export class Expedition {
       m.visible = show; o.dead = dying; if (!show) { o.bar.style.display = 'none'; return; }
       const info = m.userData; const approach = clamp((T - appear) / Math.max(0.3, E.a - appear), 0, 1), walking = approach < 1 && !dying;
       if (info.anim) {      // rigged raider: walk in, swing, flinch, fall — all from clips
-        const approach2 = approach, hitsE = this.ehitsBy[k] || [], cl = info.clips || {}, atkName = cl.attack || 'attack1', ci = clipInfo(atkName); let name = 'idleEase', t = T + k * 0.6, atk = null, lunge2 = 0;
-        for (let i = firstAfter(hitsE, T - 1.6); i < hitsE.length; i++) { const s0 = hitsE[i].t - ci.hit; if (s0 > T) break; if (T < s0 + ci.d) atk = T - s0; }
+        const approach2 = approach, hitsE = this.ehitsBy[k] || [], cl = info.clips || {}, list = cl.attacks || [cl.attack || 'attack1']; let name = 'idleEase', t = T + k * 0.6, atk = null, lunge2 = 0, atkName = null, ci = null;
+        for (let i = firstAfter(hitsE, T - 2.6); i < hitsE.length; i++) {      // each blow uses the next clip of the list, so big enemies vary their attacks
+          const nm = list[(i + k) % list.length], c = clipInfo(nm), s0 = hitsE[i].t - c.hit; if (s0 > T) break;
+          if (T < s0 + c.d) { atk = T - s0; atkName = nm; ci = c; }
+        }
         const hh = this.last(this.hitsOnFoe[k], T);
         if (dying) { name = 'die'; t = T - E.D; }
-        else if (atk !== null) { name = atkName; t = atk; lunge2 = -0.9 * Math.sin(clamp(atk / ci.d, 0, 1) * Math.PI); }
+        else if (atk !== null) { name = atkName; t = atk; lunge2 = -(atkName === 'attackJump' ? 1.4 : atkName === 'kick' ? 0.6 : 0.9) * Math.sin(clamp(atk / ci.d, 0, 1) * Math.PI); }
         else if (hh && T - hh.t < 0.7) { name = 'impact'; t = T - hh.t; }
         else if (approach2 < 1) { name = cl.run || 'runCalm'; t = T * (cl.runSpeed || 1.35) + k * 0.4; }
         info.anim.drive(name, t, rdt); m.rotation.set(0, -Math.PI / 2, 0); m.scale.setScalar(m.userData.s0 ??= m.scale.x);

@@ -226,7 +226,7 @@ export function makeRigGolem() {
   g.userData.rig = { root, hips: j.hips, j, hipsRest: J.hips[1] };
   const dummy = () => new THREE.Group(); g.userData.legs = [dummy(), dummy()]; g.userData.arms = [dummy(), dummy()];
   g.userData.anim = new Animator(g.userData.rig);
-  g.userData.clips = { attack: 'attack3', walk: 'walkCalm', walkSpeed: 0.7, run: 'runCalm', runSpeed: 0.9 };     // heavy swing, slow stride
+  g.userData.clips = { attack: 'attack3', attacks: ['attack3', 'attackJump', 'brawlSwipe', 'brawlPunch', 'attack3', 'attack2'], walk: 'walkCalm', walkSpeed: 0.7, run: 'runCalm', runSpeed: 0.9 };     // heavy swing, slow stride
   return g;
 }
 
@@ -261,6 +261,6 @@ export function makeRigOgre() {
   g.userData.rig = { root, hips: j.hips, j, hipsRest: J.hips[1] };
   const dummy = () => new THREE.Group(); g.userData.legs = [dummy(), dummy()]; g.userData.arms = [dummy(), dummy()];
   g.userData.anim = new Animator(g.userData.rig);
-  g.userData.clips = { attack: 'attack3', walk: 'walkCalm', walkSpeed: 0.8, run: 'runCalm', runSpeed: 0.9 };
+  g.userData.clips = { attack: 'attack3', attacks: ['attack3', 'attack2', 'kick', 'brawlSwipe', 'attackJump', 'brawlPunch'], walk: 'walkCalm', walkSpeed: 0.8, run: 'runCalm', runSpeed: 0.9 };
   return g;
 }
