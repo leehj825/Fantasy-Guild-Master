@@ -1,8 +1,8 @@
 import * as THREE from '../vendor/three.module.js';
-import { factionDecor, BUILDINGS, buildBuilding, buildHero, buildStaff, buildGoblin, buildMerchantCart, vox, mat, PROPS, setCharMaker } from './models.js';
+import { buildChar, factionDecor, BUILDINGS, buildBuilding, buildHero, buildStaff, buildGoblin, buildMerchantCart, vox, mat, PROPS, setCharMaker } from './models.js';
 import { makeRigChar, makeRigGolem, makeRigOgre, autoAnim } from './rigchar.js';
 import { createTutorial } from './tutorial.js';
-import { TAGS, makeProfile, tagMods, SEASON_NAMES } from './people.js';
+import { TAGS, makeProfile, tagMods, SEASON_NAMES, RESIDENTS, residentHome } from './people.js';
 import { sfx, unlock, setPref, getPrefs, setMusicMood, audioState } from './audio.js';
 import { tr, trHtml, initLang, setLang, getLang, onLangChange, translateStatic, LANGS } from './i18n.js';
 import { Expedition, questEnd, setBigMakers, genScript, STAGE_X, heroHp, phaseText, newDiveScript, ensureFloors, rebuildDive, diveFloorIndex, diveCheckpoint, rewardText, RELICS, relicMods, relicOffer } from './expedition.js';
@@ -1311,6 +1311,12 @@ function modalContent() {
       h += `<div class="sec">Export / import</div><textarea id="saveText" rows="4" style="width:100%;box-sizing:border-box;font:11px monospace" placeholder="Press Export, or paste a save here and press Import">${saveBuf}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="act" data-act="exportsave">Export</button><button class="act red" data-act="importsave">Import (replaces your guild)</button></div>`;
       return ['💾 Save slots', h];
     }
+    case 'resident': {
+      const def = RESIDENTS.find(x => x.id === modalArg); if (!def) return ['', ''];
+      let h = `<div class="row"><div style="font-size:34px">${def.icon}</div><div class="grow"><div class="t">${def.name}</div><div class="s">${def.role}</div></div></div><div class="s" style="margin:6px 0">${def.bio}</div><div class="s" style="font-size:14px">“${def.lines[Math.floor(G.time / 20) % def.lines.length]}”</div>`;
+      if (def.hint) { const g = GOALS.map((x, i) => [x, i]).find(([, i]) => !G.goalsDone[i]); h += g ? `<div class="sec">Bram’s advice</div><div class="s">“You could try this: <b>${g[0][0]}</b>.”</div>` : '<div class="sec">Bram’s advice</div><div class="s">“You have done everything I have written down. Go write your own story.”</div>'; }
+      return [def.icon + ' ' + def.name, h];
+    }
     case 'relmap': {
       const hs = G.heroes.slice(0, 14), W = 340, H = 300, cx = W / 2, cy = H / 2, R = 108, pos = hs.map((x, i) => [cx + R * Math.cos(i / hs.length * 6.283 - 1.57), cy + R * Math.sin(i / hs.length * 6.283 - 1.57)]);
       const COL = { friend: '#5be35b', sweet: '#ff7ac8', mentor: '#8fd4ff', apprentice: '#8fd4ff', rival: '#e0503a' };
@@ -1634,6 +1640,8 @@ canvas.addEventListener('pointerup', e => {
   if (placing) { const p = groundAt(e.clientX, e.clientY); if (p) { const [cx, cz] = cellFor(p.x, p.z); moveGhost(cx, cz); } return; }
   if (watching) return;
   ptr.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ptr, camera);
+  const rh = ray.intersectObjects(residentGroup.children, true)[0];
+  if (rh) { let o = rh.object; while (o && o.userData.rid === undefined) o = o.parent; if (o) return openModal('resident', o.userData.rid); }
   const hit = ray.intersectObjects(bGroup.children, true)[0], hh = ray.intersectObjects(heroGroup.children.filter(m => m.visible), true)[0];
   if (hh && (!hit || hh.distance < hit.distance + 1.5)) { let o = hh.object; while (o && o.userData.hid === undefined) o = o.parent; if (o) return openModal('hero', o.userData.hid); }
   if (hit) { let o = hit.object; while (o && o.userData.bid === undefined) o = o.parent; if (o) openModal('building', o.userData.bid); }
@@ -1671,6 +1679,38 @@ addEventListener('keydown', e => {
 /* ------------------------------------------------------------------ *
  *  Staff characters (visible employees: dwarf smith, wizard alchemist, cook, bard, guards, porters)
  * ------------------------------------------------------------------ */
+// ---- named residents: villagers with a job who live around the buildings (see people.js); tap one to hear what they have to say
+const residentGroup = new THREE.Group(); scene.add(residentGroup);
+const residents = []; let resSig = '';
+function syncResidents() {
+  const sig = G.buildings.length + ':' + G.rank + ':' + moveVer; if (sig === resSig) return; resSig = sig;
+  for (const def of RESIDENTS) {
+    const here = residents.find(r => r.def === def), ok = residentHome(def, G, first);
+    if (here && !ok) { residentGroup.remove(here.mesh); residents.splice(residents.indexOf(here), 1); }
+    else if (!here && ok) {
+      const mesh = buildChar(def.look); mesh.scale.multiplyScalar(def.scale); const a = residentAnchor(def, 0); mesh.position.set(a.x + rnd(-1, 1), 0, a.z + rnd(0.5, 1.5)); mesh.userData.rid = def.id; residentGroup.add(mesh);
+      residents.push({ def, mesh, pos: mesh.position, path: null, pi: 0, pv: -1, target: null, phase: Math.random() * 6, timer: rnd(0, 3), say: 8 + Math.random() * 10, ai: 0 });
+    }
+  }
+}
+function residentAnchor(def, i) {
+  const names = def.anchor, b = names.map(n => first(n)).filter(Boolean);
+  if (def.anchor[0] === 'hall' || !b.length) return new THREE.Vector3(HALL.cx + 2.5, 0, HALL.cz + 4);
+  const t = b[i % b.length]; return t.door.clone();
+}
+function tickResidents(dt) {
+  syncResidents();
+  for (const r of residents) {
+    if (r.target) { r.phase += dt * 8; if (stepPath(r, dt, r.def.speed)) { r.target = null; r.timer = rnd(2, 7); } }
+    else {
+      r.timer -= dt;
+      if (r.timer <= 0) {
+        const a = residentAnchor(r.def, r.ai++), w = r.def.wander || 1.6; r.target = new THREE.Vector3(a.x + rnd(-w, w), 0, a.z + rnd(-w * 0.6, w)); setPath(r);
+      }
+    }
+    r.say -= dt; if (r.say <= 0) { r.say = 18 + Math.random() * 26; if (r.mesh.visible && Math.random() < 0.7) floatText(r.pos, '“' + tr(pick(r.def.lines)) + '”', '#fff'); }
+  }
+}
 const staffMeshes = []; let staffSig = '';
 function syncStaff() {
   const sig = JSON.stringify(G.staff) + G.buildings.length + ':' + moveVer;
@@ -1898,7 +1938,7 @@ function frame() {
   updateEconomy(dt);
   G.heroes.slice().forEach(h => updateHero(h, dt));
   updateGoblins(dt);
-  updateSeasonFx(rdt); updateDayNight(); tickChat(dt);
+  updateSeasonFx(rdt); updateDayNight(); tickChat(dt); tickResidents(dt); residentGroup.children.forEach(m => autoAnim(m, rdt));
   if (charStyle !== 'classic') { heroGroup.children.forEach(m => autoAnim(m, rdt)); staffMeshes.forEach(x => autoAnim(x.mesh, rdt)); G.goblins.forEach(x => autoAnim(x.mesh, rdt)); }
   // animation: building pop-in, light flicker
   for (const b of G.buildings) {

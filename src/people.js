@@ -72,3 +72,33 @@ export function tagMods(tags = []) {
   return m;
 }
 export const SEASON_NAMES = ['spring', 'summer', 'autumn', 'winter'];
+
+// Named residents of the town: they are not heroes; they live around the buildings and talk to visitors.
+// needs: what the town must have before they move in. look: options for the character builder. anchor: where they spend their day.
+export const RESIDENTS = [
+  { id: 'marta', name: 'Marta', role: 'Innkeeper', icon: '🍲', needs: { bld: 'tavern' }, anchor: ['tavern'], speed: 1.0, scale: 1,
+    look: { skin: 0xf0c8a0, shirt: 0xf4f0e6, sleeve: 0xf4f0e6, apron: 0xf4f0e6, pants: 0x6b4a2a, hair: 0x6b4a2a, belt: false },
+    bio: 'Runs the tavern kitchen and knows every hero’s favourite dish.', lines: ['Stew’s hot — come and get it!', 'Wipe your boots before you come in.', 'Heroes eat more than any army I’ve fed.', 'A full belly wins half the battles.'] },
+  { id: 'tobin', name: 'Tobin', role: 'Smith’s apprentice', icon: '🔨', needs: { bld: 'forge' }, anchor: ['forge', 'warehouse', 'smelter'], speed: 1.3, scale: 0.92,
+    look: { skin: 0xe8b890, shirt: 0x8a5a2b, sleeve: 0x8a5a2b, apron: 0x3b3b40, pants: 0x4a3a2a, hair: 0x4a2c12, boots: 0x2a1a0a },
+    bio: 'Carries ore and charcoal all day and dreams of forging a hero’s sword.', lines: ['Mind the sparks!', 'One day I will forge a legendary blade.', 'Master says: hit it while it’s hot.', 'These ingots are heavier than they look.'] },
+  { id: 'elsie', name: 'Elsie', role: 'Herbalist', icon: '🌿', needs: { bldAny: ['garden', 'alchemy'] }, anchor: ['garden', 'alchemy'], speed: 0.9, scale: 1,
+    look: { skin: 0xf4d0a8, shirt: 0x7ab648, sleeve: 0xe9d3a6, vest: 0x5aa03a, pants: 0x6b4a2a, hair: 0xf0d46a, longHair: true },
+    bio: 'Gathers herbs at dawn and sells small remedies to anyone who limps by.', lines: ['Moonpetal for the sleepless, thyme for the brave.', 'That cough needs honey, not a sword.', 'The garden loves the rain.', 'Take a little tea with you.'] },
+  { id: 'pip', name: 'Pip', role: 'Child', icon: '🧒', needs: { rank: 1 }, anchor: ['hall'], speed: 3.4, scale: 0.68, wander: 3.2,
+    look: { skin: 0xf0c8a0, shirt: 0xb06a3a, sleeve: 0xb06a3a, pants: 0x4a3a2a, hair: 0x6b4a2a, belt: false },
+    bio: 'Wants to be a knight and practises with a stick.', lines: ['I’m going to be a hero too!', 'Wren, you can’t catch me!', 'Can I hold your sword?', 'Look, I beat the dragon!'] },
+  { id: 'wren', name: 'Wren', role: 'Child', icon: '👧', needs: { rank: 1 }, anchor: ['hall'], speed: 3.1, scale: 0.64, wander: 3.2,
+    look: { skin: 0xf4d0a8, shirt: 0xd8d0c0, sleeve: 0xd8d0c0, pants: 0x5a4636, hair: 0xf0d46a, longHair: true, belt: false },
+    bio: 'Pip’s best friend, quick on her feet and quicker with a joke.', lines: ['Tag, you’re it!', 'When I grow up I’ll be an archmage.', 'The bard said I sing nicely!', 'Heroes are so tall.'] },
+  { id: 'bram', name: 'Bram', role: 'Scribe', icon: '📜', needs: { rank: 1 }, anchor: ['hall'], speed: 0.8, scale: 1, hint: true,
+    look: { skin: 0xe6b88a, shirt: 0x5a4a7a, sleeve: 0x5a4a7a, pants: 0x3a3050, hair: 0xdcdcdc, beard: 0xdcdcdc, beardLen: 0.2, hat: 'cap', hatColor: 0x5a4a7a },
+    bio: 'Keeps the guild’s records and has opinions about what you should do next.', lines: ['I write down everything, you know.', 'Check the goals panel — there is gold in it.', 'History remembers the brave.', 'Another quill, another day.'] },
+];
+export const residentHome = (r, G, first) => {   // does the town qualify for this resident?
+  const n = r.needs || {};
+  if (n.bld && !first(n.bld)) return false;
+  if (n.bldAny && !n.bldAny.some(b => first(b))) return false;
+  if (n.rank && G.rank < n.rank) return false;
+  return true;
+};
