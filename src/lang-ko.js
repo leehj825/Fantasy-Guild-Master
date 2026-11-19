@@ -116,6 +116,11 @@ const BUILD = {
 };
 
 const PROG = {
+  'Formation': '진형', 'Battle line': '전투 대형', 'Shield wall': '방패 벽', 'Skirmish': '산개 전술',
+  'Knights lead, others behind. +4% with a knight and a ranged hero': '기사가 앞, 나머지는 뒤. 기사와 원거리 영웅이 함께 있으면 +4%',
+  'Tight ranks: fewer casualties, −3% success': '촘촘한 대열: 사상자 감소, 성공 −3%', 'Spread out: +5% success, more casualties': '넓게 퍼짐: 성공 +5%, 사상자 증가',
+  'Shield Wall': '방패 벽', 'Volley': '일제 사격', 'Nova': '노바', 'That skill is not ready.': '그 기술은 아직 쓸 수 없습니다.',
+
   '▶ Send all possible': '▶ 가능한 모두 파견', '⏱ Auto-send: ON': '⏱ 자동 파견: 켜짐', '⏱ Auto-send: OFF': '⏱ 자동 파견: 꺼짐',
   'Notifications': '알림', 'On': '켜짐', 'Off': '꺼짐', 'No quest has enough ready heroes right now.': '지금은 파견할 준비된 영웅이 충분한 퀘스트가 없습니다.',
   '⏱ Auto-send on: parties leave when the odds are good.': '⏱ 자동 파견 켜짐: 성공 확률이 좋으면 파티가 출발합니다.', 'Auto-send off.': '자동 파견 꺼짐.',

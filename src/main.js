@@ -573,6 +573,13 @@ const APPROACH = {
   standard: { label: 'Standard', icon: '⚔️', chance: 0, gold: 1, dur: 1, survive: 0, desc: 'Balanced' },
   bold: { label: 'Bold', icon: '🔥', chance: -0.08, gold: 1.3, dur: 0.85, survive: -0.1, desc: '−8% success, +30% gold, 15% faster, more casualties' },
 };
+// Battle formations: where the party stands in the fight, and what that does to the odds
+const FORMATION = {
+  line: { label: 'Battle line', icon: '📐', chance: 0, survive: 0, desc: 'Knights lead, others behind. +4% with a knight and a ranged hero' },
+  wall: { label: 'Shield wall', icon: '🛡️', chance: -0.03, survive: 0.1, desc: 'Tight ranks: fewer casualties, −3% success' },
+  skirmish: { label: 'Skirmish', icon: '🌀', chance: 0.05, survive: -0.08, desc: 'Spread out: +5% success, more casualties' },
+};
+const fmBonus = (party, f) => { const F = FORMATION[f || 'line']; return F.chance + ((f || 'line') === 'line' && party.some(h => h.cls === 'knight') && party.some(h => h.cls !== 'knight') ? 0.04 : 0); };
 function makeQuest(o = {}) {
   const reg = REGIONS[G.region] || REGIONS.greenwood, type = o.type || wpick(reg.types);
   const minH = o.minH || (Math.random() < 0.5 ? 1 : (Math.random() < 0.7 ? 2 : 3));
@@ -625,6 +632,7 @@ function chanceFor(q, party, o = false) {
   if (factionOf() && factionOf().type === q.type) c += 0.10;
   c += modPenalty(q, party, o)[0] + (APPROACH[o.approach || 'standard'].chance) + bondInfo(party).d + party.reduce((n, h) => n + heroMods(h).succ, 0);
   if (o.enchant) c += G.research.arcane ? 0.3 : 0.2;
+  c += fmBonus(party, o.formation);
   return Math.max(0.03, Math.min(0.97, c));
 }
 function dispatch(qid, enchant, partyOverride, extra = {}) {
@@ -634,13 +642,13 @@ function dispatch(qid, enchant, partyOverride, extra = {}) {
   if (enchant && G.mana < 5) return toast('Not enough Mana.');
   let lab = null; if (extra.potion) { lab = ofType('alchemy').find(b => b.stock > 0); if (!lab) return toast('No potions in stock.'); }
   if (enchant) G.mana -= 5; if (lab) lab.stock--;
-  const o = { enchant, approach: extra.approach || 'standard', potion: !!lab };
-  q.enchant = enchant; q.approach = o.approach; q.chance = chanceFor(q, party, o); q.heroes = party; q.state = 'active';
+  const o = { enchant, approach: extra.approach || 'standard', potion: !!lab, formation: extra.formation || 'line' };
+  q.formation = o.formation; q.enchant = enchant; q.approach = o.approach; q.chance = chanceFor(q, party, o); q.heroes = party; q.state = 'active';
   q.dur = Math.round(q.dur * ap.dur); q.t = q.dur; q.approachGold = ap.gold;
   // the outcome is rolled now so the expedition can be watched live without ever contradicting the result
   q.party = party.map(h => heroSnap(h));
   q.seed = (Math.random() * 1e9) | 0; q.ok = Math.random() < q.chance; q.heals = [];
-  q.deaths = party.filter(h => Math.random() > CLASSES[h.cls].survive + 0.15 + ap.survive + survBonus(h)).map(h => h.id);
+  q.deaths = party.filter(h => Math.random() > CLASSES[h.cls].survive + 0.15 + ap.survive + FORMATION[q.formation || 'line'].survive + survBonus(h)).map(h => h.id);
   q.script = genScript(q);
   party.forEach(h => { h.state = 'quest'; h.mesh.visible = false; setMood(h, null); h.onDone = null; });
   sfx('horn'); toast(`Party of ${party.length} dispatched: ${q.name}`);
@@ -1181,9 +1189,10 @@ function modalContent() {
       const st = modalArg, q = G.quests.find(x => x.id === st.qid); if (!q || q.state !== 'open') return ['Party', '<div class="s">This quest is no longer available.</div>'];
       const rd = readyHeroes().sort((a, b) => heroPower(b, q.type) - heroPower(a, q.type)), party = st.sel.map(id => G.heroes.find(x => x.id === id)).filter(Boolean), ap = APPROACH[st.approach];
       const lab = ofType('alchemy').reduce((n, b) => n + b.stock, 0), hasPoison = q.mods.includes('poison');
-      const o = { enchant: st.enchant, approach: st.approach, potion: st.potion }, c = party.length ? Math.round(chanceFor(q, party, o) * 100) : 0, [, notes] = modPenalty(q, party, o);
+      const o = { enchant: st.enchant, approach: st.approach, potion: st.potion, formation: st.formation || 'line' }, c = party.length ? Math.round(chanceFor(q, party, o) * 100) : 0, [, notes] = modPenalty(q, party, o);
       let h = `<div class="s">${modTags(q)}</div><div class="s" style="margin:4px 0">${q.mods.map(k => MODS[k].icon + ' ' + MODS[k].desc).join('<br>') || 'No special conditions.'}</div>`;
       h += `<div class="sec">Approach</div><div style="display:flex;gap:5px">` + Object.entries(APPROACH).map(([k, a]) => `<button class="act ${st.approach === k ? '' : 'red'}" style="flex:1;${st.approach === k ? 'outline:2px solid #fff8' : ''}" data-act="papp" data-a="${k}">${a.icon} ${a.label}<br><span style="font-weight:400;font-size:10px">${a.desc}</span></button>`).join('') + '</div>';
+      h += `<div class="sec">Formation</div><div style="display:flex;gap:5px">` + Object.entries(FORMATION).map(([k, a]) => `<button class="act ${(st.formation || 'line') === k ? '' : 'red'}" style="flex:1;${(st.formation || 'line') === k ? 'outline:2px solid #fff8' : ''}" data-act="pform" data-a="${k}">${a.icon} ${a.label}<br><span style="font-weight:400;font-size:10px">${a.desc}</span></button>`).join('') + '</div>';
       h += `<div style="display:flex;gap:6px;margin-top:6px"><button class="act ${st.enchant ? '' : 'red'}" data-act="pench" ${G.mana < 5 && !st.enchant ? 'disabled' : ''}>✨ Enchant (5 mana) ${st.enchant ? '✔' : ''}</button><button class="act ${st.potion ? '' : 'red'}" data-act="ppot" ${lab < 1 && !st.potion ? 'disabled' : ''}>🧪 Bring a potion (${lab}) ${st.potion ? '✔' : ''}</button></div>`;
       h += `<div class="sec">Ready heroes <span class="s">(pick ${q.minH}–${q.maxH})</span></div>` + (rd.map(x => `<div class="row" data-act="psel" data-id="${x.id}" style="cursor:pointer;${st.sel.includes(x.id) ? 'border-color:#ffd24a;background:#ffd24a22' : ''}"><div style="font-size:24px">${st.sel.includes(x.id) ? '☑' : '☐'} ${CLASSES[x.cls].icon}</div><div class="grow"><div class="t">${x.vip ? '⭐ ' : ''}${x.name} <span class="tag">Lv${x.level}</span>${x.vip ? `<span class="tag">${TRAITS[x.vip.trait].icon} ${TRAITS[x.vip.trait].label}</span>` : ''}<span class="tag">${gearName(x)} gear</span></div><div class="s">Power ${heroPower(x, q.type).toFixed(1)} on ${q.type} · 🔋${Math.round(x.stamina)}</div></div></div>`).join('') || '<div class="s">No geared, rested heroes available.</div>');
       h += `<div class="row" style="margin-top:10px;border-color:#ffd24a"><div class="grow"><div class="t">Success chance: <b style="font-size:18px">${c}%</b></div><div class="s">${party.length ? `${party.length} hero(es) · reward ~${Math.round(q.gold * questGoldMul() * ap.gold)}g · ${Math.round(q.dur * ap.dur)}s` : 'Select heroes above'}${notes.length ? `<br><span style="color:#ffb86a">Missing: ${notes.join(', ')}</span>` : ''}${bondInfo(party).notes.length ? `<br>${bondInfo(party).notes.join(' · ')}` : ''}</div></div><button class="act" data-act="pgo" ${party.length >= q.minH && party.length <= q.maxH ? '' : 'disabled'}>Send party</button></div>`;
@@ -1291,9 +1300,10 @@ const ACT = {
   pick(d) { openModal('party', { qid: +d.q, sel: [], approach: 'standard', enchant: false, potion: false }); },
   psel(d) { const st = modalArg, q = G.quests.find(x => x.id === st.qid), id = +d.id; if (!q) return; if (st.sel.includes(id)) st.sel = st.sel.filter(x => x !== id); else if (st.sel.length >= q.maxH) toast(`At most ${q.maxH} heroes on this quest.`); else st.sel.push(id); },
   papp(d) { modalArg.approach = d.a; },
+  pform(d) { modalArg.formation = d.a; },
   pench() { modalArg.enchant = !modalArg.enchant; },
   ppot() { modalArg.potion = !modalArg.potion; },
-  pgo() { const st = modalArg, party = st.sel.map(id => G.heroes.find(x => x.id === id)).filter(Boolean); dispatch(st.qid, st.enchant, party, { approach: st.approach, potion: st.potion }); if (!G.quests.find(x => x.id === st.qid && x.state === 'open')) openModal('quests'); },
+  pgo() { const st = modalArg, party = st.sel.map(id => G.heroes.find(x => x.id === id)).filter(Boolean); dispatch(st.qid, st.enchant, party, { approach: st.approach, potion: st.potion, formation: st.formation || 'line' }); if (!G.quests.find(x => x.id === st.qid && x.state === 'open')) openModal('quests'); },
   openStory() { openModal('story'); },
   storychoice(d) { chooseStory(+d.i); },
   dive() { dispatchDive(); },
@@ -1638,6 +1648,27 @@ function boostQuest(q, amt) {
   const c0 = q.chance; q.chance = Math.min(0.97, c0 + amt);
   if (!q.ok && Math.random() < (q.chance - c0) / (1 - c0)) { q.ok = true; q.deaths = []; q.script = genScript(q); }
 }
+// Hero skills during a watched fight: one per class, once per expedition (a dive: once per 5 floors). They give a small boost to the odds
+// (a dive: a ward or a heal) and play a showy effect on the stage.
+const SKILLS = { knight: { icon: '🛡', name: 'Shield Wall', kind: 'wall', boost: 0.06 }, ranger: { icon: '🏹', name: 'Volley', kind: 'volley', boost: 0.05 }, wizard: { icon: '🔥', name: 'Nova', kind: 'nova', boost: 0.05 } };
+function skillReady(q, cls) {
+  const sk = SKILLS[cls], used = (q.skillsUsed || {})[cls], T = nowT(watching), S = q.script; if (!sk || !canIntervene(q)) return false;
+  const h = q.party.findIndex((p, i) => p.cls === cls && !(S.heroes[i].dies && T >= S.heroes[i].D)); if (h < 0) return false;
+  return q.dive ? (used === undefined || diveFloorIndex(S, T) >= used + 5) : used === undefined;
+}
+function watchSkill(cls) {
+  const w = watching, q = w?.q, sk = SKILLS[cls]; if (!q || !sk) return;
+  if (!skillReady(q, cls)) return toast('That skill is not ready.');
+  const T = nowT(w), S = q.script, h = q.party.findIndex((p, i) => p.cls === cls && !(S.heroes[i].dies && T >= S.heroes[i].D));
+  (q.casts ||= []).push({ t: T, kind: sk.kind, h });
+  (q.skillsUsed ||= {})[cls] = q.dive ? diveFloorIndex(S, T) : 1;
+  if (q.dive) {
+    const next = diveFloorIndex(S, T) + 1;
+    if (sk.kind === 'wall' && !(q.enchants || []).some(x => x.floor + 3 > next)) q.enchants.push({ floor: next, t: T }); else q.heals.push({ t: T, amt: 0.15 });
+    rebuildDive(q, T); toast(`${sk.icon} ${sk.name}!`);
+  } else { boostQuest(q, sk.boost); toast(`${sk.icon} ${sk.name}! Success chance now ${Math.round(q.chance * 100)}%`); }
+  sfx('chime'); updateWatchHUD();
+}
 function watchEnchant() {
   const q = watching?.q; if (!q) return;
   if (!canIntervene(q)) return toast(q.dive ? 'The party has already fallen.' : 'Too late — the finale has begun!');
@@ -1678,6 +1709,7 @@ function updateWatchHUD() {
   $('watchBar').classList.toggle('dive', dv);
   $('wParty').innerHTML = trHtml(q.party.map((p, h) => { const hp = heroHp(q, S, h, T), dead = S.heroes[h].dies && T >= S.heroes[h].D; return `<div class="chip ${dead ? 'dead' : ''}"><span>${dead ? '☠' : CLASSES[p.cls].icon} ${p.name}</span><b><i style="width:${hp * 100}%;background:${hp > 0.5 ? '#5be35b' : hp > 0.25 ? '#f0c040' : '#e0503a'}"></i></b></div>`; }).join(''));
   const ci = canIntervene(q), lab = first('alchemy');
+  $('wSkills').innerHTML = trHtml(q.party.map(p => p.cls).filter((c, i, a) => a.indexOf(c) === i && SKILLS[c]).map(c => `<button class="act ${skillReady(q, c) ? '' : 'off'}" data-skill="${c}" ${skillReady(q, c) ? '' : 'disabled'}>${SKILLS[c].icon} ${SKILLS[c].name}</button>`).join(''));
   $('wRecall').classList.toggle('hidden', !!q.defense);
   const potions = ofType('alchemy').reduce((n, b) => n + b.stock, 0), nextF = dv ? diveFloorIndex(S, T) + 1 : 0, warded = dv && (q.enchants || []).some(x => x.floor + 3 > nextF);
   $('wEnchant').disabled = !ci || G.mana < 5 || (dv ? warded : !!(q.enchant || q.enchantedMid)); $('wEnchant').textContent = tr(dv ? (warded ? '✨ Ward active' : '✨ Ward (5)') : `✨ Enchant (5) · ${Math.round(q.chance * 100)}%`);
@@ -1693,7 +1725,7 @@ $('wBack').onclick = endWatch; $('pipFrame').onclick = endWatch;
 $('wFollow').onclick = () => { if (watching) { watching.follow = !watching.follow; updateWatchHUD(); } };
 $('wPipBtn').onclick = () => { if (watching) { watching.pip = !watching.pip; updateWatchHUD(); } };
 $('wSpeed').onclick = () => $('speedBtn').click();
-$('wRelic').onclick = () => openModal('relic'); $('wEnchant').onclick = watchEnchant; $('wPotion').onclick = watchPotion; $('wRecall').onclick = watchRecall; $('readyPill').onclick = () => openModal('quests');
+$('wRelic').onclick = () => openModal('relic'); $('wEnchant').onclick = watchEnchant; $('wPotion').onclick = watchPotion; $('wRecall').onclick = watchRecall; $('wSkills').onclick = e => { const b = e.target.closest('[data-skill]'); if (b && !b.disabled) watchSkill(b.dataset.skill); }; $('readyPill').onclick = () => openModal('quests');
 function renderPip() {
   const w = watching; if (!w || w.exiting || !w.pip || !watchSaved) return;
   const r = $('pipFrame').getBoundingClientRect(); if (r.width < 10) return;

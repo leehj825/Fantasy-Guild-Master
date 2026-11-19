@@ -418,7 +418,8 @@ export class Expedition {
   // A rigged hero at moment T: march, run in to melee range, strike with the class's clip, flinch, fall, or cast a heal
   driveHero(o, h, T, hp, dead, moving, retreat, px, n, rdt) {
     const m = o.m, S = this.S, q = this.q, H = S.heroes[h], cls = o.p.cls, melee = cls === 'knight', clips = ATTACKS[cls] || ATTACKS.knight, hits = this.hitsBy[h] || [];
-    let x = px - (h % 2) * 0.6, z = (h - (n - 1) / 2) * 1.25, rotY = Math.PI / 2, name = 'idleEase', t = T + h * 0.9, atk = null, env = 0, fwd = false;
+    const fm = q.formation || 'line';      // the formation sets who stands in front
+    let x = px - (h % 2) * 0.6 + (fm === 'skirmish' ? 0 : (melee ? 0.8 : -0.4)), z = (h - (n - 1) / 2) * (fm === 'wall' ? 0.95 : 1.25), rotY = Math.PI / 2, name = 'idleEase', t = T + h * 0.9, atk = null, env = 0, fwd = false;
     for (let i = firstAfter(hits, T - 3); i < hits.length; i++) {
       const nm = clips[i % clips.length], ci = clipInfo(nm), s0 = hits[i].t - ci.hit, RUN = 0.5, BACK = 0.55;
       if (s0 - RUN > T) break;
@@ -432,6 +433,7 @@ export class Expedition {
     const eh = this.last(this.ehitsOnHero[h], T), healer = q.party.findIndex(p => p.cls === 'wizard'), hi = healer < 0 ? 0 : healer;
     let cast = null;
     if (h === hi) { for (const e of q.heals || []) if (T >= e.t && T < e.t + 1.1) cast = ['mgHeal', T - e.t]; for (const e of q.enchants || []) if (T >= e.t && T < e.t + 1.1) cast = ['mgBless', T - e.t]; }
+    for (const c of q.casts || []) if (c.h === h) { const nm = { wall: 'block', volley: 'shoot', nova: 'mgNova' }[c.kind], ci = clipInfo(nm); if (T >= c.t && T < c.t + ci.d) cast = [nm, T - c.t]; }
     const DASH = 2.4; x += dead ? 0 : DASH * env;
     if (dead) { name = 'die'; t = T - H.D; }
     else if (atk) { name = atk.nm; t = atk.t; }
@@ -499,7 +501,7 @@ export class Expedition {
     this.hfx.forEach(f => { f.col.visible = f.orb.visible = f.bub.visible = f.halo.visible = false; f.sparks.forEach(m => { m.visible = false; }); });
     this.dust.forEach(m => { m.visible = false; }); this.scorch.forEach(m => { m.visible = false; });
     const healer = Math.max(0, q.party.findIndex(p => p.cls === 'wizard')), src = this.hero[healer] && this.hero[healer].m.position;
-    const casts = [...(q.heals || []).map(e => ({ t: e.t, ward: false })), ...(q.enchants || []).map(e => ({ t: e.t, ward: true }))];
+    const casts = [...(q.heals || []).map(e => ({ t: e.t, ward: false })), ...(q.enchants || []).map(e => ({ t: e.t, ward: true })), ...(q.casts || []).filter(c => c.kind === 'wall').map(c => ({ t: c.t, ward: true }))];
     for (const c of casts) {
       const age = T - c.t; if (age < 0 || age > 1.8) continue;
       this.hero.forEach((o, h) => {
@@ -513,6 +515,16 @@ export class Expedition {
         f.col.visible = true; f.col.position.set(pos.x, 0.85, pos.z); f.col.scale.set(1 - 0.35 * a, 1, 1 - 0.35 * a); f.col.material.opacity = 0.45 * k;
         f.sparks.forEach((m, i) => { m.visible = true; const ang = a * 5 + i * 1.05, r = 0.32 * (1 - a * 0.4); m.position.set(pos.x + Math.cos(ang) * r, ((a * 1.4 + i * 0.17) % 1.5), pos.z + Math.sin(ang) * r); m.material.opacity = 0.9 * k; });
       });
+    }
+    // class skills: a volley of arrows at every enemy, a nova ring that rolls over the field
+    const foes = this.foe.filter(o => !o.gone && o.m.visible && !o.dead);
+    for (const c of q.casts || []) {
+      const age = T - c.t, caster = this.hero[c.h]; if (age < 0 || age > 1.6 || !caster) continue; const cp = caster.m.position;
+      if (c.kind === 'volley' && age >= 0.45 && age <= 0.85) foes.slice(0, 5).forEach((o, i) => { const a = this.arrows[7 - i], f = (age - 0.45) / 0.4, tp = o.m.position; a.visible = true; a.position.set(lerp(cp.x + 0.3, tp.x, f), lerp(0.55, 0.7, f) + Math.sin(f * Math.PI) * 0.05 * i, lerp(cp.z, tp.z, f)); a.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(tp.x - cp.x, 0.15, tp.z - cp.z).normalize()); });
+      if (c.kind === 'nova' && age < 0.9) {
+        const r = this.rings[5]; r.visible = true; r.position.set(cp.x, 0.07, cp.z); r.scale.setScalar(0.5 + age * 7); r.material.color.setHex(0xffa040); r.material.opacity = 0.75 * (1 - age / 0.9);
+        foes.slice(0, 3).forEach((o, i) => { if (age > 0.35) { const f = this.rings[2 + i], k = (age - 0.35) / 0.55; f.visible = true; f.position.set(o.m.position.x, 0.07, o.m.position.z); f.scale.setScalar(0.5 + k * 2.2); f.material.color.setHex(0xff7a30); f.material.opacity = 0.8 * (1 - k); } });
+      }
     }
     // boss blows: the camera shakes, dust bursts and a scorch mark stays on the ground where the hero stood
     let di = 0, sc = 0;
