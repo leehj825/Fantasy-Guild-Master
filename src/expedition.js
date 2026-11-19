@@ -492,14 +492,27 @@ export class Expedition {
     this.hfx = this.hero.map(() => ({ col: mk(new THREE.CylinderGeometry(0.3, 0.3, 1.7, 14, 1, true), 0xffd96a, 0.4, true), orb: mk(new THREE.SphereGeometry(0.14, 8, 6), 0xfff2a0, 0.9, true),
       sparks: Array.from({ length: 6 }, () => mk(new THREE.SphereGeometry(0.05, 6, 4), 0xfff2a0, 0.9, true)), bub: mk(new THREE.SphereGeometry(0.7, 14, 10), 0x9ad8ff, 0.25, true), halo: mk(new THREE.RingGeometry(0.45, 0.6, 20), 0x9ad8ff, 0.6, true) }));
     this.hfx.forEach(f => { f.halo.rotation.x = -Math.PI / 2; });
+    this.warn = Array.from({ length: 4 }, () => { const m = mk(new THREE.RingGeometry(0.35, 0.7, 24), 0xff3a2a, 0.7, true); m.rotation.x = -Math.PI / 2; return m; });
     this.dust = Array.from({ length: 10 }, () => mk(new THREE.SphereGeometry(0.18, 7, 5), 0xb09a78, 0.55, false));
     this.scorch = Array.from({ length: 4 }, () => { const m = mk(new THREE.CircleGeometry(0.9, 16), 0x1a1208, 0.5, false); m.rotation.x = -Math.PI / 2; return m; });
   }
+  // some expeditions happen in the rain (decided by the quest seed): drops fall around the camera's focus
+  rainUpdate(T) {
+    const wet = this.q.seed % 3 === 0 && this.theme !== 'cave' && !this.S.dive;
+    if (!this.rain) {
+      const n = 380, g = new THREE.BufferGeometry(), a = new Float32Array(n * 3); for (let i = 0; i < n; i++) { a[i * 3] = (Math.random() - 0.5) * 26; a[i * 3 + 1] = Math.random() * 12; a[i * 3 + 2] = (Math.random() - 0.5) * 22; }
+      g.setAttribute('position', new THREE.BufferAttribute(a, 3)); this.rain = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xaecbff, size: 0.09, transparent: true, opacity: 0.7, depthWrite: false })); this.rain.frustumCulled = false; this.group.add(this.rain);
+    }
+    this.rain.visible = wet; if (!wet) return;
+    const f = this.focus(T), pos = this.rain.geometry.attributes.position; this.rain.position.set(f.x - this.origin.x, 0, f.z - this.origin.z);
+    for (let i = 0; i < pos.count; i++) { let y = pos.getY(i) - 0.22 - (i % 4) * 0.03; if (y < 0) y += 12; pos.setY(i, y); } pos.needsUpdate = true;
+  }
   fxUpdate(T) {
     if (!this.hfx) this.buildFx();
+    this.rainUpdate(T);
     const q = this.q, S = this.S; this.shake = 0;
     this.hfx.forEach(f => { f.col.visible = f.orb.visible = f.bub.visible = f.halo.visible = false; f.sparks.forEach(m => { m.visible = false; }); });
-    this.dust.forEach(m => { m.visible = false; }); this.scorch.forEach(m => { m.visible = false; });
+    this.warn.forEach(m => { m.visible = false; }); this.dust.forEach(m => { m.visible = false; }); this.scorch.forEach(m => { m.visible = false; });
     const healer = Math.max(0, q.party.findIndex(p => p.cls === 'wizard')), src = this.hero[healer] && this.hero[healer].m.position;
     const casts = [...(q.heals || []).map(e => ({ t: e.t, ward: false })), ...(q.enchants || []).map(e => ({ t: e.t, ward: true })), ...(q.casts || []).filter(c => c.kind === 'wall').map(c => ({ t: c.t, ward: true }))];
     for (const c of casts) {
@@ -527,11 +540,12 @@ export class Expedition {
       }
     }
     // boss blows: the camera shakes, dust bursts and a scorch mark stays on the ground where the hero stood
-    let di = 0, sc = 0;
+    let di = 0, sc = 0, wi = 0;
     for (let i = firstAfter(S.events, T - 3.2); i < S.events.length; i++) {
-      const e = S.events[i]; if (e.t > T + 0.1) break; if (e.type !== 'ehit') continue;
+      const e = S.events[i]; if (e.t > T + 1.2) break; if (e.type !== 'ehit') continue;
       const E = S.enemies[e.e]; if (!E || !E.boss) continue; const ho = this.hero[e.h]; if (!ho) continue;
       const age = T - (e.t + 0.28), p = ho.m.position;
+      if (age < 0 && age > -1.0 && wi < this.warn.length) { const w = this.warn[wi++], k = 1 + age; w.visible = true; w.position.set(p.x, 0.06, p.z); w.scale.setScalar(2.2 - 1.2 * k + 0.1 * Math.sin(T * 24)); w.material.opacity = 0.25 + 0.5 * k; }   // red circle: a heavy blow is coming
       if (age >= 0 && age < 0.4) this.shake = Math.max(this.shake, 0.16 * (1 - age / 0.4));
       if (age >= 0 && age < 0.8) for (let j = 0; j < 4 && di < this.dust.length; j++, di++) { const m = this.dust[di], ang = (e.id || i) * 0.7 + j * 1.6, r = 0.3 + age * 1.6; m.visible = true; m.position.set(p.x + Math.cos(ang) * r, 0.15 + age * 0.9, p.z + Math.sin(ang) * r); m.scale.setScalar(0.7 + age * 1.8); m.material.opacity = 0.5 * (1 - age / 0.8); }
       if (age >= 0 && age < 3.0 && sc < this.scorch.length) { const m = this.scorch[sc++]; m.visible = true; m.position.set(p.x, 0.04, p.z); m.scale.setScalar(0.8 + (E.kind === 'golem' ? 0.4 : 0.2)); m.material.opacity = 0.45 * (1 - age / 3.0); }

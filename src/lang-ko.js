@@ -116,6 +116,11 @@ const BUILD = {
 };
 
 const PROG = {
+  'What a day!': '오늘 하루 정말 길다!', 'Is the tavern open?': '술집 열었나요?', 'I could use a good meal.': '맛있는 식사 한 끼가 필요해.', 'The guild is growing.': '길드가 점점 커지고 있어.',
+  'My blade is ready.': '내 검은 준비됐다.', 'For the guild!': '길드를 위하여!', 'No foe shall pass.': '어떤 적도 지나가지 못한다.', 'The woods are quiet today.': '오늘 숲은 조용해.', 'Steady hands, sharp eyes.': '손은 안정되게, 눈은 날카롭게.', 'I hear something out there…': '저기서 뭔가 소리가 나는데…',
+  'The stars feel restless.': '별들이 어수선해.', 'Mana is all around us.': '마나가 우리 주위에 가득해.', 'Ah, a fine day for research.': '아, 연구하기 좋은 날이야.', 'Is there any more stew?': '스튜 더 없나요?', 'I have a good feeling about today!': '오늘은 느낌이 좋아!',
+  'Oops… did I drop that?': '어이쿠… 내가 떨어뜨렸나?', 'Bring on the monsters!': '몬스터들아, 덤벼라!', 'Fascinating architecture.': '흥미로운 건축이군.', 'I need a rest…': '좀 쉬어야겠어…', 'This place could be better.': '이곳이 더 나아질 수 있을 텐데.',
+
   'Spring': '봄', 'Summer': '여름', 'Autumn': '가을', 'Winter': '겨울',
   'Herbs grow twice as fast.': '약초가 두 배 빨리 자랍니다.', 'Quest gold +10%.': '퀘스트 골드 +10%.', 'Ore and wood trickle in 50% faster.': '광석과 목재가 50% 더 빨리 모입니다.', 'Tavern meals pay 25% more.': '술집 식사 수입 +25%.',
   '📖 Guild Chronicle': '📖 길드 연대기', 'Guild Chronicle': '길드 연대기', "The diary of your guild's big moments.": '길드의 큰 순간들을 적은 일지입니다.', 'Open': '열기',

@@ -24,7 +24,8 @@ scene.background = new THREE.Color(0x2f7a32);
 
 // Character style: 'classic' (old box figures), 'voxel' or 'round' (rigged bodies that play motion clips). Changing it reloads the page.
 const STYLE_KEY = 'fantasy-guild-master-charstyle', CHAR_STYLES = { voxel: 'Rigged · blocky', round: 'Rigged · rounded', classic: 'Classic' };
-let charStyle = 'voxel'; try { const v = localStorage.getItem(STYLE_KEY); if (CHAR_STYLES[v]) charStyle = v; } catch (e) { /* default */ }
+let charStyle = (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 3 ? 'classic' : 'voxel';   // weak devices start on the lightest bodies
+try { const v = localStorage.getItem(STYLE_KEY); if (CHAR_STYLES[v]) charStyle = v; } catch (e) { /* default */ }
 if (charStyle !== 'classic') { setCharMaker(look => makeRigChar(look, charStyle)); setBigMakers({ golem: () => makeRigGolem(), ogre: () => makeRigOgre() }); }
 
 // Free 3D perspective camera: orbit (yaw/pitch), pan, zoom.
@@ -1083,6 +1084,28 @@ function updateSeasonFx(rdt) {
   for (let i = 0; i < a.count; i++) { let y = a.getY(i) - rdt * fall * (0.6 + (i % 5) * 0.12), x = a.getX(i) + Math.sin(performance.now() / 900 + i) * rdt * 0.4; if (y < 0) { y = 14; x = (Math.random() - 0.5) * 30; a.setZ(i, (Math.random() - 0.5) * 30); } a.setXYZ(i, x, y, a.getZ(i)); }
   a.needsUpdate = true; snow.position.set(camTarget.x, 0, camTarget.z);
 }
+// ---- day and night: a 7-minute cycle of light colour and strength (only on the base map; the battle stage has its own light)
+const DAY_LEN = 420, _dn = [new THREE.Color(), new THREE.Color()];
+function updateDayNight() {
+  if (watching) return;
+  const p = ((G.time + 0.3 * DAY_LEN) % DAY_LEN) / DAY_LEN, d = Math.max(0, Math.min(1, 0.5 + 0.6 * Math.sin(2 * Math.PI * (p - 0.25))));
+  sun.intensity = 0.28 + 0.8 * d; ambient.intensity = 0.42 + 0.33 * d;
+  sun.color.copy(_dn[0].setHex(0x7f93c8).lerp(_dn[1].setHex(d > 0.35 && d < 0.7 ? 0xffd2a0 : 0xfff1d0), d)); scene.background.copy(_dn[0].setHex(0x12281a).lerp(_dn[1].setHex(0x2f7a32), d));
+}
+// ---- hero chatter: short lines now and then, by class, trait and mood
+const CHAT = {
+  any: ['What a day!', 'Is the tavern open?', 'I could use a good meal.', 'The guild is growing.'],
+  knight: ['My blade is ready.', 'For the guild!', 'No foe shall pass.'], ranger: ['The woods are quiet today.', 'Steady hands, sharp eyes.', 'I hear something out there…'], wizard: ['The stars feel restless.', 'Mana is all around us.', 'Ah, a fine day for research.'],
+  glutton: ['Is there any more stew?'], lucky: ['I have a good feeling about today!'], clumsy: ['Oops… did I drop that?'], brave: ['Bring on the monsters!'], scholar: ['Fascinating architecture.'],
+  tired: ['I need a rest…'], unhappy: ['This place could be better.'],
+};
+let chatT = 12;
+function tickChat(dt) {
+  chatT -= dt; if (chatT > 0) return; chatT = 14 + Math.random() * 22;
+  const c = G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving' && h.mesh.visible); if (!c.length) return; const h = pick(c);
+  const pool = [...CHAT.any, ...(CHAT[h.cls] || []), ...(h.stamina < 40 ? CHAT.tired : []), ...(h.happy < 35 ? CHAT.unhappy : []), ...(traitOf(h) ? CHAT[traitOf(h)] || [] : [])];
+  floatText(h.pos, '“' + tr(pick(pool)) + '”', '#fff');
+}
 // ---- guild chronicle: a short diary of the big moments
 const chron = text => { const c = (G.flags.chron ||= []); c.push({ d: Math.floor(G.time / 60) + 1, t: text }); if (c.length > 80) c.shift(); };
 // ---- the legend: after reaching Fortress, three escalating special quests end with the Ember Colossus
@@ -1798,7 +1821,7 @@ function frame() {
   updateEconomy(dt);
   G.heroes.slice().forEach(h => updateHero(h, dt));
   updateGoblins(dt);
-  updateSeasonFx(rdt);
+  updateSeasonFx(rdt); updateDayNight(); tickChat(dt);
   if (charStyle !== 'classic') { heroGroup.children.forEach(m => autoAnim(m, rdt)); staffMeshes.forEach(x => autoAnim(x.mesh, rdt)); G.goblins.forEach(x => autoAnim(x.mesh, rdt)); }
   // animation: building pop-in, light flicker
   for (const b of G.buildings) {
