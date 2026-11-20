@@ -642,12 +642,18 @@ export const LOOKS = {
   elfBlond:    { skin: 0xf4d0a8, shirt: 0x5aa03a, sleeve: 0x5aa03a, pants: 0x6b4a2a, boots: 0x5a3a1a, hair: 0xf0d46a, longHair: true, ears: true, bow: true, quiver: true, vest: 0x3f7a2c },
   elfHood:     { skin: 0xf4d0a8, shirt: 0x3f7a2c, sleeve: 0x3f7a2c, pants: 0x5a4636, boots: 0x5a3a1a, hat: 'hood', hatColor: 0x3f7a2c, cape: 0x3f7a2c, bow: true, quiver: true, ears: false },
   elfGreen:    { skin: 0xf4d0a8, shirt: 0x7ab648, sleeve: 0xe9d3a6, pants: 0x6b4a2a, boots: 0x5a3a1a, hair: 0xf0d46a, ears: true, vest: 0x7ab648 },
+  rogueA:      { skin: 0xe6b88a, shirt: 0x2f2f3a, sleeve: 0x2f2f3a, pants: 0x1f1f28, boots: 0x15151a, hat: 'hood', hatColor: 0x26262e, cape: 0x1c1c24, sword: true, belt: 0x5a1d1d, glove: 0x15151a },
+  rogueB:      { skin: 0xf0c8a0, shirt: 0x5a3a2a, sleeve: 0x5a3a2a, vest: 0x2a2a30, pants: 0x2a2a30, boots: 0x15151a, hat: 'cap', hatColor: 0x7a1d1d, hair: 0x2a1a10, sword: true, ears: false },
+  clericA:     { skin: 0xf0c8a0, shirt: 0xf4f0e6, sleeve: 0xf4f0e6, skirt: 0xf4f0e6, vest: 0xe8c04a, hair: 0xc8a060, hat: 'cap', hatColor: 0xf4f0e6, staff: 0xffe27a, pants: 0xd8d0c0, belt: 0xe8c04a },
+  clericB:     { skin: 0xe6b88a, shirt: 0xe9e2d0, sleeve: 0xe9e2d0, skirt: 0xe9e2d0, vest: 0x3b6cc0, hair: 0x4a2c12, longHair: true, staff: 0xaee6ff, pants: 0xd8d0c0, belt: 0xc9962f },
+  alchemistA:  { skin: 0xf0c8a0, shirt: 0x7ab648, sleeve: 0xe9d3a6, apron: 0x5a4636, hat: 'cap', hatColor: 0x2aa9a0, hair: 0x6b4a2a, pack: true, pants: 0x4a3a2a, glove: 0x7a5a3a },
+  alchemistB:  { skin: 0xe6b88a, shirt: 0xb06a3a, sleeve: 0xb06a3a, apron: 0xe9d3a6, hat: 'cap', hatColor: 0x7b3fb5, hair: 0xd8661a, pack: true, pants: 0x3a2a22, glove: 0x5a3a1a },
   villagerA:   { skin: 0xf0c8a0, shirt: 0xf4f0e6, sleeve: 0xf4f0e6, vest: 0x3b6cc0, pants: 0x5a4636, hair: 0x6b4a2a },
   villagerB:   { skin: 0xe6b88a, shirt: 0xf4f0e6, sleeve: 0xf4f0e6, vest: 0xb06a3a, pants: 0x4a3a2a, hair: 0x4a2c12, hat: 'cap', hatColor: 0x8a5a2b },
   guardA:      { skin: 0xf0c8a0, plate: 0x9aa0a8, shirt: 0x9aa0a8, sleeve: 0x7a7f87, pants: 0x4a4d54, hat: 'guard', spear: true, cape: 0xc0392b, shield: { body: 0x9aa0a8, trim: 0xc0392b } },
   guardB:      { skin: 0xe6b88a, plate: 0xb8bcc4, shirt: 0xb8bcc4, sleeve: 0x8a8f98, pants: 0x4a4d54, hat: 'guard', sword: true, shield: { body: 0xb8bcc4, trim: 0xe8c04a } },
 };
-const CLASS_LOOKS = { knight: ['knightA', 'knightB', 'knightC'], ranger: ['elfBlond', 'elfHood', 'elfGreen'], wizard: ['wizardBlue', 'wizardPurple'] };
+const CLASS_LOOKS = { knight: ['knightA', 'knightB', 'knightC'], ranger: ['elfBlond', 'elfHood', 'elfGreen'], wizard: ['wizardBlue', 'wizardPurple'], rogue: ['rogueA', 'rogueB'], cleric: ['clericA', 'clericB'], alchemist: ['alchemistA', 'alchemistB'] };
 // Which builder makes people: the classic box figure, or a rigged one (src/rigchar.js) that plays motion clips. Set once at boot.
 let charMaker = makeChar;
 export const setCharMaker = f => { charMaker = f || makeChar; };

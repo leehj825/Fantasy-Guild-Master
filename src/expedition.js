@@ -368,7 +368,9 @@ const THEME = {
 
 /* ------------------------------------------------------------ the live stage */
 // Which clips each class fights with (see clips.js): blades for knights, the bow for rangers, bolts and fire for wizards
-const ATTACKS = { knight: ['slash1', 'slash3', 'attack1'], ranger: ['shoot'], wizard: ['mgBolt', 'mgFire'] };
+const ATTACKS = { knight: ['slash1', 'slash3', 'attack1'], ranger: ['shoot'], wizard: ['mgBolt', 'mgFire'], rogue: ['attack1', 'attack2', 'kick', 'slash1'], cleric: ['mgHoly', 'mgBolt'], alchemist: ['mgFire', 'mgBolt'] };
+const MELEE = ['knight', 'rogue'];
+const healerIdx = q => { for (const c of ['cleric', 'alchemist', 'wizard']) { const i = q.party.findIndex(p => p.cls === c); if (i >= 0) return i; } return 0; };
 const firstAfter = (arr, t) => { let lo = 0, hi = arr.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (arr[mid].t < t) lo = mid + 1; else hi = mid; } return lo; };
 export class Expedition {
   constructor({ scene, q, lowfx, labelEl, project }) {
@@ -421,7 +423,7 @@ export class Expedition {
   }
   // A rigged hero at moment T: march, run in to melee range, strike with the class's clip, flinch, fall, or cast a heal
   driveHero(o, h, T, hp, dead, moving, retreat, px, n, rdt) {
-    const m = o.m, S = this.S, q = this.q, H = S.heroes[h], cls = o.p.cls, melee = cls === 'knight', clips = ATTACKS[cls] || ATTACKS.knight, hits = this.hitsBy[h] || [];
+    const m = o.m, S = this.S, q = this.q, H = S.heroes[h], cls = o.p.cls, melee = MELEE.includes(cls), clips = ATTACKS[cls] || ATTACKS.knight, hits = this.hitsBy[h] || [];
     const fm = q.formation || 'line';      // the formation sets who stands in front
     let x = px - (h % 2) * 0.6 + (fm === 'skirmish' ? 0 : (melee ? 0.8 : -0.4)), z = (h - (n - 1) / 2) * (fm === 'wall' ? 0.95 : 1.25), rotY = Math.PI / 2, name = 'idleEase', t = T + h * 0.9, atk = null, env = 0, fwd = false;
     for (let i = firstAfter(hits, T - 3); i < hits.length; i++) {
@@ -434,10 +436,10 @@ export class Expedition {
         if (v > env) env = v;
       }
     }
-    const eh = this.last(this.ehitsOnHero[h], T), healer = q.party.findIndex(p => p.cls === 'wizard'), hi = healer < 0 ? 0 : healer;
+    const eh = this.last(this.ehitsOnHero[h], T), hi = healerIdx(q);
     let cast = null;
     if (h === hi) { for (const e of q.heals || []) if (T >= e.t && T < e.t + 1.1) cast = ['mgHeal', T - e.t]; for (const e of q.enchants || []) if (T >= e.t && T < e.t + 1.1) cast = ['mgBless', T - e.t]; }
-    for (const c of q.casts || []) if (c.h === h) { const nm = { wall: 'block', volley: 'shoot', nova: 'mgNova', dodge: 'block' }[c.kind], ci = clipInfo(nm); if (T >= c.t && T < c.t + ci.d) cast = [nm, T - c.t]; }
+    for (const c of q.casts || []) if (c.h === h) { const nm = { wall: 'block', volley: 'shoot', nova: 'mgNova', dodge: 'block', stab: 'attack2', bless: 'mgBless', elixir: 'mgHeal' }[c.kind], ci = clipInfo(nm); if (T >= c.t && T < c.t + ci.d) cast = [nm, T - c.t]; }
     const DASH = 2.4; x += dead ? 0 : DASH * env;
     if (dead) { name = 'die'; t = T - H.D; }
     else if (atk) { name = atk.nm; t = atk.t; }
@@ -451,7 +453,7 @@ export class Expedition {
   }
   // Ranged attack visuals around the hit event e (damage lands at e.t + 0.3): a charge glow before release, then a straight flight.
   castFx(e, ho, fo, from, to, T, n) {
-    const cls = ho.p.cls, idx = (this.hitsBy[e.h] || []).indexOf(e), kind = cls === 'ranger' ? 'arrow' : (idx % 2 ? 'fire' : 'bolt');
+    const cls = ho.p.cls, idx = (this.hitsBy[e.h] || []).indexOf(e), kind = cls === 'ranger' ? 'arrow' : cls === 'cleric' ? 'holy' : cls === 'alchemist' ? 'flask' : (idx % 2 ? 'fire' : 'bolt');
     const eh = ENEMY[this.S.enemies[e.e].kind].h, ty = clamp(eh * 0.4, 0.5, 1.4);
     const hand = cls === 'ranger' ? 0.55 : 1.0, sx = from.x + 0.3, sy = hand, sz = from.z + 0.2;
     const f = (T - e.t) / 0.3;                                  // 0 at release, 1 at the target
@@ -461,8 +463,8 @@ export class Expedition {
       a.position.set(x, y, z); a.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(to.x - sx, ty - sy, to.z - sz).normalize());
       return;
     }
-    const b = this.bolts[(n - 1) % this.bolts.length], parts = b.userData.parts, fire = kind === 'fire', now = performance.now() / 1000;
-    const core = fire ? 0xffb030 : 0x9affff, mid = fire ? 0xff5a20 : 0x4aa8ff;
+    const b = this.bolts[(n - 1) % this.bolts.length], parts = b.userData.parts, fire = kind === 'fire' || kind === 'flask', now = performance.now() / 1000;
+    const core = kind === 'holy' ? 0xfff2a0 : kind === 'flask' ? 0x9bff9b : fire ? 0xffb030 : 0x9affff, mid = kind === 'holy' ? 0xffd24a : kind === 'flask' ? 0x2faa4a : fire ? 0xff5a20 : 0x4aa8ff;
     b.visible = true;
     if (f < 0) {        // charging: a small orb grows at the staff
       const c = clamp((f + 1.5) / 1.5, 0, 1); parts.forEach((m, i) => { m.visible = i < 2; });
@@ -487,8 +489,8 @@ export class Expedition {
   // A ring expanding on the ground where a spell lands
   impactRing(e, ho, age, n) {
     if (ho.p.cls === 'ranger') return;
-    const fo = this.foe[e.e], idx = (this.hitsBy[e.h] || []).indexOf(e), fire = idx % 2 === 1, r = this.rings[n % this.rings.length], f = age / 0.4;
-    r.visible = true; r.position.set(fo.m.position.x, 0.06, fo.m.position.z); r.scale.setScalar(0.4 + f * (fire ? 2.4 : 1.8)); r.material.opacity = 0.8 * (1 - f); r.material.color.setHex(fire ? 0xff7a30 : 0x7affff);
+    const fo = this.foe[e.e], idx = (this.hitsBy[e.h] || []).indexOf(e), fire = idx % 2 === 1 || ho.p.cls === 'alchemist', r = this.rings[n % this.rings.length], f = age / 0.4;
+    r.visible = true; r.position.set(fo.m.position.x, 0.06, fo.m.position.z); r.scale.setScalar(0.4 + f * (fire ? 2.4 : 1.8)); r.material.opacity = 0.8 * (1 - f); r.material.color.setHex(ho.p.cls === 'cleric' ? 0xffe27a : ho.p.cls === 'alchemist' ? 0x7aff7a : fire ? 0xff7a30 : 0x7affff);
   }
   // Heal beams, ward bubbles, boss-slam dust and scorch marks. All pure functions of T, so scrubbing and speed-ups stay correct.
   buildFx() {
@@ -518,8 +520,8 @@ export class Expedition {
     const q = this.q, S = this.S; this.shake = 0;
     this.hfx.forEach(f => { f.col.visible = f.orb.visible = f.bub.visible = f.halo.visible = false; f.sparks.forEach(m => { m.visible = false; }); });
     this.warn.forEach(m => { m.visible = false; }); this.dust.forEach(m => { m.visible = false; }); this.scorch.forEach(m => { m.visible = false; });
-    const healer = Math.max(0, q.party.findIndex(p => p.cls === 'wizard')), src = this.hero[healer] && this.hero[healer].m.position;
-    const casts = [...(q.heals || []).map(e => ({ t: e.t, ward: false })), ...(q.enchants || []).map(e => ({ t: e.t, ward: true })), ...(q.casts || []).filter(c => c.kind === 'wall').map(c => ({ t: c.t, ward: true }))];
+    const healer = healerIdx(q), src = this.hero[healer] && this.hero[healer].m.position;
+    const casts = [...(q.heals || []).map(e => ({ t: e.t, ward: false })), ...(q.enchants || []).map(e => ({ t: e.t, ward: true })), ...(q.casts || []).filter(c => c.kind === 'wall' || c.kind === 'bless').map(c => ({ t: c.t, ward: true }))];
     for (const c of casts) {
       const age = T - c.t; if (age < 0 || age > 1.8) continue;
       this.hero.forEach((o, h) => {
@@ -541,6 +543,7 @@ export class Expedition {
       const age = T - c.t, caster = this.hero[c.h]; if (age < 0 || age > 1.6 || !caster) continue; const cp = caster.m.position;
       if (c.kind === 'volley' && age >= 0.45 && age <= 0.85) foes.slice(0, 5).forEach((o, i) => { const a = this.arrows[7 - i], f = (age - 0.45) / 0.4, tp = o.m.position; a.visible = true; a.position.set(lerp(cp.x + 0.3, tp.x, f), lerp(0.55, 0.7, f) + Math.sin(f * Math.PI) * 0.05 * i, lerp(cp.z, tp.z, f)); a.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(tp.x - cp.x, 0.15, tp.z - cp.z).normalize()); });
       if (c.kind === 'dodge' && age < 0.6) { const r = this.rings[1]; r.visible = true; r.position.set(cp.x, 0.08, cp.z); r.scale.setScalar(0.6 + age * 3); r.material.color.setHex(0x9bff9b); r.material.opacity = 0.85 * (1 - age / 0.6); }
+      if (c.kind === 'stab' && age > 0.2 && age < 0.8) foes.slice(0, 3).forEach((o, i) => { const f = this.rings[2 + i], k = (age - 0.2) / 0.6; f.visible = true; f.position.set(o.m.position.x, 0.07, o.m.position.z); f.scale.setScalar(0.4 + k * 1.4); f.material.color.setHex(0xff4a4a); f.material.opacity = 0.85 * (1 - k); });
       if (c.kind === 'nova' && age < 0.9) {
         const r = this.rings[5]; r.visible = true; r.position.set(cp.x, 0.07, cp.z); r.scale.setScalar(0.5 + age * 7); r.material.color.setHex(0xffa040); r.material.opacity = 0.75 * (1 - age / 0.9);
         foes.slice(0, 3).forEach((o, i) => { if (age > 0.35) { const f = this.rings[2 + i], k = (age - 0.35) / 0.55; f.visible = true; f.position.set(o.m.position.x, 0.07, o.m.position.z); f.scale.setScalar(0.5 + k * 2.2); f.material.color.setHex(0xff7a30); f.material.opacity = 0.8 * (1 - k); } });
@@ -664,7 +667,7 @@ export class Expedition {
       if (e.t > T + 0.5) break;
       if (e.type !== 'hit' && e.type !== 'ehit') continue;
       const ho = this.hero[e.h], fo = this.foe[e.e]; if (!ho || !fo || fo.gone) continue;
-      const ranged = e.type === 'hit' && ho.p.cls !== 'knight';
+      const ranged = e.type === 'hit' && !MELEE.includes(ho.p.cls);
       const from = e.type === 'hit' ? ho.m.position : fo.m.position, to = e.type === 'hit' ? fo.m.position : ho.m.position;
       if (ranged && T >= e.t - 0.45 && T <= e.t + 0.3) this.castFx(e, ho, fo, from, to, T, ++nfx);
       const hit = e.t + (ranged ? 0.3 : 0.28);

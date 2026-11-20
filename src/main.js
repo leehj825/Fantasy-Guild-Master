@@ -312,7 +312,12 @@ const CLASSES = {
   knight: { label: 'Knight', icon: '🗡️', base: 3.0, price: 20, survive: 0.92, quest: 'combat' },
   ranger: { label: 'Ranger', icon: '🏹', base: 2.5, price: 15, survive: 0.88, quest: 'gather' },
   wizard: { label: 'Wizard', icon: '🪄', base: 3.5, price: 18, survive: 0.75, quest: 'arcane' },
+  rogue: { label: 'Rogue', icon: '🗡️', base: 2.7, price: 16, survive: 0.84, quest: 'gather' },        // sneaky: extra loot, great against ambushes
+  cleric: { label: 'Cleric', icon: '🙏', base: 2.2, price: 18, survive: 0.9, quest: 'combat' },       // keeps the party alive
+  alchemist: { label: 'Alchemist', icon: '⚗️', base: 2.6, price: 17, survive: 0.8, quest: 'arcane' }, // lives on potions, boosts potion use
 };
+const usesLab = c => c === 'wizard' || c === 'alchemist';   // these classes are equipped with potions from the Alchemical Lab
+const MELEE = ['knight', 'rogue'];
 const NAMES = ['Aldric', 'Brienne', 'Cael', 'Dara', 'Eldon', 'Fenna', 'Garrick', 'Hilda', 'Ivar', 'Jora', 'Kellan', 'Lyra', 'Mordo', 'Nessa', 'Orin', 'Piper', 'Quill', 'Rurik', 'Sera', 'Thane'];
 const TRAITS = {
   clumsy: { label: 'Clumsy', icon: '🤕', epithet: 'the Clumsy', desc: '−10% quest success chance, but +20% loot from every quest.' },
@@ -321,7 +326,7 @@ const TRAITS = {
   brave: { label: 'Brave', icon: '🦁', epithet: 'the Bold', desc: 'Far less likely to fall in battle.' },
   scholar: { label: 'Scholar', icon: '📖', epithet: 'the Wise', desc: 'Gains experience twice as fast.' },
 };
-const VIP_POOL = [['Sir Galahad', 'knight'], ['Dame Rowena', 'knight'], ['Lord Percival', 'knight'], ['Lady Isolde', 'ranger'], ['Ranger Thistle', 'ranger'], ['Archmage Orwyn', 'wizard'], ['Mage Lysandra', 'wizard']];
+const VIP_POOL = [['Sir Galahad', 'knight'], ['Dame Rowena', 'knight'], ['Lord Percival', 'knight'], ['Lady Isolde', 'ranger'], ['Ranger Thistle', 'ranger'], ['Archmage Orwyn', 'wizard'], ['Mage Lysandra', 'wizard'], ['Shade Vesper', 'rogue'], ['Mother Aveline', 'cleric'], ['Brewmaster Quill', 'alchemist']];
 const traitOf = h => (h.vip ? h.vip.trait : null);
 function addStar(h) {   // a spinning golden star marks VIP heroes
   const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.16), new THREE.MeshBasicMaterial({ color: 0xffd24a }));
@@ -331,10 +336,16 @@ const PROMO = {
   knight: { name: 'Paladin', icon: '⚜️', pw: 1.3, survive: 0.1, desc: '+30% power, far fewer casualties.' },
   ranger: { name: 'Warden', icon: '🦅', pw: 1.3, loot: 0.25, desc: '+30% power, +25% loot.' },
   wizard: { name: 'Archmage', icon: '🔮', pw: 1.35, mana: 3, desc: '+35% power, +3 Mana after each success.' },
+  rogue: { name: 'Shadowblade', icon: '🌑', pw: 1.25, loot: 0.3, desc: '+25% power, +30% loot.' },
+  cleric: { name: 'Saint', icon: '✨', pw: 1.2, survive: 0.1, mana: 2, desc: '+20% power, far fewer casualties, +2 Mana.' },
+  alchemist: { name: 'Grand Alchemist', icon: '🧪', pw: 1.3, mana: 2, desc: '+30% power, +2 Mana after each success.' },
 };
 const TALENTS = {
   knight: [[['shield', 'Shield Wall', 'Far fewer casualties.', { survive: 0.15 }], ['cleave', 'Cleave', '+15% power on combat quests.', { pwType: { combat: 1.15 } }]], [['ironwill', 'Iron Will', 'Stamina drains 30% slower.', { decay: 0.3 }], ['warlord', 'Warlord', '+15% power everywhere.', { pw: 1.15 }]]],
   ranger: [[['forager', 'Forager', '+25% loot from quests.', { loot: 0.25 }], ['sharp', 'Sharpshooter', '+20% power on gather quests.', { pwType: { gather: 1.2 } }]], [['swift', 'Swift Feet', 'Stamina drains 30% slower.', { decay: 0.3 }], ['eagle', 'Eagle Eye', '+4% party success chance.', { succ: 0.04 }]]],
+  rogue: [[['pick', 'Pickpocket', '+30% loot from quests.', { loot: 0.3 }], ['ambush', 'Ambusher', '+20% power on combat quests.', { pwType: { combat: 1.2 } }]], [['nimble', 'Nimble', 'Far fewer casualties.', { survive: 0.12 }], ['edge', 'Killer Instinct', '+25% power, but more casualties.', { pw: 1.25, survive: -0.1 }]]],
+  cleric: [[['mend', 'Mending Hands', '+3% party success chance.', { succ: 0.03 }], ['ward', 'Sacred Ward', 'Far fewer casualties.', { survive: 0.15 }]], [['zeal', 'Holy Zeal', '+20% power on combat quests.', { pwType: { combat: 1.2 } }], ['grace', 'Grace', '+2 Mana after each successful quest.', { mana: 2 }]]],
+  alchemist: [[['dist', 'Distiller', '+20% power on arcane quests.', { pwType: { arcane: 1.2 } }], ['herbal', 'Herbalist', '+25% loot from quests.', { loot: 0.25 }]], [['potent', 'Potent Brews', '+4% party success chance.', { succ: 0.04 }], ['volatile', 'Volatile Mixtures', '+25% power, but more casualties.', { pw: 1.25, survive: -0.1 }]]],
   wizard: [[['focus', 'Arcane Focus', '+20% power on arcane quests.', { pwType: { arcane: 1.2 } }], ['siphon', 'Mana Siphon', '+2 Mana after each successful quest.', { mana: 2 }]], [['friend', "Alchemist's Friend", '+4% party success chance.', { succ: 0.04 }], ['glass', 'Glass Cannon', '+25% power, but more casualties.', { pw: 1.25, survive: -0.1 }]]],
 };
 const talentSlots = h => (h.level >= 3 ? 1 : 0) + (h.level >= 6 ? 1 : 0);
@@ -343,6 +354,7 @@ function heroMods(h) {
   const m = { pw: 1, pwType: {}, survive: 0, loot: 0, mana: 0, decay: 0, succ: 0, xp: 1, happy: 1 };
   if (h.boon) { m.pw *= h.boon.pw || 1; m.succ += h.boon.succ || 0; m.loot += h.boon.loot || 0; m.survive += h.boon.survive || 0; }
   if ((h.loy ?? 60) >= 80) m.pw *= 1.04; else if ((h.loy ?? 60) <= 25) m.pw *= 0.96;
+  if (h.cls === 'rogue') m.loot += 0.15;
   { const tm = tagMods(h.tags); m.pw *= tm.pw; m.survive += tm.survive; m.loot += tm.loot; m.decay += tm.decay; m.succ += tm.succ; m.xp = tm.xp; m.happy = tm.happy; }
   if (h.promo) { const P = PROMO[h.cls]; m.pw *= P.pw; m.survive += P.survive || 0; m.loot += P.loot || 0; m.mana += P.mana || 0; }
   for (const id of h.talents || []) { const t = talentDef(h.cls, id); if (!t) continue; const f = t[3]; if (f.pw) m.pw *= f.pw; if (f.pwType) for (const k of Object.keys(f.pwType)) m.pwType[k] = (m.pwType[k] || 1) * f.pwType[k]; m.survive += f.survive || 0; m.loot += f.loot || 0; m.mana += f.mana || 0; m.decay += f.decay || 0; m.succ += f.succ || 0; }
@@ -429,11 +441,12 @@ function spawnHero(cls, atHall = false) {
   if (!cls) {
     const opts = ['knight', 'ranger'];
     if (first('alchemy')) opts.push('wizard', 'wizard');
+    if (G.renown >= 3) opts.push('rogue'); if (G.renown >= 6 || G.rank >= 1) opts.push('cleric'); if (first('alchemy') && G.renown >= 4) opts.push('alchemist');
     cls = pick(opts);
   }
   const p = atHall ? new THREE.Vector3(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1.2)) : spawnPoint();
   if (!atHall && Math.random() < (first('portal') ? 0.2 : 0.05) && G.heroes.filter(x => x.vip).length < 3) {   // a rare named VIP arrives
-    const pool = VIP_POOL.filter(v => v[1] !== 'wizard' || first('alchemy')), [base, vcls] = pick(pool), trait = pick(Object.keys(TRAITS));
+    const pool = VIP_POOL.filter(v => !usesLab(v[1]) || first('alchemy')), [base, vcls] = pick(pool), trait = pick(Object.keys(TRAITS));
     const h = createHero({ cls: vcls, variant: Math.floor(Math.random() * 3), name: `${base} ${TRAITS[trait].epithet}`, x: p.x, z: p.z, level: 2 + Math.floor(Math.random() * 2), vip: { trait } });
     toast(`⭐ ${h.name} has arrived at your guild! (${TRAITS[trait].label})`); return h;
   }
@@ -535,7 +548,7 @@ function setMood(h, icon) {
 function decide(h) {
   h.cool = 1.5;
   const tavern = first('tavern');
-  const shop = h.cls === 'wizard' ? first('alchemy') : first('forge');
+  const shop = usesLab(h.cls) ? first('alchemy') : first('forge');
   if (h.stamina < 45) {
     setMood(h, '🍺');
     if (tavern) {
@@ -548,13 +561,13 @@ function decide(h) {
     return wanderNearHall(h);
   }
   if (!h.gear) {
-    const item = h.cls === 'wizard' ? '🧪' : CLASSES[h.cls].icon;
+    const item = usesLab(h.cls) ? '🧪' : CLASSES[h.cls].icon;
     setMood(h, item);
     if (shop && shop.stock > 0) {
       return visit(h, shop, 1.8, () => {
         if (shop.stock > 0) {
           shop.stock--; h.gear = true; h.gearTier = shop.grade || 1;
-          gain(shop.door, CLASSES[h.cls].price * (1 + 0.15 * (shop.level - 1)) * (1 + 0.6 * (h.gearTier - 1)) * (G.research.mythril && h.cls !== 'wizard' ? 1.25 : 1));
+          gain(shop.door, CLASSES[h.cls].price * (1 + 0.15 * (shop.level - 1)) * (1 + 0.6 * (h.gearTier - 1)) * (G.research.mythril && !usesLab(h.cls) ? 1.25 : 1));
         }
       });
     }
@@ -568,7 +581,7 @@ function decide(h) {
 }
 
 const GRADE = { forge: ['', 'Iron', 'Steel', 'Mythril'], alchemy: ['', 'Minor', 'Greater', 'Superior'] };
-const gearName = h => GRADE[h.cls === 'wizard' ? 'alchemy' : 'forge'][h.gearTier || 1];
+const gearName = h => GRADE[usesLab(h.cls) ? 'alchemy' : 'forge'][h.gearTier || 1];
 const nearCampfire = h => ofType('campfire').some(b => Math.hypot(b.cx + b.w / 2 - h.pos.x, b.cz + b.d / 2 - h.pos.z) < 6);
 function updateHero(h, dt) {
   h.phase += dt * 8;
@@ -696,8 +709,8 @@ function bestParty(q) {
 function modPenalty(q, party, opts = {}) {   // returns [delta, [unmet requirement notes]]
   let d = 0; const notes = [], has = c => party.some(h => h.cls === c), avgTier = party.length ? party.reduce((n, h) => n + (h.gearTier || 1), 0) / party.length : 1;
   for (const k of q.mods || []) {
-    if (k === 'cursed' && !has('wizard')) { d -= 0.15; notes.push('needs a Wizard'); }
-    if (k === 'storm' && !has('ranger')) { d -= 0.12; notes.push('needs a Ranger'); }
+    if (k === 'cursed' && !has('wizard') && !has('cleric')) { d -= 0.15; notes.push('needs a Wizard or Cleric'); }
+    if (k === 'storm' && !has('ranger') && !has('rogue')) { d -= 0.12; notes.push('needs a Ranger or Rogue'); }
     if (k === 'armored' && avgTier < 2) { d -= 0.15; notes.push('needs Steel gear'); }
     if (k === 'poison' && !opts.potion) { d -= 0.12; notes.push('bring a potion'); }
     if (k === 'bounty') d -= 0.10;
@@ -713,7 +726,7 @@ function chanceFor(q, party, o = false) {
   if (factionOf() && factionOf().type === q.type) c += 0.10;
   c += modPenalty(q, party, o)[0] + (APPROACH[o.approach || 'standard'].chance) + bondInfo(party).d + party.reduce((n, h) => n + heroMods(h).succ, 0);
   if (o.enchant) c += G.research.arcane ? 0.3 : 0.2;
-  c += fmBonus(party, o.formation);
+  c += fmBonus(party, o.formation); if (o.potion && party.some(h => h.cls === 'alchemist')) c += 0.05;   // an Alchemist makes the potion count for more
   return Math.max(0.03, Math.min(0.97, c));
 }
 function dispatch(qid, enchant, partyOverride, extra = {}) {
@@ -729,7 +742,7 @@ function dispatch(qid, enchant, partyOverride, extra = {}) {
   // the outcome is rolled now so the expedition can be watched live without ever contradicting the result
   q.party = party.map(h => heroSnap(h));
   q.seed = (Math.random() * 1e9) | 0; q.ok = Math.random() < q.chance; q.heals = [];
-  q.deaths = party.filter(h => Math.random() > CLASSES[h.cls].survive + 0.15 + ap.survive + FORMATION[q.formation || 'line'].survive + survBonus(h)).map(h => h.id);
+  q.deaths = party.filter(h => Math.random() > CLASSES[h.cls].survive + 0.15 + (h.cls !== 'cleric' && party.some(x => x.cls === 'cleric') ? 0.08 : 0) + ap.survive + FORMATION[q.formation || 'line'].survive + survBonus(h)).map(h => h.id);
   q.script = genScript(q);
   party.forEach(h => { h.state = 'quest'; h.mesh.visible = false; setMood(h, null); h.onDone = null; });
   sfx('horn'); toast(`Party of ${party.length} dispatched: ${q.name}`);
@@ -1598,7 +1611,7 @@ function modalContent() {
       body += `<div class="s" style="margin-top:6px">Experience ${h.xp}/${h.level + 1}</div>${bar(h.xp / (h.level + 1) * 100, '#8fd4ff')}
         <div class="s" style="margin-top:6px">Stamina ${Math.round(h.stamina)}</div>${bar(h.stamina, h.stamina < 45 ? '#e0503a' : '#5be35b')}
         <div class="s" style="margin-top:6px">Happiness ${Math.round(h.happy)}</div>${bar(h.happy, h.happy < 30 ? '#e0503a' : '#f0c040')}
-        <div class="row"><div class="grow"><div class="t">Gear</div><div class="s">${h.gear ? '✔ ' + gearName(h) + ' gear equipped' : '✘ Needs ' + (h.cls === 'wizard' ? 'potions from the Alchemical Lab' : 'a weapon from the Forge')}</div></div>
+        <div class="row"><div class="grow"><div class="t">Gear</div><div class="s">${h.gear ? '✔ ' + gearName(h) + ' gear equipped' : '✘ Needs ' + (usesLab(h.cls) ? 'potions from the Alchemical Lab' : 'a weapon from the Forge')}</div></div>
         <div class="grow"><div class="t">Power</div><div class="s">${heroPower(h, c.quest).toFixed(1)} on ${c.quest} quests</div></div></div>`;
       { const pc = plusCost(h), pl = h.plus || 0, mp = maxPlus(), canP = first('forge') && pl < mp && G.gold >= pc.gold && G.ore >= pc.ore && G.ingots >= pc.ing, tc = trainCost(h);
         body += `<div class="row"><div class="grow"><div class="t">⚒ Gear +${pl}/${mp}</div><div class="s">Each step: +5% power. ${first('forge') ? (pl >= mp ? 'Upgrade the Forge for more steps.' : `Next: ${pc.gold}g, ${pc.ore} ore${pc.ing ? ', ' + pc.ing + ' ingots' : ''}`) : 'Needs a Forge.'}</div></div><button class="act" data-act="reinforce" data-id="${h.id}" ${canP ? '' : 'disabled'}>Reinforce</button></div>`;
@@ -2091,7 +2104,7 @@ function boostQuest(q, amt) {
 }
 // Hero skills during a watched fight: one per class, once per expedition (a dive: once per 5 floors). They give a small boost to the odds
 // (a dive: a ward or a heal) and play a showy effect on the stage.
-const SKILLS = { knight: { icon: '🛡', name: 'Shield Wall', kind: 'wall', boost: 0.06 }, ranger: { icon: '🏹', name: 'Volley', kind: 'volley', boost: 0.05 }, wizard: { icon: '🔥', name: 'Nova', kind: 'nova', boost: 0.05 } };
+const SKILLS = { knight: { icon: '🛡', name: 'Shield Wall', kind: 'wall', boost: 0.06 }, ranger: { icon: '🏹', name: 'Volley', kind: 'volley', boost: 0.05 }, wizard: { icon: '🔥', name: 'Nova', kind: 'nova', boost: 0.05 }, rogue: { icon: '🗡', name: 'Backstab', kind: 'stab', boost: 0.05 }, cleric: { icon: '🙏', name: 'Blessing', kind: 'bless', boost: 0.03, heal: 0.25 }, alchemist: { icon: '⚗️', name: 'Elixir', kind: 'elixir', boost: 0.03, heal: 0.2 } };
 const SKILL_CD = 25, SKILL_CAP = 0.12;   // seconds between uses (a dive: floors), and the most the skills can add to one quest's odds
 function skillLeft(q, cls) {
   const T = nowT(watching), S = q.script, used = ((q.dive ? q.skillsUsed : q.skillT) || {})[cls]; if (used === undefined) return 0;
@@ -2121,9 +2134,9 @@ function watchSkill(cls) {
   if (q.dive) (q.skillsUsed ||= {})[cls] = diveFloorIndex(S, T); else (q.skillT ||= {})[cls] = T;
   if (q.dive) {
     const next = diveFloorIndex(S, T) + 1;
-    if (sk.kind === 'wall' && !(q.enchants || []).some(x => x.floor + 3 > next)) q.enchants.push({ floor: next, t: T }); else q.heals.push({ t: T, amt: 0.15 });
+    if (sk.kind === 'wall' && !(q.enchants || []).some(x => x.floor + 3 > next)) q.enchants.push({ floor: next, t: T }); else q.heals.push({ t: T, amt: sk.heal || 0.15 });
     rebuildDive(q, T); toast(`${sk.icon} ${sk.name}!`);
-  } else { const add = Math.max(0, Math.min(sk.boost, SKILL_CAP - (q.skillBoost || 0))); q.skillBoost = (q.skillBoost || 0) + add; if (add > 0) boostQuest(q, add); toast(`${sk.icon} ${sk.name}! ${add > 0 ? `Success chance now ${Math.round(q.chance * 100)}%` : 'The party is already at its best.'}`); }
+  } else { if (sk.heal) q.heals.push({ t: T, amt: sk.heal }); const add = Math.max(0, Math.min(sk.boost, SKILL_CAP - (q.skillBoost || 0))); q.skillBoost = (q.skillBoost || 0) + add; if (add > 0) boostQuest(q, add); toast(`${sk.icon} ${sk.name}! ${add > 0 ? `Success chance now ${Math.round(q.chance * 100)}%` : 'The party is already at its best.'}`); }
   sfx('chime'); updateWatchHUD();
 }
 function watchEnchant() {
