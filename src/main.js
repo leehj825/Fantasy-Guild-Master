@@ -434,8 +434,8 @@ function createHero(d) {
     quests: d.quests || 0, aff: d.aff || null, plus: d.plus || 0, train: d.train || 0, vow: d.vow || null, vip: d.vip || null, gearTier: d.gearTier || 1, promo: !!d.promo, talents: d.talents || [], bonds: d.bonds || {},
     mesh, pos: mesh.position, bub, state: 'idle', target: null, onArrive: null, timer: 0, onDone: null, cool: 0, phase: Math.random() * 6, vis: true,
   };
-  if (d.tags) { h.tags = d.tags; h.bio = d.bio; h.likes = d.likes; h.dislikes = d.dislikes; } else Object.assign(h, makeProfile(h.cls));
-  h.loy = d.loy ?? 60; h.marks = d.marks || []; h.title = d.title || null; h.boon = d.boon || null; h.arc = d.arc || { id: pickArc(h), ch: 0 };
+  codexAdd('classes', h.cls); if (d.tags) { h.tags = d.tags; h.bio = d.bio; h.likes = d.likes; h.dislikes = d.dislikes; } else Object.assign(h, makeProfile(h.cls));
+  (h.tags || []).forEach(t => codexAdd('tags', t)); h.loy = d.loy ?? 60; h.marks = d.marks || []; h.title = d.title || null; h.boon = d.boon || null; h.arc = d.arc || { id: pickArc(h), ch: 0 };
   mesh.userData.hid = h.id; G.heroes.push(h); if (h.vip) addStar(h); if (h.promo) addPromoGear(h); if (d.bonds === undefined) assignBonds(h); else if (!h.aff) { h.aff = {}; for (const [id, k] of Object.entries(h.bonds || {})) h.aff[id] = k === 'rival' ? -35 : 35; }
   return h;
 }
@@ -810,6 +810,7 @@ function resolveQuest(q) {
     if (q.loot.herbs) G.herbs += Math.round(q.loot.herbs * oreMul / (G.research.prospect ? 1.5 : 1));
     if (q.loot.wood) G.wood += Math.round(q.loot.wood * oreMul / (G.research.prospect ? 1.5 : 1));
     if (q.loot.arcane) G.mana += Math.round(q.loot.arcane * 5 * oreMul / (G.research.prospect ? 1.5 : 1));
+    (q.script && q.script.enemies || []).filter(e => e.boss).forEach(e => codexAdd('bosses', e.kind));
     G.questsDone++; if (q.mods && q.mods.includes('elite')) G.stats.elite = (G.stats.elite || 0) + 1; if (q.town) G.stats.town = (G.stats.town || 0) + 1; if (q.legend) legendWon(q); else if (q.special) chron(`✔ ${q.name}`);
     if (q.town) { repGain(q.rep || 3); toast(`🏘 ${q.who} thanks you warmly. (+${q.rep || 3} town reputation)`); }
     if (q.region && REGIONS[q.region]) { const rec = (G.regions[q.region] = G.regions[q.region] || { done: 0 }), before = regionLevel(q.region); rec.done++; if (regionLevel(q.region) > before) toast(`🗺 ${REGIONS[q.region].name} mastery level ${regionLevel(q.region)}! ${REGIONS[q.region].perk}`); }
@@ -898,7 +899,7 @@ function dispatchDive() {
   sfx('horn'); toast(`🌀 ${r.length} heroes step through the portal… Recall to bank your loot!`); renderModal(true);
 }
 function pickRelic(q, i, auto) {
-  const id = q.offer && q.offer[i]; if (!id) return;
+  const id = q.offer && q.offer[i]; if (!id) return; codexAdd('relics', id);
   const T = q.elapsed, next = diveFloorIndex(q.script, T) + 1; q.relics = q.relics || []; q.relics.push({ id, from: next }); q.offer = null;
   rebuildDive(q, T); toast(`${auto ? 'Relic claimed automatically' : 'Relic chosen'}: ${RELICS[id].icon} ${RELICS[id].name} — ${RELICS[id].desc}`);
 }
@@ -1085,7 +1086,7 @@ function updateEconomy(dt) {
   }
   if (first('alchemy')) { t.mana += dt; if (t.mana >= 5) { t.mana = 0; G.mana += 1 + (G.research.arcane ? 1 : 0) + regionPerk('ruins') + (G.flags.faction === 'arcane' ? 1 : 0); } }
   t.market -= dt; if (t.market <= 0) { t.market = rnd(70, 100); tickMarket(); }
-  t.goals -= dt; if (t.goals <= 0) { t.goals = 1; checkGoals(); checkStories(); tutorial.tick(); }
+  t.goals -= dt; if (t.goals <= 0) { t.goals = 1; checkGoals(); checkAch(); checkStories(); tutorial.tick(); }
   // minor facilities
   t.minor = (t.minor || 0) + dt;
   if (t.minor >= 6) {
@@ -1150,6 +1151,33 @@ const GOALS = [
   ['Reach 100 renown', () => G.renown >= 100, { gold: 4000 }],
 ];
 const rewardTags = r => Object.entries(r).map(([k, v]) => k === 'gold' ? `💰${v}` : k === 'renown' ? `⭐${v}` : Object.entries(v).map(([rk, rv]) => `${RARE[rk].icon}${rv}`).join('')).join(' ');
+// ---- codex and achievements: what the guild has met, beaten and collected
+function codexAdd(k, id) { const c = ((G.flags.codex ||= {})[k] ||= {}); c[id] = (c[id] || 0) + 1; }
+const codexN = k => Object.keys(((G.flags.codex || {})[k]) || {}).length;
+const CODEX_BOSS = { ogre: 'Ogre Warchief', chief: 'Bandit Chief', golem: 'Ancient Golem', frostgiant: 'Frost Giant', duneking: 'Dune Warlord', lich: 'Bone Lich' };
+const ACHS = [
+  { id: 'boss3', icon: '👑', name: 'Giant Slayer', desc: 'Defeat 3 different bosses.', ok: () => codexN('bosses') >= 3, rew: { gold: 600 } },
+  { id: 'bossall', icon: '🏆', name: 'Bane of Bosses', desc: 'Defeat all 6 bosses.', ok: () => codexN('bosses') >= 6, rew: { gold: 3000, renown: 5, mythril: 2 } },
+  { id: 'cls6', icon: '🎭', name: 'A Full Roster', desc: 'Recruit every class.', ok: () => codexN('classes') >= 6, rew: { gold: 800 } },
+  { id: 'tag12', icon: '🧑‍🤝‍🧑', name: 'People Person', desc: 'Meet all 12 personalities.', ok: () => codexN('tags') >= 12, rew: { gold: 1000, renown: 2 } },
+  { id: 'arc3', icon: '📖', name: 'Storyteller', desc: 'Finish 3 hero stories.', ok: () => codexN('arcs') >= 3, rew: { gold: 700, renown: 1 } },
+  { id: 'rel8', icon: '🎁', name: 'Relic Hunter', desc: 'Collect all 8 relics.', ok: () => codexN('relics') >= 8, rew: { gold: 1500, scale: 1 } },
+  { id: 'rep75', icon: '🏘', name: 'Beloved', desc: 'Win the town’s love (reputation 75).', ok: () => (G.flags.rep ?? 10) >= 75, rew: { gold: 1200, renown: 3 } },
+  { id: 'legend', icon: '🐉', name: 'Legend of the Realm', desc: 'Defeat the Ember Colossus.', ok: () => !!G.flags.legendDone, rew: { gold: 2000, renown: 5 } },
+  { id: 'fest3', icon: '🎉', name: 'Life of the Party', desc: 'Hold 3 festivals.', ok: () => (G.stats.fests || 0) >= 3, rew: { gold: 600 } },
+  { id: 'road50', icon: '🛤', name: 'City Planner', desc: 'Pave 50 path tiles.', ok: () => G.buildings.filter(b => b.type === 'road').length >= 50, rew: { gold: 800 } },
+  { id: 'hero20', icon: '🛡', name: 'A Hall Full of Heroes', desc: 'Have 20 heroes at once.', ok: () => G.heroes.length >= 20, rew: { gold: 1000 } },
+  { id: 'rank3', icon: '🛡️', name: 'Fortress Guild', desc: 'Reach Fortress rank.', ok: () => G.rank >= 3, rew: { gold: 2500, renown: 5 } },
+  { id: 'deep30', icon: '🌀', name: 'Deep Delver', desc: 'Reach floor 30 of the Endless Dive.', ok: () => G.diveBest >= 30, rew: { gold: 2000, feather: 1 } },
+  { id: 'plus5', icon: '⚒', name: 'Masterwork', desc: 'Reinforce a hero’s gear to +5.', ok: () => G.heroes.some(h => (h.plus || 0) >= 5), rew: { gold: 1500 } },
+];
+function checkAch() {
+  const a = (G.flags.ach ||= {});
+  for (const x of ACHS) if (!a[x.id] && x.ok()) {
+    a[x.id] = 1; const r = x.rew; G.gold += r.gold || 0; G.renown += r.renown || 0; for (const k of ['mythril', 'scale', 'feather']) if (r[k]) G.rare[k] += r[k];
+    sfx('goal'); toast(`🏅 Achievement: ${x.name}! (+${r.gold}g${r.renown ? ', +' + r.renown + '⭐' : ''})`); chron(`🏅 ${x.name}`);
+  }
+}
 function checkGoals() {
   GOALS.forEach((g, i) => {
     if (G.goalsDone[i] || !g[1]()) return; G.goalsDone[i] = 1; const r = g[2];
@@ -1281,7 +1309,7 @@ function resolveHeroStory(h, i) {
   const ch = storyChapter(h), c = ch && ch.choices[i]; if (!c) return false; if (c.cost && G.gold < c.cost) { toast('Not enough gold.'); return false; } if (c.cost) G.gold -= c.cost;
   applyFx(h, c.fx); (h.marks = h.marks || []).push(c.label.replace(/ \(.*\)$/, '')); if (h.marks.length > 6) h.marks.shift(); chron(`📖 ${h.name}: ${c.label.replace(/ \(.*\)$/, '')}`);
   (G.flags.after = G.flags.after || []).push({ t: G.time + 90 + Math.random() * 90, hid: h.id, good: choiceScore(c) > 0 && Math.random() < 0.6 });
-  h.arc.ch++; G.stats.chapters = (G.stats.chapters || 0) + 1; sfx('goal'); toast(`📖 ${h.name}: ${(h.arc.ch >= ARCS[h.arc.id].ch.length ? 'their story reaches its end.' : 'the story goes on…')}`); return true;
+  h.arc.ch++; if (h.arc.ch >= ARCS[h.arc.id].ch.length) codexAdd('arcs', h.arc.id); G.stats.chapters = (G.stats.chapters || 0) + 1; sfx('goal'); toast(`📖 ${h.name}: ${(h.arc.ch >= ARCS[h.arc.id].ch.length ? 'their story reaches its end.' : 'the story goes on…')}`); return true;
 }
 function storyChapter(h) { const a = ARCS[h.arc && h.arc.id]; return a && h.arc.ch < a.ch.length ? a.ch[h.arc.ch] : null; }
 let storyT = 6, stepT = 0; const notified = new Set();
@@ -1527,6 +1555,7 @@ function modalContent() {
       <div class="row"><div class="grow"><div class="t">🌐 Language</div><div class="s">English / 한국어</div></div>${Object.entries(LANGS).map(([k, n]) => `<button class="act ${getLang() === k ? '' : 'red'}" style="${getLang() === k ? 'outline:2px solid #fff8' : ''}" data-act="lang" data-l="${k}">${n}</button>`).join('')}</div>
       <div class="row"><div class="grow"><div class="t">🛤 Auto paths</div><div class="s">Link every new building to the street network with a short cobble path (a few coins).</div></div><button class="act ${G.flags.noAutoRoad ? 'red' : ''}" data-act="autoroadtoggle">${G.flags.noAutoRoad ? 'Off' : 'On'}</button></div>
       <div class="row"><div class="grow"><div class="t">📂 Save slots & export</div><div class="s">Three extra slots, plus copy/paste a save between devices.</div></div><button class="act" data-act="saveio">Open</button></div>
+      <div class="row"><div class="grow"><div class="t">📚 Codex & achievements</div><div class="s">Bosses, relics, classes and personalities you have met, and medals to earn.</div></div><button class="act" data-act="codex">Open</button></div>
       <div class="row"><div class="grow"><div class="t">📖 Guild Chronicle</div><div class="s">The diary of your guild's big moments.</div></div><button class="act" data-act="chron">Open</button></div>
       <div class="row"><div class="grow"><div class="t">🔔 Notifications</div><div class="s">Alert when a quest ends or a raid arrives while the game is in the background (browser only; needs permission).</div></div><button class="act ${G.flags.notif ? '' : 'red'}" data-act="notiftoggle">${G.flags.notif ? 'On' : 'Off'}</button></div>
       <div class="row"><div class="grow"><div class="t">🧍 Characters</div><div class="s">Body style. Rigged bodies use motion-capture clips (walk, run, sword, bow, magic, heal). Changing it reloads the game (progress is saved).</div></div>${Object.entries(CHAR_STYLES).map(([k, n]) => `<button class="act ${charStyle === k ? '' : 'red'}" style="${charStyle === k ? 'outline:2px solid #fff8' : ''}" data-act="cstyle" data-s="${k}">${n}</button>`).join('')}</div>
@@ -1568,6 +1597,17 @@ function modalContent() {
       hs.forEach((a, i) => { svg += `<g><circle cx="${pos[i][0]}" cy="${pos[i][1]}" r="15" fill="#3a2a18" stroke="#e8c04a" stroke-width="2"/><text x="${pos[i][0]}" y="${pos[i][1] + 5}" text-anchor="middle" font-size="15">${CLASSES[a.cls].icon}</text><text x="${pos[i][0]}" y="${pos[i][1] + 30}" text-anchor="middle" font-size="9" fill="#fff">${a.name.split(' ')[0]}</text></g>`; });
       svg += '</svg>';
       return ['🕸 Relations map', `<div class="s">🟩 friends · 🩷 sweethearts · 🟦 mentor/apprentice · 🟥 rivals (dashed)</div>${svg}<button class="act" data-act="open" data-k="quests" style="margin-top:8px">Open Quest Board</button>`];
+    }
+    case 'codex': {
+      const cx = G.flags.codex || {}, got = (k, id) => (cx[k] || {})[id], ach = G.flags.ach || {};
+      const chips = (arr, k, show) => arr.map(([id, label, icon]) => got(k, id) ? `<span class="tag" style="border-color:#9bff9b">${icon || ''} ${label}${show ? ' ×' + got(k, id) : ''}</span>` : `<span class="tag" style="opacity:.45">❔ ???</span>`).join(' ');
+      let h = `<div class="sec">Bosses (${codexN('bosses')}/6)</div><div class="s">${chips(Object.entries(CODEX_BOSS).map(([id, n]) => [id, n, '👑']), 'bosses', true)}</div>`;
+      h += `<div class="sec">Relics (${codexN('relics')}/8)</div><div class="s">${chips(Object.entries(RELICS).map(([id, r]) => [id, r.name, r.icon]), 'relics')}</div>`;
+      h += `<div class="sec">Classes (${codexN('classes')}/6)</div><div class="s">${chips(Object.entries(CLASSES).map(([id, c]) => [id, c.label, c.icon]), 'classes')}</div>`;
+      h += `<div class="sec">Personalities (${codexN('tags')}/12)</div><div class="s">${chips(Object.entries(TAGS).map(([id, t]) => [id, t.label, t.icon]), 'tags')}</div>`;
+      h += `<div class="sec">Hero stories (${codexN('arcs')}/5)</div><div class="s">${chips(Object.entries(ARCS).map(([id, a]) => [id, a.title, '📖']), 'arcs')}</div>`;
+      h += `<div class="sec">Achievements (${Object.keys(ach).length}/${ACHS.length})</div>` + ACHS.map(x => `<div class="row" style="${ach[x.id] ? 'border-color:#9bff9b' : 'opacity:.7'}"><div style="font-size:24px">${x.icon}</div><div class="grow"><div class="t">${x.name} ${ach[x.id] ? '✔' : ''}</div><div class="s">${x.desc}</div></div><div class="s">${x.rew.gold}g${x.rew.renown ? ' · ' + x.rew.renown + '⭐' : ''}</div></div>`).join('');
+      return ['📚 Codex', h];
     }
     case 'chronicle': return ['📖 Guild Chronicle', (G.flags.chron || []).length ? [...G.flags.chron].reverse().map(c => `<div class="row"><div class="s" style="min-width:48px">Day ${c.d}</div><div class="grow"><div class="t" style="font-weight:400">${c.t}</div></div></div>`).join('') : '<div class="s">Nothing has been written yet. Great deeds will appear here.</div>'];
     case 'legend': return ['🏆 A Legend of the Realm', `<div class="s" style="font-size:14px;line-height:1.5">The Ember Colossus is no more. Bards in every tavern sing of your guild, and the kingdom sends its thanks: <b>+5000 gold, +20 renown, +3 Mythril</b>.<br><br>Your guild is a legend — but its story is not over. Keep building, keep exploring, and see how deep the Endless Dive goes.</div><button class="act" data-act="close" style="margin-top:10px">Continue</button>`];
@@ -1722,6 +1762,7 @@ const ACT = {
   sendall() { sendAll(0); },
   chron() { openModal('chronicle'); },
   relmap() { openModal('relmap'); },
+  codex() { openModal('codex'); },
   autoroadtoggle() { G.flags.noAutoRoad = G.flags.noAutoRoad ? 0 : 1; },
   pave() { const pv = pavable(), c = pv.length * BUILDINGS.road.cost; if (!pv.length || G.gold < c) return; G.gold -= c; pv.forEach(([x, z]) => addBuilding('road', x, z)); sfx('build'); toast(`🛤 Paved ${pv.length} tiles (−${c}g).`); },
   inbox() { openModal('inbox'); },
@@ -2315,4 +2356,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__api = { chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__api = { checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
