@@ -233,7 +233,7 @@ export function makeRigGolem() {
 // ------------------------------------------------------------------ the Ogre Warchief on the same rig
 // A hulking green brute: small head, huge belly and shoulders, thick arms, a spiked club in the right hand.
 export function makeRigOgre(o = {}) {
-  const skin = o.skin ?? 0x8aa84e, dark = o.dark ?? 0x6e8a3e, cloth = o.cloth ?? 0x6b4a2a, belt = o.belt ?? 0x3a2a1a, boots = o.boots ?? 0x2a1a0a, eye = o.eye ?? 0xffe45a, clubC = o.clubHead ?? 0x6b4a2a, spikeC = o.spike ?? spikeC, tusk = o.tusk ?? tusk;
+  const skin = o.skin ?? 0x8aa84e, dark = o.dark ?? 0x6e8a3e, cloth = o.cloth ?? 0x6b4a2a, belt = o.belt ?? 0x3a2a1a, boots = o.boots ?? 0x2a1a0a, eye = o.eye ?? 0xffe45a, clubC = o.clubHead ?? 0x6b4a2a, spikeC = o.spike ?? 0xb8bcc4, tusk = o.tusk ?? 0xf4f0e6;
   const J = { hips: [0, 0.58, 0], torso: [0, 0.7, 0], head: [0, 1.2, 0] };
   for (const [s, sx] of [['L', 1], ['R', -1]]) {
     J['hip' + s] = [sx * 0.24, 0.58, 0]; J['knee' + s] = [sx * 0.24, 0.32, 0]; J['ank' + s] = [sx * 0.24, 0.1, 0];
