@@ -274,6 +274,12 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^Generation (\d+) · Legacy Points: (\d+)$/, (g, p) => `${g}세대 · 유산 점수: ${p}`],
+    [/^Generation (\d+) · (\d+) Legacy Points\. Pass the guild to an heir for permanent perks\.$/, (g, p) => `${g}세대 · 유산 점수 ${p}. 후계자에게 길드를 물려주면 영구 특전을 받습니다.`],
+    [/^Earn (\d+) Legacy Points$/, n => `유산 점수 ${n} 획득`],
+    [/^Buy · (\d+) LP$/, n => `구매 · ${n} LP`],
+    [/^🏛 (.+) is now level (\d+)\.$/, (n, l) => `🏛 ${f(n)}이(가) ${l}레벨이 되었습니다.`],
+    [/^🏛 Generation (\d+) of the guild begins\.$/, g => `🏛 길드의 ${g}세대가 시작됩니다.`],
     [/^🏅 Achievement: (.+)! \(\+(\d+)g(?:, \+(\d+)⭐)?\)$/, (n, g, r) => `🏅 업적: ${f(n)}! (+${g}골드${r ? ', +' + r + '⭐' : ''})`],
     [/^👑 (.+) · weak: (.+)$/, (n, w) => `👑 ${f(n)} · 약점: ${w}`],
     [/^🏛 Town squares: (\d)\/3 active \(a fountain, statue or monument with 3 buildings nearby: \+3% quest gold, \+2% mood each\)$/, n => `🏛 마을 광장: ${n}/3 활성 (분수·동상·기념비 주변 7칸 안에 건물 3개 이상: 각각 퀘스트 골드 +3%, 기분 +2%)`],

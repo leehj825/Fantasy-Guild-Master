@@ -280,7 +280,7 @@ const boardSlots = () => 3 + G.boardLvl + (G.rank >= 2 ? 1 : 0) + (G.rank >= 3 ?
 const craftSpeed = () => (1 + 0.25 * G.staff.smith) * (G.research.forging ? 1.3 : 1) * (G.research.mythril ? 1.4 : 1) * (1 + 0.1 * regionPerk('stonepeak')) * (G.flags.faction === 'vanguard' ? 1.15 : 1) * (G.flags.smithTaught ? 1.1 : 1);
 const alchSpeed = () => (1 + 0.25 * G.staff.alch) * (G.research.forging ? 1.15 : 1) * (1 + 0.1 * regionPerk('ashen')) * (G.flags.faction === 'arcane' ? 1.15 : 1);
 const mealGold = tav => { tav = tav || first('tavern'); return (G.flags.fest ? 1.5 : 1) * (seasonIdx() === 3 ? 1.25 : 1) * 9 * (1 + 0.15 * G.staff.cook) * (1 + 0.3 * ((tav?.level || 1) - 1)) * (tav ? adj(tav).meal : 1); };
-const questGoldMul = () => (G.research.charter ? 1.25 : 1) * (seasonIdx() === 1 ? 1.1 : 1) * (1 + 0.002 * (G.flags.rep ?? 10)) * (first('monument') ? 1.05 : 1) * (1 + 0.03 * squares()) * (1 + 0.05 * regionPerk('dunes'));
+const questGoldMul = () => (G.research.charter ? 1.25 : 1) * (seasonIdx() === 1 ? 1.1 : 1) * (1 + 0.002 * (G.flags.rep ?? 10)) * (first('monument') ? 1.05 : 1) * (1 + 0.03 * squares()) * (1 + 0.05 * regionPerk('dunes')) * (1 + 0.03 * legacyLvl('trade'));
 const trickleMul = () => (1 + 0.5 * G.staff.porter);
 const warehouseBonus = () => ofType('warehouse').reduce((s, w) => s + 6 + 4 * (w.level - 1), 0);
 const stockCap = b => 4 + 2 * b.level + warehouseBonus();
@@ -358,7 +358,7 @@ function heroMods(h) {
   if (h.boon) { m.pw *= h.boon.pw || 1; m.succ += h.boon.succ || 0; m.loot += h.boon.loot || 0; m.survive += h.boon.survive || 0; }
   if ((h.loy ?? 60) >= 80) m.pw *= 1.04; else if ((h.loy ?? 60) <= 25) m.pw *= 0.96;
   if (h.cls === 'rogue') m.loot += 0.15;
-  { const tm = tagMods(h.tags); m.pw *= tm.pw; m.survive += tm.survive; m.loot += tm.loot; m.decay += tm.decay; m.succ += tm.succ; m.xp = tm.xp; m.happy = tm.happy; }
+  { const tm = tagMods(h.tags); m.pw *= tm.pw; m.survive += tm.survive; m.loot += tm.loot; m.decay += tm.decay; m.succ += tm.succ; m.xp = tm.xp; m.happy = tm.happy * (1 - 0.04 * legacyLvl('hearth')); }
   if (h.promo) { const P = PROMO[h.cls]; m.pw *= P.pw; m.survive += P.survive || 0; m.loot += P.loot || 0; m.mana += P.mana || 0; }
   for (const id of h.talents || []) { const t = talentDef(h.cls, id); if (!t) continue; const f = t[3]; if (f.pw) m.pw *= f.pw; if (f.pwType) for (const k of Object.keys(f.pwType)) m.pwType[k] = (m.pwType[k] || 1) * f.pwType[k]; m.survive += f.survive || 0; m.loot += f.loot || 0; m.mana += f.mana || 0; m.decay += f.decay || 0; m.succ += f.succ || 0; }
   return m;
@@ -366,7 +366,7 @@ function heroMods(h) {
 const survBonus = h => (traitOf(h) === 'brave' ? 0.35 : 0) + heroMods(h).survive;
 const heroLabel = h => h.promo ? PROMO[h.cls].name : CLASSES[h.cls].label;
 function gainXp(h, n) {
-  h.xp += n * heroMods(h).xp;
+  h.xp += n * heroMods(h).xp * (1 + 0.06 * legacyLvl('tutor'));
   while (h.xp >= h.level + 1) { h.xp -= h.level + 1; h.level++; sfx('level'); floatText(h.pos, `⬆ ${h.name} Lv${h.level}`, '#9bff9b'); if (h.level === 3 || h.level === 6) toast(`✨ ${h.name} can choose a new talent! (tap the hero)`); }
 }
 function addPromoGear(h) { h.mesh.add(vox(0.46, 0.5, 0.05, 0xe8c04a, 0, 0.3, -0.2), vox(0.1, 0.1, 0.06, 0xc0392b, 0, 0.62, -0.23)); }
@@ -453,7 +453,7 @@ function spawnHero(cls, atHall = false) {
     const h = createHero({ cls: vcls, variant: Math.floor(Math.random() * 3), name: `${base} ${TRAITS[trait].epithet}`, x: p.x, z: p.z, level: 2 + Math.floor(Math.random() * 2), vip: { trait } });
     toast(`⭐ ${h.name} has arrived at your guild! (${TRAITS[trait].label})`); return h;
   }
-  return createHero({ cls, variant: Math.floor(Math.random() * 3), name: pick(NAMES), x: p.x, z: p.z });
+  return createHero({ cls, variant: Math.floor(Math.random() * 3), name: pick(NAMES), x: p.x, z: p.z, level: 1 + Math.floor(legacyLvl('recruits') / 2) });
 }
 function removeHero(h, why) {
   heroGroup.remove(h.mesh); h.bub.remove();
@@ -1151,6 +1151,21 @@ const GOALS = [
   ['Reach 100 renown', () => G.renown >= 100, { gold: 4000 }],
 ];
 const rewardTags = r => Object.entries(r).map(([k, v]) => k === 'gold' ? `💰${v}` : k === 'renown' ? `⭐${v}` : Object.entries(v).map(([rk, rv]) => `${RARE[rk].icon}${rv}`).join('')).join(' ');
+// ---- legacy: when the guild passes to the next generation, it earns Legacy Points to spend on permanent family perks
+const LEG_KEY = 'fantasy-guild-master-legacy';
+let LEGACY = { lp: 0, gen: 0, perks: {} }; try { Object.assign(LEGACY, JSON.parse(localStorage.getItem(LEG_KEY) || '{}')); } catch (e) { /* fresh family */ }
+const saveLegacy = () => { try { localStorage.setItem(LEG_KEY, JSON.stringify(LEGACY)); } catch (e) { /* ignore */ } };
+const legacyLvl = id => (LEGACY.perks || {})[id] || 0;
+const PERKS = {
+  purse: { icon: '💰', name: 'Family Fortune', desc: '+300 starting gold per level.' },
+  name: { icon: '⭐', name: 'Famous Name', desc: '+2 starting renown per level.' },
+  tutor: { icon: '🎓', name: 'Old Tutors', desc: 'Heroes earn +6% experience per level.' },
+  trade: { icon: '🧭', name: 'Trade Routes', desc: 'Quest gold +3% per level.' },
+  hearth: { icon: '🔥', name: 'Warm Hearth', desc: 'Heroes lose happiness 4% slower per level.' },
+  recruits: { icon: '🛡', name: 'Veteran Recruits', desc: 'New heroes arrive 1 level higher every 2 levels.' },
+};
+const legacyGain = () => 3 + Math.floor(G.renown / 25) + Math.floor((codexN('bosses') + codexN('relics') + codexN('classes') + codexN('tags') + codexN('arcs')) / 4) + Object.keys(G.flags.ach || {}).length + (G.flags.legendDone ? 5 : 0);
+const canInherit = () => G.rank >= 3 || !!G.flags.legendDone;
 // ---- codex and achievements: what the guild has met, beaten and collected
 function codexAdd(k, id) { const c = ((G.flags.codex ||= {})[k] ||= {}); c[id] = (c[id] || 0) + 1; }
 const codexN = k => Object.keys(((G.flags.codex || {})[k]) || {}).length;
@@ -1555,6 +1570,7 @@ function modalContent() {
       <div class="row"><div class="grow"><div class="t">🌐 Language</div><div class="s">English / 한국어</div></div>${Object.entries(LANGS).map(([k, n]) => `<button class="act ${getLang() === k ? '' : 'red'}" style="${getLang() === k ? 'outline:2px solid #fff8' : ''}" data-act="lang" data-l="${k}">${n}</button>`).join('')}</div>
       <div class="row"><div class="grow"><div class="t">🛤 Auto paths</div><div class="s">Link every new building to the street network with a short cobble path (a few coins).</div></div><button class="act ${G.flags.noAutoRoad ? 'red' : ''}" data-act="autoroadtoggle">${G.flags.noAutoRoad ? 'Off' : 'On'}</button></div>
       <div class="row"><div class="grow"><div class="t">📂 Save slots & export</div><div class="s">Three extra slots, plus copy/paste a save between devices.</div></div><button class="act" data-act="saveio">Open</button></div>
+      <div class="row"><div class="grow"><div class="t">🏛 Legacy</div><div class="s">Generation ${LEGACY.gen + 1} · ${LEGACY.lp} Legacy Points. Pass the guild to an heir for permanent perks.</div></div><button class="act" data-act="legacy">Open</button></div>
       <div class="row"><div class="grow"><div class="t">📚 Codex & achievements</div><div class="s">Bosses, relics, classes and personalities you have met, and medals to earn.</div></div><button class="act" data-act="codex">Open</button></div>
       <div class="row"><div class="grow"><div class="t">📖 Guild Chronicle</div><div class="s">The diary of your guild's big moments.</div></div><button class="act" data-act="chron">Open</button></div>
       <div class="row"><div class="grow"><div class="t">🔔 Notifications</div><div class="s">Alert when a quest ends or a raid arrives while the game is in the background (browser only; needs permission).</div></div><button class="act ${G.flags.notif ? '' : 'red'}" data-act="notiftoggle">${G.flags.notif ? 'On' : 'Off'}</button></div>
@@ -1597,6 +1613,13 @@ function modalContent() {
       hs.forEach((a, i) => { svg += `<g><circle cx="${pos[i][0]}" cy="${pos[i][1]}" r="15" fill="#3a2a18" stroke="#e8c04a" stroke-width="2"/><text x="${pos[i][0]}" y="${pos[i][1] + 5}" text-anchor="middle" font-size="15">${CLASSES[a.cls].icon}</text><text x="${pos[i][0]}" y="${pos[i][1] + 30}" text-anchor="middle" font-size="9" fill="#fff">${a.name.split(' ')[0]}</text></g>`; });
       svg += '</svg>';
       return ['🕸 Relations map', `<div class="s">🟩 friends · 🩷 sweethearts · 🟦 mentor/apprentice · 🟥 rivals (dashed)</div>${svg}<button class="act" data-act="open" data-k="quests" style="margin-top:8px">Open Quest Board</button>`];
+    }
+    case 'legacy': {
+      const gain = legacyGain(), ok = canInherit(), confirm = modalArg === 'confirm';
+      let h = `<div class="s" style="line-height:1.5">When a guild reaches Fortress rank (or slays the Ember Colossus), you can <b>pass it on to an heir</b>: the guild starts over, but the family keeps its name. You earn Legacy Points for renown, codex entries and achievements, and spend them on permanent perks.</div><div class="row" style="border-color:#e8c04a"><div class="grow"><div class="t">Generation ${LEGACY.gen + 1} · Legacy Points: ${LEGACY.lp}</div></div></div><div class="sec">Family perks</div>`;
+      h += Object.entries(PERKS).map(([k, P]) => { const l = legacyLvl(k), c = l + 1; return `<div class="row"><div style="font-size:26px">${P.icon}</div><div class="grow"><div class="t">${P.name} <span class="tag">Lv ${l}/5</span></div><div class="s">${P.desc}</div></div><button class="act" data-act="legbuy" data-k="${k}" ${l >= 5 || LEGACY.lp < c ? 'disabled' : ''}>${l >= 5 ? 'Max' : 'Buy · ' + c + ' LP'}</button></div>`; }).join('');
+      h += `<div class="sec">Pass on the guild</div><div class="row" style="border-color:#ff9a4a"><div class="grow"><div class="t">Earn ${gain} Legacy Points</div><div class="s">${ok ? (confirm ? '<b style="color:#ff9a9a">This ends your current guild and starts a new one. Tap again to confirm.</b>' : 'Your current guild will be erased (a save slot copy is not made).') : 'Reach Fortress rank or defeat the Ember Colossus first.'}</div></div><button class="act red" data-act="inherit" ${ok ? '' : 'disabled'}>${confirm ? 'Confirm' : 'Pass it on'}</button></div>`;
+      return ['🏛 Legacy', h];
     }
     case 'codex': {
       const cx = G.flags.codex || {}, got = (k, id) => (cx[k] || {})[id], ach = G.flags.ach || {};
@@ -1763,6 +1786,9 @@ const ACT = {
   chron() { openModal('chronicle'); },
   relmap() { openModal('relmap'); },
   codex() { openModal('codex'); },
+  legacy() { openModal('legacy'); },
+  legbuy(d) { const P = PERKS[d.k], l = legacyLvl(d.k), c = l + 1; if (!P || l >= 5 || LEGACY.lp < c) return; LEGACY.lp -= c; (LEGACY.perks ||= {})[d.k] = l + 1; saveLegacy(); sfx('goal'); toast(`🏛 ${P.name} is now level ${l + 1}.`); },
+  inherit() { if (!canInherit()) return; if (modalArg !== 'confirm') { modalArg = 'confirm'; return; } LEGACY.lp += legacyGain(); LEGACY.gen++; saveLegacy(); try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* ignore */ } window.__noSave = true; location.reload(); },
   autoroadtoggle() { G.flags.noAutoRoad = G.flags.noAutoRoad ? 0 : 1; },
   pave() { const pv = pavable(), c = pv.length * BUILDINGS.road.cost; if (!pv.length || G.gold < c) return; G.gold -= c; pv.forEach(([x, z]) => addBuilding('road', x, z)); sfx('build'); toast(`🛤 Paved ${pv.length} tiles (−${c}g).`); },
   inbox() { openModal('inbox'); },
@@ -2348,6 +2374,7 @@ initLang();
 resize();
 const loaded = loadGame();
 if (!loaded) {
+  G.gold += 300 * legacyLvl('purse'); G.renown += 2 * legacyLvl('name'); G.flags.gen = LEGACY.gen + 1; if (LEGACY.gen) chron(`🏛 Generation ${LEGACY.gen + 1} of the guild begins.`);
   spawnHero('knight', true); spawnHero('ranger', true);
   genQuest(); genQuest();
   toast('Welcome, Guild Master! Build a Tavern and a Forge to attract & equip heroes.');
@@ -2356,4 +2383,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__api = { checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__api = { legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
