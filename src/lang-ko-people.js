@@ -249,5 +249,11 @@ export const KO_PEOPLE = {
   '🛤 Auto paths': '🛤 자동 길',
   'Auto paths': '자동 길',
   'Link every new building to the street network with a short cobble path (a few coins).': '새 건물을 짧은 돌길로 길 네트워크에 연결합니다(몇 푼의 비용).',
+  'Pond': '연못',
+  'A little pond with lily pads: +5% happiness upkeep (up to 3 count).': '수련이 핀 작은 연못: 행복도 유지 +5% (최대 3개 적용).',
+  'Flower Bed': '꽃밭',
+  'Flowers you can walk through: +1% happiness upkeep each (10 flowers and trees count).': '걸어서 지나갈 수 있는 꽃: 각각 행복도 유지 +1% (꽃과 나무 합쳐 10개까지).',
+  'Young Tree': '어린 나무',
+  'Plant a tree inside the town: +1% happiness upkeep each (10 flowers and trees count).': '마을 안에 나무를 심습니다: 각각 행복도 유지 +1% (꽃과 나무 합쳐 10개까지).',
   'hearty stew': '푸짐한 스튜', 'roast boar': '멧돼지 구이', 'honey bread': '꿀빵', 'mushroom pie': '버섯 파이', 'herbal tea': '약초차',
 };

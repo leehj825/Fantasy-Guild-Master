@@ -278,7 +278,10 @@ export const BUILDINGS = {
   smelter: { name: 'Smeltery',                w: 3, d: 2, cost: 350, renown: 3, rank: 1, icon: '🔩', desc: 'Smelts 2 Iron Ore into 1 Ingot. Steel and Mythril weapons need ingots. Next to a Forge: +25% speed for both.' },
   tower:   { name: 'Guard Tower',              w: 2, d: 2, cost: 400, renown: 3, rank: 1, icon: '🗼', desc: 'Archers add +6 defense and fight beside your guards when raiders attack.' },
   market:  { name: 'Market Stall',             w: 3, d: 2, cost: 120, renown: 0, icon: '🛒', desc: 'Buy raw materials. Boosts passive gold slightly.' },
-  road:    { name: 'Cobble Path',             w: 1, d: 1, cost: 6,   renown: 0, icon: '🟫', desc: 'Paving: heroes and villagers walk 25% faster on it. Keep placing to lay a whole road; press ✖ when done.', decor: true, walkable: true },
+  road:    { name: 'Cobble Path',             w: 1, d: 1, cost: 6,   renown: 0, icon: '🟫', desc: 'Paving: heroes and villagers walk 25% faster on it. Keep placing to lay a whole road; press ✖ when done.', decor: true, walkable: true, road: true },
+  pond:    { name: 'Pond',                    w: 3, d: 2, cost: 90,  renown: 0, icon: '🪷', desc: 'A little pond with lily pads: +5% happiness upkeep (up to 3 count).', decor: true },
+  flowers: { name: 'Flower Bed',              w: 1, d: 1, cost: 20,  renown: 0, icon: '🌷', desc: 'Flowers you can walk through: +1% happiness upkeep each (10 flowers and trees count).', decor: true, walkable: true },
+  sapling: { name: 'Young Tree',              w: 1, d: 1, cost: 15,  renown: 0, icon: '🌳', desc: 'Plant a tree inside the town: +1% happiness upkeep each (10 flowers and trees count).', decor: true },
   palisade:{ name: 'Palisade Wall',           w: 3, d: 1, cost: 70,  renown: 0, icon: '🧱', desc: 'A wall of sharpened logs: +2 raid defense per segment (up to 8 segments count).' },
   lumber:  { name: 'Lumber Camp',             w: 3, d: 2, cost: 160, renown: 0, icon: '🪓', desc: 'Woodcutters bring in Pine Wood: +1 wood every 8 s (faster with levels).' },
   monument:{ name: 'Grand Monument',          w: 3, d: 3, cost: 4000, renown: 100, rank: 2, icon: '🏛️', desc: 'A towering monument to the guild: quest gold +5% and +10% happiness upkeep. A showpiece for rich guilds.', decor: true },
@@ -541,6 +544,9 @@ export function buildBuilding(type, variant = 0) {
     case 'campfire': return campfire();
     case 'weapons': return grp(at(weaponRack(), 0, 0, 0), at(shieldRack(), 0, 0, 0).translateX(0));
     case 'cart': return grp(at(cartProp(0), -0.7, 0, 0), at(cartProp(1), 0.7, 0, 0.6).rotateY(-0.4));
+    case 'pond': { const g = new THREE.Group(); g.add(cyl(1.5, 1.55, 0.14, 0x8a8f98, 0, 0, 0, 20), cyl(1.38, 1.38, 0.08, 0x3b8fd8, 0, 0.1, 0, 20, 0x1d5fa8, 0.5), sph(0.2, 0x5aa03a, -0.6, 0.12, 0.2, 0, 0, 6), sph(0.16, 0x6bbf4a, 0.5, 0.12, -0.3, 0, 0, 6), sph(0.08, 0xffc0e0, 0.5, 0.2, -0.3, 0, 0, 6)); g.scale.set(1, 1, 0.66); return g; }
+    case 'flowers': { const g = new THREE.Group(); const C = [0xff6a8a, 0xffd24a, 0xffffff, 0xb070ff, 0xff9a4a]; g.add(vox(0.9, 0.05, 0.9, 0x5aa03a, 0, 0, 0)); for (let i = 0; i < 7; i++) g.add(sph(0.07, C[i % 5], -0.32 + (i % 3) * 0.32, 0.05, -0.3 + Math.floor(i / 3) * 0.3, 0, 0, 5)); return g; }
+    case 'sapling': return grp(cyl(0.07, 0.09, 0.5, 0x7a4f28, 0, 0, 0, 6), cone(0.38, 0.8, 0x3f8a3a, 0, 0.35, 0, 7), cone(0.28, 0.6, 0x4aa044, 0, 0.8, 0, 7));
     case 'road': return vox(1.0, 0.05, 1.0, 0x8f8a80, 0, 0, 0);
     case 'palisade': { const g = new THREE.Group(); for (let i = 0; i < 7; i++) { const x = -1.35 + i * 0.45; g.add(cyl(0.17, 0.19, 0.95 + (i % 2) * 0.12, 0x7a4f28, x, 0, 0, 7), cone(0.17, 0.3, 0x7a4f28, x, 0.95 + (i % 2) * 0.12, 0, 7)); } g.add(vox(2.9, 0.1, 0.12, 0x5a3a1a, 0, 0.45, 0.16), vox(2.9, 0.1, 0.12, 0x5a3a1a, 0, 0.8, 0.16)); return g; }
     case 'lumber': { const g = new THREE.Group(); g.add(vox(1.3, 0.2, 1.1, 0x6b4a2a, -0.7, 0, -0.1), vox(1.1, 0.7, 0.9, 0x8a5a2b, -0.7, 0.2, -0.1), vox(0.3, 0.5, 0.06, 0x3b2a18, -0.7, 0.2, 0.37)); g.add(roof(1.5, 1.3, 0.55, 0x7a3a1a, 0.9, 'x').translateX(-0.7).translateZ(-0.1)); g.add(logs(0.9, 0.2, 0.3), logs(1.2, -0.3, -0.2), stump(0.8, 0.7), stump(1.3, 0.55)); const ax = vox(0.05, 0.4, 0.05, 0x5a3a1a, 0.5, 0, 0.8); g.add(ax, vox(0.2, 0.12, 0.04, 0xb8bcc4, 0.58, 0.32, 0.8)); return g; }

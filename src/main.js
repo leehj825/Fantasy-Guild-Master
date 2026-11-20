@@ -214,7 +214,7 @@ const bGroup = new THREE.Group(); scene.add(bGroup);
 const worldEl = document.getElementById('world');
 
 const footprint = (type, rot) => { const t = BUILDINGS[type]; return rot % 2 ? [t.d, t.w] : [t.w, t.d]; };
-const roadCells = new Set();   // paved tiles: walkable, so they are not in `occ`
+const roadCells = new Set(), walkCells = new Set();   // paved tiles and walkable decor: not in `occ`, so heroes walk over them (only roads are faster)
 // A new building is linked to the street network: a short cobble path from its door to the nearest paved tile or to the hall
 function autoRoad(b) {
   const hall = G.buildings[0], from = b.door.clone(); let best = null, bd = 1e9;
@@ -228,12 +228,12 @@ function autoRoad(b) {
 }
 function pavable() {   // worn cells inside the land that are free of buildings and not yet paved
   const B = landBounds(), out = [];
-  for (let z = B.z0; z < B.z1; z++) for (let x = B.x0; x < B.x1; x++) if (wear[(z + OFF) * MG + x + OFF] >= WEAR_DIRT && !occ.has(key(x, z)) && !roadCells.has(key(x, z))) out.push([x, z]);
+  for (let z = B.z0; z < B.z1; z++) for (let x = B.x0; x < B.x1; x++) if (wear[(z + OFF) * MG + x + OFF] >= WEAR_DIRT && !occ.has(key(x, z)) && !walkCells.has(key(x, z))) out.push([x, z]);
   return out;
 }
 function canPlace(type, cx, cz, rot = 0) {
   const [w, d] = footprint(type, rot);
-  if (BUILDINGS[type].walkable) { const B0 = landBounds(); return cx >= B0.x0 && cz >= B0.z0 && cx < B0.x1 && cz < B0.z1 && !occ.has(key(cx, cz)) && !roadCells.has(key(cx, cz)); }
+  if (BUILDINGS[type].walkable) { const B0 = landBounds(); return cx >= B0.x0 && cz >= B0.z0 && cx < B0.x1 && cz < B0.z1 && !occ.has(key(cx, cz)) && !walkCells.has(key(cx, cz)); }
   const B = landBounds(); if (cx < B.x0 || cz < B.z0 || cx + w > B.x1 || cz + d > B.z1) return false;
   for (let x = cx; x < cx + w; x++) for (let z = cz; z < cz + d; z++) if (occ.has(key(x, z))) return false;
   return true;
@@ -244,7 +244,7 @@ function addBuilding(type, cx, cz, rot = 0) {
   const group = buildBuilding(type, variant);
   group.position.set(cx + w / 2, 0, cz + d / 2);
   group.rotation.y = th;
-  if (t.walkable) { const shade = [0x8f8a80, 0x9a958a, 0x86817a, 0x938d82][(cx * 7 + cz * 13 + 400) % 4]; group.traverse(o => { if (o.isMesh) { o.material = mat(shade); o.castShadow = false; } }); }
+  if (t.road) { const shade = [0x8f8a80, 0x9a958a, 0x86817a, 0x938d82][(cx * 7 + cz * 13 + 400) % 4]; group.traverse(o => { if (o.isMesh) { o.material = mat(shade); o.castShadow = false; } }); }
   stripLights(group);
   bGroup.add(group);
   const b = {
@@ -252,7 +252,7 @@ function addBuilding(type, cx, cz, rot = 0) {
     door: new THREE.Vector3(cx + w / 2 + Math.sin(th) * (t.d / 2 + 0.7), 0, cz + d / 2 + Math.cos(th) * (t.d / 2 + 0.7)),
   };
   group.userData.bid = b.id;
-  for (let x = cx; x < cx + w; x++) for (let z = cz; z < cz + d; z++) { if (t.walkable) roadCells.add(key(x, z)); else occ.add(key(x, z)); }
+  for (let x = cx; x < cx + w; x++) for (let z = cz; z < cz + d; z++) { if (t.walkable) { walkCells.add(key(x, z)); if (t.road) roadCells.add(key(x, z)); } else occ.add(key(x, z)); }
   if (type === 'forge' || type === 'alchemy') {
     b.bar = document.createElement('div'); b.bar.className = 'pbar'; b.bar.innerHTML = '<i></i>'; worldEl.appendChild(b.bar);
     b.tag = document.createElement('div'); b.tag.className = 'btag'; worldEl.appendChild(b.tag);
@@ -277,7 +277,7 @@ const boardSlots = () => 3 + G.boardLvl + (G.rank >= 2 ? 1 : 0) + (G.rank >= 3 ?
 const craftSpeed = () => (1 + 0.25 * G.staff.smith) * (G.research.forging ? 1.3 : 1) * (G.research.mythril ? 1.4 : 1) * (1 + 0.1 * regionPerk('stonepeak')) * (G.flags.faction === 'vanguard' ? 1.15 : 1) * (G.flags.smithTaught ? 1.1 : 1);
 const alchSpeed = () => (1 + 0.25 * G.staff.alch) * (G.research.forging ? 1.15 : 1) * (1 + 0.1 * regionPerk('ashen')) * (G.flags.faction === 'arcane' ? 1.15 : 1);
 const mealGold = tav => { tav = tav || first('tavern'); return (G.flags.fest ? 1.5 : 1) * (seasonIdx() === 3 ? 1.25 : 1) * 9 * (1 + 0.15 * G.staff.cook) * (1 + 0.3 * ((tav?.level || 1) - 1)) * (tav ? adj(tav).meal : 1); };
-const questGoldMul = () => (G.research.charter ? 1.25 : 1) * (seasonIdx() === 1 ? 1.1 : 1) * (1 + 0.002 * (G.flags.rep ?? 10)) * (first('monument') ? 1.05 : 1);
+const questGoldMul = () => (G.research.charter ? 1.25 : 1) * (seasonIdx() === 1 ? 1.1 : 1) * (1 + 0.002 * (G.flags.rep ?? 10)) * (first('monument') ? 1.05 : 1) * (1 + 0.03 * squares());
 const trickleMul = () => (1 + 0.5 * G.staff.porter);
 const warehouseBonus = () => ofType('warehouse').reduce((s, w) => s + 6 + 4 * (w.level - 1), 0);
 const stockCap = b => 4 + 2 * b.level + warehouseBonus();
@@ -1331,12 +1331,20 @@ SCENE.apprentice = { e: SCENE.mentor.e.slice().reverse(), a: SCENE.mentor.b, b: 
 let chatT = 12, saveBuf = '';
 // what a hero likes and dislikes: a liked building in the guild or a liked season lifts the mood, a disliked season lowers it
 const likeDelta = h => { let d = 0; const L = h.likes || {}, D = h.dislikes || {}, s = seasonIdx(); if (L.bld && first(L.bld)) d += 0.04; if (L.season === s) d += 0.05; if (D.season === s) d -= 0.05; return d; };
+// ---- town squares: a fountain, statue or monument with at least three working buildings around it (within 7 tiles) forms a lively square
+let sqKey = '', sqVal = 0;
+function squares() {
+  const k = G.buildings.length + ':' + moveVer; if (k === sqKey) return sqVal; sqKey = k;
+  const work = G.buildings.filter(b => !BUILDINGS[b.type].decor), c = b => [b.cx + b.w / 2, b.cz + b.d / 2];
+  sqVal = Math.min(3, G.buildings.filter(b => ['fountain', 'statue', 'monument'].includes(b.type)).filter(b => { const [x, z] = c(b); return work.filter(w => { const [wx, wz] = c(w); return Math.hypot(wx - x, wz - z) <= 7; }).length >= 3; }).length);
+  return sqVal;
+}
 // ---- gold sinks for heroes: reinforce gear at the forge (+5% power per step) and intensive training at the training grounds
 const forgeLv = () => ofType('forge').reduce((m, b) => Math.max(m, b.level), 0);
 const maxPlus = () => Math.min(5, forgeLv() + 1);
 const plusCost = h => ({ gold: Math.round(100 * Math.pow(1.7, h.plus || 0)), ore: 4 * ((h.plus || 0) + 1), ing: (h.plus || 0) >= 3 ? (h.plus || 0) - 2 : 0 });
 const trainCost = h => 100 + 50 * h.level;
-const decorBonus = () => Math.min(0.4, (first('monument') ? 0.1 : 0) + 0.05 * (ofType('fountain').length + ofType('banner').length + ofType('statue').length) + 0.01 * Math.min(10, ofType('lamp').length + ofType('campfire').length));
+const decorBonus = () => Math.min(0.5, squares() * 0.02 + Math.min(3, ofType('pond').length) * 0.05 + 0.01 * Math.min(10, ofType('flowers').length + ofType('sapling').length) + (first('monument') ? 0.1 : 0) + 0.05 * (ofType('fountain').length + ofType('banner').length + ofType('statue').length) + 0.01 * Math.min(10, ofType('lamp').length + ofType('campfire').length));
 function tickChat(dt) {
   chatT -= dt; if (chatT > 0) return; chatT = 40 + Math.random() * 50;
   const c = G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving' && h.mesh.visible); if (!c.length) return; const h = pick(c);
@@ -1450,9 +1458,9 @@ function modalContent() {
         return `<div class="row"><div style="font-size:30px">${t.icon}</div><div class="grow"><div class="t">${t.name} <span class="tag">${t.w}×${t.d}</span></div><div class="s">${t.desc}</div>${cost(t.cost)}${t.renown ? `<span class="tag">⭐ ${t.renown} req.</span>` : ''}${t.rank ? `<span class="tag">${RANKS[t.rank].icon} ${RANKS[t.rank].name}</span>` : ''}</div>
         <button class="act" data-act="place" data-k="${k}" ${locked || poor ? 'disabled' : ''}>${locked ? '🔒 Locked' : 'Place'}</button></div>`;
       };
-      const pv = pavable(), pvCost = pv.length * BUILDINGS.road.cost;
+      const pv = pavable(), pvCost = pv.length * BUILDINGS.road.cost, sq = squares();
       const all = Object.entries(BUILDINGS).filter(([k]) => k !== 'hall');
-      return ['🔨 Build Menu', `<div class="row" style="border-color:#b58a56"><div style="font-size:30px">🛤</div><div class="grow"><div class="t">Pave worn paths</div><div class="s">${pv.length ? `${pv.length} well-trodden tiles can be paved with cobbles: ${pvCost}g` : 'No well-trodden paths yet — your streets form where people walk.'}</div></div><button class="act" data-act="pave" ${pv.length && G.gold >= pvCost ? '' : 'disabled'}>Pave</button></div>` + '<div class="sec">Facilities</div>' + all.filter(([, t]) => !t.decor).map(row).join('') + '<div class="sec">Outpost Props & Minor Facilities</div>' + all.filter(([, t]) => t.decor).map(row).join('')];
+      return ['🔨 Build Menu', `<div class="row" style="border-color:#b58a56"><div style="font-size:30px">🛤</div><div class="grow"><div class="t">Pave worn paths</div><div class="s">${pv.length ? `${pv.length} well-trodden tiles can be paved with cobbles: ${pvCost}g` : 'No well-trodden paths yet — your streets form where people walk.'}</div><div class="s">🏛 Town squares: ${sq}/3 active (a fountain, statue or monument with 3 buildings nearby: +3% quest gold, +2% mood each)</div></div><button class="act" data-act="pave" ${pv.length && G.gold >= pvCost ? '' : 'disabled'}>Pave</button></div>` + '<div class="sec">Facilities</div>' + all.filter(([, t]) => !t.decor).map(row).join('') + '<div class="sec">Outpost Props & Minor Facilities</div>' + all.filter(([, t]) => t.decor).map(row).join('')];
     }
     case 'quests': {
       const rd = readyHeroes();
@@ -2281,4 +2289,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__api = { autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__api = { squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
