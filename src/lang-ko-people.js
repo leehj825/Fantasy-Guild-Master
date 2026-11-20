@@ -243,5 +243,8 @@ export const KO_PEOPLE = {
   '📅 Weekly orders': '📅 주간 임무',
   'Weekly orders': '주간 임무',
   '📅 The week ended. New orders are posted.': '📅 한 주가 끝났습니다. 새 임무가 게시됩니다.',
+  'Pave worn paths': '밟은 길 포장',
+  'Pave': '포장',
+  'No well-trodden paths yet — your streets form where people walk.': '아직 닳은 길이 없습니다. 사람이 걷는 곳에 길이 생깁니다.',
   'hearty stew': '푸짐한 스튜', 'roast boar': '멧돼지 구이', 'honey bread': '꿀빵', 'mushroom pie': '버섯 파이', 'herbal tea': '약초차',
 };

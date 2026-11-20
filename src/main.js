@@ -93,8 +93,6 @@ const HALL = { cx: 12, cz: 11 };
   const dirt = 0xb58a56, stone = 0x9c9ca2;
   const strip = (x, z, w, d, m, y = 0.02) => { const s = vox(w, 0.04, d, m, x, y - 0.0, z); s.castShadow = false; scene.add(s); };
   strip(HALL.cx + 2.5, HALL.cz + 2, 7, 7, stone, 0.01);
-  strip(HALL.cx + 2.5, N - 3, 2.2, N - 2 * 2 - (HALL.cz + 5.5) + 4, dirt, 0.02);
-  strip(N - 3 + 0.5, HALL.cz + 2, N - HALL.cx - 5 + 2, 2.2, dirt, 0.02);
   strip(HALL.cx + 2.5, HALL.cz + 2, 2.2, 2.2, stone, 0.03);
   // Stone fringe cobbles
   for (let i = 0; i < 40; i++) {
@@ -217,6 +215,11 @@ const worldEl = document.getElementById('world');
 
 const footprint = (type, rot) => { const t = BUILDINGS[type]; return rot % 2 ? [t.d, t.w] : [t.w, t.d]; };
 const roadCells = new Set();   // paved tiles: walkable, so they are not in `occ`
+function pavable() {   // worn cells inside the land that are free of buildings and not yet paved
+  const B = landBounds(), out = [];
+  for (let z = B.z0; z < B.z1; z++) for (let x = B.x0; x < B.x1; x++) if (wear[(z + OFF) * MG + x + OFF] >= WEAR_DIRT && !occ.has(key(x, z)) && !roadCells.has(key(x, z))) out.push([x, z]);
+  return out;
+}
 function canPlace(type, cx, cz, rot = 0) {
   const [w, d] = footprint(type, rot);
   if (BUILDINGS[type].walkable) { const B0 = landBounds(); return cx >= B0.x0 && cz >= B0.z0 && cx < B0.x1 && cz < B0.z1 && !occ.has(key(cx, cz)) && !roadCells.has(key(cx, cz)); }
@@ -431,6 +434,33 @@ function removeHero(h, why) {
 }
 /* ---- A* pathfinding over the base grid (buildings, props and interior trees are blocked cells) ---- */
 const OFF = 14, MG = N + 2 * OFF;   // pathfinding grid covers the base and every possible expansion
+// ---- worn paths: wherever people keep walking, the grass wears into dirt. No fixed roads: the town's streets grow from its traffic,
+// and "Pave worn paths" turns them into cobbles (which are faster still).
+const wear = new Float32Array(MG * MG), WEAR_S = 8, WEAR_LO = 3, WEAR_DIRT = 14, WEAR_FULL = 35;
+let wearDirty = true, wearTick = 0, wearDraw = 0;
+const wearCanvas = document.createElement('canvas'); wearCanvas.width = wearCanvas.height = MG * WEAR_S;
+const wearTex = new THREE.CanvasTexture(wearCanvas); wearTex.minFilter = THREE.LinearFilter;
+{ const m = new THREE.Mesh(new THREE.PlaneGeometry(MG, MG), new THREE.MeshLambertMaterial({ map: wearTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  m.rotation.x = -Math.PI / 2; m.position.set(N / 2, 0.012, N / 2); m.receiveShadow = true; scene.add(m); }
+function addWear(x, z, a) {
+  const cx = Math.floor(x), cz = Math.floor(z); if (cx < -OFF + 1 || cz < -OFF + 1 || cx >= N + OFF - 1 || cz >= N + OFF - 1) return;
+  const i = (cz + OFF) * MG + cx + OFF; wear[i] += a; wear[i + 1] += a * 0.25; wear[i - 1] += a * 0.25; wear[i + MG] += a * 0.25; wear[i - MG] += a * 0.25; wearDirty = true;
+}
+const wearAt = (x, z) => { const cx = Math.floor(x), cz = Math.floor(z); return cx < -OFF || cz < -OFF || cx >= N + OFF || cz >= N + OFF ? 0 : wear[(cz + OFF) * MG + cx + OFF]; };
+function drawWear() {
+  const c = wearCanvas.getContext('2d'); c.clearRect(0, 0, wearCanvas.width, wearCanvas.height);
+  for (let i = 0; i < wear.length; i++) {
+    const w = wear[i]; if (w < WEAR_LO) continue; const t = Math.min(1, (w - WEAR_LO) / (WEAR_FULL - WEAR_LO)), cx = i % MG, cz = (i / MG) | 0, h = Math.sin(i * 12.9898) * 43758.5453, j = h - Math.floor(h);
+    const px = (cx + 0.5 + (j - 0.5) * 0.25) * WEAR_S, py = (cz + 0.5 + (((h * 7) % 1) - 0.5) * 0.25) * WEAR_S, r = WEAR_S * (0.55 + 0.4 * t + 0.1 * j);
+    const g = c.createRadialGradient(px, py, r * 0.2, px, py, r); const col = `${Math.round(118 + 60 * t)},${Math.round(96 + 38 * t)},${Math.round(58 + 26 * t)}`;
+    g.addColorStop(0, `rgba(${col},${0.35 + 0.6 * t})`); g.addColorStop(1, `rgba(${col},0)`); c.fillStyle = g; c.beginPath(); c.arc(px, py, r, 0, 6.2832); c.fill();
+  }
+  wearTex.needsUpdate = true;
+}
+function tickWear(dt) {
+  wearTick += dt; if (wearTick >= 5) { wearTick = 0; for (let i = 0; i < wear.length; i++) if (wear[i] > 0) { wear[i] *= 0.998; if (wear[i] < 0.2) wear[i] = 0; } wearDirty = true; }
+  wearDraw -= dt; if (wearDraw <= 0 && wearDirty) { wearDraw = 1.5; wearDirty = false; drawWear(); }
+}
 const blocked = (x, z) => x < -OFF || z < -OFF || x >= N + OFF || z >= N + OFF || occ.has(key(x, z));
 function nearestFree(cx, cz) {
   for (let r = 0; r <= 6; r++) for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
@@ -562,7 +592,8 @@ function stepToward(h, dt, speed, tgt, stopDist = 0.05) {
   const t = tgt || h.target; if (!t) return true;
   const dx = t.x - h.pos.x, dz = t.z - h.pos.z, d = Math.hypot(dx, dz);
   if (d <= stopDist) return true;
-  const s = Math.min(d - stopDist, speed * dt * (roadCells.size && roadCells.has(key(Math.floor(h.pos.x), Math.floor(h.pos.z))) ? 1.25 : 1));
+  const s = Math.min(d - stopDist, speed * dt * (roadCells.size && roadCells.has(key(Math.floor(h.pos.x), Math.floor(h.pos.z))) ? 1.25 : wearAt(h.pos.x, h.pos.z) >= WEAR_DIRT ? 1.1 : 1));
+  addWear(h.pos.x, h.pos.z, s);
   h.pos.x += dx / d * s; h.pos.z += dz / d * s;
   h.mesh.rotation.y = Math.atan2(dx, dz);
   if (!h.mesh.userData.anim) {
@@ -1041,7 +1072,7 @@ function updateEconomy(dt) {
     if (ofType('tavern').length && G.heroes.length < popCap()) spawnHero();
   }
   for (const b of ofType('lumber')) { b.acc = (b.acc || 0) + dt; if (b.acc >= 8 / (1 + 0.3 * (b.level - 1))) { b.acc = 0; G.wood++; } }
-  tickWeekly(dt); tickAuto(dt); tickSeason(dt); tickFestival(dt); { const cot = ofType('cottage').length; if (cot) G.gold += cot * 0.06 * dt * (1 + 0.004 * (G.flags.rep ?? 10)); }
+  tickWear(dt); tickWeekly(dt); tickAuto(dt); tickSeason(dt); tickFestival(dt); { const cot = ofType('cottage').length; if (cot) G.gold += cot * 0.06 * dt * (1 + 0.004 * (G.flags.rep ?? 10)); }
   // quests
   t.quest -= dt;
   if (t.quest <= 0) { t.quest = 14; if (G.quests.filter(q => q.state === 'open').length < boardSlots()) genQuest(); legendTick(); }
@@ -1407,8 +1438,9 @@ function modalContent() {
         return `<div class="row"><div style="font-size:30px">${t.icon}</div><div class="grow"><div class="t">${t.name} <span class="tag">${t.w}×${t.d}</span></div><div class="s">${t.desc}</div>${cost(t.cost)}${t.renown ? `<span class="tag">⭐ ${t.renown} req.</span>` : ''}${t.rank ? `<span class="tag">${RANKS[t.rank].icon} ${RANKS[t.rank].name}</span>` : ''}</div>
         <button class="act" data-act="place" data-k="${k}" ${locked || poor ? 'disabled' : ''}>${locked ? '🔒 Locked' : 'Place'}</button></div>`;
       };
+      const pv = pavable(), pvCost = pv.length * BUILDINGS.road.cost;
       const all = Object.entries(BUILDINGS).filter(([k]) => k !== 'hall');
-      return ['🔨 Build Menu', '<div class="sec">Facilities</div>' + all.filter(([, t]) => !t.decor).map(row).join('') + '<div class="sec">Outpost Props & Minor Facilities</div>' + all.filter(([, t]) => t.decor).map(row).join('')];
+      return ['🔨 Build Menu', `<div class="row" style="border-color:#b58a56"><div style="font-size:30px">🛤</div><div class="grow"><div class="t">Pave worn paths</div><div class="s">${pv.length ? `${pv.length} well-trodden tiles can be paved with cobbles: ${pvCost}g` : 'No well-trodden paths yet — your streets form where people walk.'}</div></div><button class="act" data-act="pave" ${pv.length && G.gold >= pvCost ? '' : 'disabled'}>Pave</button></div>` + '<div class="sec">Facilities</div>' + all.filter(([, t]) => !t.decor).map(row).join('') + '<div class="sec">Outpost Props & Minor Facilities</div>' + all.filter(([, t]) => t.decor).map(row).join('')];
     }
     case 'quests': {
       const rd = readyHeroes();
@@ -1643,6 +1675,7 @@ const ACT = {
   sendall() { sendAll(0); },
   chron() { openModal('chronicle'); },
   relmap() { openModal('relmap'); },
+  pave() { const pv = pavable(), c = pv.length * BUILDINGS.road.cost; if (!pv.length || G.gold < c) return; G.gold -= c; pv.forEach(([x, z]) => addBuilding('road', x, z)); sfx('build'); toast(`🛤 Paved ${pv.length} tiles (−${c}g).`); },
   inbox() { openModal('inbox'); },
   polcycle(d) { const O = { hstory: ['ask', 'auto'], story: ['ask', 'auto'], fest: ['ask', 'modest', 'lavish', 'skip'] }[d.k]; if (!O) return; const p = (G.flags.pol = G.flags.pol || {}); p[d.k] = O[(O.indexOf(p[d.k] || 'ask') + 1) % O.length]; },
   reinforce(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h || !first('forge') || (h.plus || 0) >= maxPlus()) return; const c = plusCost(h); if (G.gold < c.gold || G.ore < c.ore || G.ingots < c.ing) return toast('Not enough materials.'); G.gold -= c.gold; G.ore -= c.ore; G.ingots -= c.ing; h.plus = (h.plus || 0) + 1; G.stats.reinf = (G.stats.reinf || 0) + 1; floatText(h.pos, `⚒ +${h.plus}`, '#ffd24a'); sfx('build'); toast(`⚒ ${h.name}'s gear is now +${h.plus}.`); },
@@ -1940,8 +1973,8 @@ function serialize() {
     extra: serializeExtra(),
   };
 }
-function serializeExtra() { return {}; }
-function applyExtra(x) { }
+function serializeExtra() { const w = []; for (let i = 0; i < wear.length; i++) if (wear[i] >= WEAR_LO) w.push(i, Math.round(wear[i])); return { wear: w }; }
+function applyExtra(x) { if (x.wear) { wear.fill(0); for (let i = 0; i + 1 < x.wear.length; i += 2) wear[x.wear[i]] = x.wear[i + 1]; wearDirty = true; } }
 function saveGame(quiet = true) {
   if (window.__noSave) return false;
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(serialize())); lastSaved = Date.now(); if (!quiet) toast('💾 Game saved.'); return true; }
@@ -2233,4 +2266,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__api = { defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__api = { pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
