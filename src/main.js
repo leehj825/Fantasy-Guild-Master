@@ -222,7 +222,7 @@ function autoRoad(b) {
   consider(hall.door); for (const k of roadCells) { const [x, z] = k.split(',').map(Number); consider(new THREE.Vector3(x + 0.5, 0, z + 0.5)); }
   if (!best || bd < 2.2) return;
   const wp = findPath(from, best), cells = [], seen = new Set(); let cur = from;
-  for (const q of wp) { const n = Math.max(1, Math.ceil(Math.hypot(q.x - cur.x, q.z - cur.z) / 0.35)); for (let i = 0; i <= n; i++) { const x = Math.floor(cur.x + (q.x - cur.x) * i / n), z = Math.floor(cur.z + (q.z - cur.z) * i / n), k = key(x, z); if (!seen.has(k)) { seen.add(k); if (canPlace('road', x, z)) cells.push([x, z]); } } cur = q; }
+  for (const q of wp) { const n = Math.max(1, Math.ceil(Math.hypot(q.x - cur.x, q.z - cur.z) / 0.35)); for (let i = 0; i <= n; i++) { const x = Math.floor(cur.x + (q.x - cur.x) * i / n), z = Math.floor(cur.z + (q.z - cur.z) * i / n), k = key(x, z); if (!seen.has(k)) { seen.add(k); const pv = cells[cells.length - 1]; if (pv && Math.abs(pv[0] - x) === 1 && Math.abs(pv[1] - z) === 1 && canPlace('road', x, pv[1]) && !seen.has(key(x, pv[1]))) { seen.add(key(x, pv[1])); cells.push([x, pv[1]]); } if (canPlace('road', x, z)) cells.push([x, z]); } } cur = q; }
   const c = cells.length * BUILDINGS.road.cost; if (!cells.length || cells.length > 40 || G.gold < c) return;
   G.gold -= c; cells.forEach(([x, z]) => addBuilding('road', x, z)); toast(`🛤 Linked to the town with ${cells.length} path tiles (−${c}g).`);
 }
@@ -448,7 +448,7 @@ function removeHero(h, why) {
 const OFF = 14, MG = N + 2 * OFF;   // pathfinding grid covers the base and every possible expansion
 // ---- worn paths: wherever people keep walking, the grass wears into dirt. No fixed roads: the town's streets grow from its traffic,
 // and "Pave worn paths" turns them into cobbles (which are faster still).
-const wear = new Float32Array(MG * MG), WEAR_S = 8, WEAR_LO = 3, WEAR_DIRT = 14, WEAR_FULL = 35;
+const wear = new Float32Array(MG * MG), WEAR_S = 8, WEAR_LO = 3, WEAR_DIRT = 11, WEAR_FULL = 35;
 let wearDirty = true, wearTick = 0, wearDraw = 0;
 const wearCanvas = document.createElement('canvas'); wearCanvas.width = wearCanvas.height = MG * WEAR_S;
 const wearTex = new THREE.CanvasTexture(wearCanvas); wearTex.minFilter = THREE.LinearFilter;
@@ -605,7 +605,7 @@ function stepToward(h, dt, speed, tgt, stopDist = 0.05) {
   const dx = t.x - h.pos.x, dz = t.z - h.pos.z, d = Math.hypot(dx, dz);
   if (d <= stopDist) return true;
   const s = Math.min(d - stopDist, speed * dt * (roadCells.size && roadCells.has(key(Math.floor(h.pos.x), Math.floor(h.pos.z))) ? 1.25 : wearAt(h.pos.x, h.pos.z) >= WEAR_DIRT ? 1.1 : 1));
-  addWear(h.pos.x, h.pos.z, s);
+  addWear(h.pos.x, h.pos.z, s * 1.6);
   h.pos.x += dx / d * s; h.pos.z += dz / d * s;
   h.mesh.rotation.y = Math.atan2(dx, dz);
   if (!h.mesh.userData.anim) {
@@ -944,7 +944,7 @@ function startRaid() {
   toast(bossRaid ? '🐗 A warchief leads the raiders!' : 'Raiders at the perimeter!');
 }
 function defense(muster) {
-  let d = Math.min(8, ofType('palisade').length) * 2 + G.staff.guard * (G.research.scales ? 8 : 4) + G.walls * 3 + (G.research.scales ? 6 : 0) + ofType('tower').length * 6;
+  let d = ofType('tower').reduce((n, t) => n + (ofType('hill').some(h => Math.hypot(h.cx + 1.5 - t.cx - t.w / 2, h.cz + 1.5 - t.cz - t.d / 2) <= 5.5) ? 3 : 0), 0) + Math.min(8, ofType('palisade').length) * 2 + G.staff.guard * (G.research.scales ? 8 : 4) + G.walls * 3 + (G.research.scales ? 6 : 0) + ofType('tower').length * 6;
   if (muster) d += G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving').sort((a, b) => heroPower(b, 'combat') - heroPower(a, 'combat')).slice(0, 3).reduce((s, h) => s + CLASSES[h.cls].base * (h.gear ? 1 : 0.6) * 1.1, 0);
   return d;
 }
@@ -1344,7 +1344,7 @@ const forgeLv = () => ofType('forge').reduce((m, b) => Math.max(m, b.level), 0);
 const maxPlus = () => Math.min(5, forgeLv() + 1);
 const plusCost = h => ({ gold: Math.round(100 * Math.pow(1.7, h.plus || 0)), ore: 4 * ((h.plus || 0) + 1), ing: (h.plus || 0) >= 3 ? (h.plus || 0) - 2 : 0 });
 const trainCost = h => 100 + 50 * h.level;
-const decorBonus = () => Math.min(0.5, squares() * 0.02 + Math.min(3, ofType('pond').length) * 0.05 + 0.01 * Math.min(10, ofType('flowers').length + ofType('sapling').length) + (first('monument') ? 0.1 : 0) + 0.05 * (ofType('fountain').length + ofType('banner').length + ofType('statue').length) + 0.01 * Math.min(10, ofType('lamp').length + ofType('campfire').length));
+const decorBonus = () => Math.min(0.5, Math.min(3, ofType('hill').length) * 0.02 + squares() * 0.02 + Math.min(3, ofType('pond').length) * 0.05 + 0.01 * Math.min(10, ofType('flowers').length + ofType('sapling').length) + (first('monument') ? 0.1 : 0) + 0.05 * (ofType('fountain').length + ofType('banner').length + ofType('statue').length) + 0.01 * Math.min(10, ofType('lamp').length + ofType('campfire').length));
 function tickChat(dt) {
   chatT -= dt; if (chatT > 0) return; chatT = 40 + Math.random() * 50;
   const c = G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving' && h.mesh.visible); if (!c.length) return; const h = pick(c);

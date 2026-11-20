@@ -255,5 +255,7 @@ export const KO_PEOPLE = {
   'Flowers you can walk through: +1% happiness upkeep each (10 flowers and trees count).': '걸어서 지나갈 수 있는 꽃: 각각 행복도 유지 +1% (꽃과 나무 합쳐 10개까지).',
   'Young Tree': '어린 나무',
   'Plant a tree inside the town: +1% happiness upkeep each (10 flowers and trees count).': '마을 안에 나무를 심습니다: 각각 행복도 유지 +1% (꽃과 나무 합쳐 10개까지).',
+  'Grassy Hill': '풀 언덕',
+  'A raised mound with a view: Guard Towers within 5 tiles gain +3 defense and the heroes like the scenery (+2% mood, up to 3 hills).': '전망 좋은 둔덕: 5칸 안의 경비탑은 방어 +3, 영웅들은 경치를 좋아합니다(기분 +2%, 최대 3개).',
   'hearty stew': '푸짐한 스튜', 'roast boar': '멧돼지 구이', 'honey bread': '꿀빵', 'mushroom pie': '버섯 파이', 'herbal tea': '약초차',
 };
