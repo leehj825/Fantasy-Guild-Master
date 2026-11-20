@@ -216,8 +216,10 @@ const bGroup = new THREE.Group(); scene.add(bGroup);
 const worldEl = document.getElementById('world');
 
 const footprint = (type, rot) => { const t = BUILDINGS[type]; return rot % 2 ? [t.d, t.w] : [t.w, t.d]; };
+const roadCells = new Set();   // paved tiles: walkable, so they are not in `occ`
 function canPlace(type, cx, cz, rot = 0) {
   const [w, d] = footprint(type, rot);
+  if (BUILDINGS[type].walkable) { const B0 = landBounds(); return cx >= B0.x0 && cz >= B0.z0 && cx < B0.x1 && cz < B0.z1 && !occ.has(key(cx, cz)) && !roadCells.has(key(cx, cz)); }
   const B = landBounds(); if (cx < B.x0 || cz < B.z0 || cx + w > B.x1 || cz + d > B.z1) return false;
   for (let x = cx; x < cx + w; x++) for (let z = cz; z < cz + d; z++) if (occ.has(key(x, z))) return false;
   return true;
@@ -235,7 +237,7 @@ function addBuilding(type, cx, cz, rot = 0) {
     door: new THREE.Vector3(cx + w / 2 + Math.sin(th) * (t.d / 2 + 0.7), 0, cz + d / 2 + Math.cos(th) * (t.d / 2 + 0.7)),
   };
   group.userData.bid = b.id;
-  for (let x = cx; x < cx + w; x++) for (let z = cz; z < cz + d; z++) occ.add(key(x, z));
+  for (let x = cx; x < cx + w; x++) for (let z = cz; z < cz + d; z++) { if (t.walkable) roadCells.add(key(x, z)); else occ.add(key(x, z)); }
   if (type === 'forge' || type === 'alchemy') {
     b.bar = document.createElement('div'); b.bar.className = 'pbar'; b.bar.innerHTML = '<i></i>'; worldEl.appendChild(b.bar);
     b.tag = document.createElement('div'); b.tag.className = 'btag'; worldEl.appendChild(b.tag);
@@ -560,7 +562,7 @@ function stepToward(h, dt, speed, tgt, stopDist = 0.05) {
   const t = tgt || h.target; if (!t) return true;
   const dx = t.x - h.pos.x, dz = t.z - h.pos.z, d = Math.hypot(dx, dz);
   if (d <= stopDist) return true;
-  const s = Math.min(d - stopDist, speed * dt);
+  const s = Math.min(d - stopDist, speed * dt * (roadCells.size && roadCells.has(key(Math.floor(h.pos.x), Math.floor(h.pos.z))) ? 1.25 : 1));
   h.pos.x += dx / d * s; h.pos.z += dz / d * s;
   h.mesh.rotation.y = Math.atan2(dx, dz);
   if (!h.mesh.userData.anim) {
@@ -899,7 +901,7 @@ function startRaid() {
   toast(bossRaid ? '🐗 A warchief leads the raiders!' : 'Raiders at the perimeter!');
 }
 function defense(muster) {
-  let d = G.staff.guard * (G.research.scales ? 8 : 4) + G.walls * 3 + (G.research.scales ? 6 : 0) + ofType('tower').length * 6;
+  let d = Math.min(8, ofType('palisade').length) * 2 + G.staff.guard * (G.research.scales ? 8 : 4) + G.walls * 3 + (G.research.scales ? 6 : 0) + ofType('tower').length * 6;
   if (muster) d += G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving').sort((a, b) => heroPower(b, 'combat') - heroPower(a, 'combat')).slice(0, 3).reduce((s, h) => s + CLASSES[h.cls].base * (h.gear ? 1 : 0.6) * 1.1, 0);
   return d;
 }
@@ -1544,7 +1546,7 @@ function modalContent() {
       if (b.type === 'tavern') h += `<div class="s">Meal price: ${mealGold(b).toFixed(1)}g · Passive: ${b.level * 0.25}g/s</div>`;
       const uc = 150 * b.level + 100;
       if (['forge', 'alchemy', 'tavern', 'warehouse', 'smelter', 'lumber'].includes(b.type)) h += `</div><button class="act" data-act="upBuilding" data-id="${b.id}" ${G.gold < uc || G.wood < 5 * b.level || b.level >= maxLevel() || !hasRare(upReq(b)) ? 'disabled' : ''}>${b.level >= maxLevel() ? (G.rank < 3 ? 'Raise guild rank' : 'Max level') : `Upgrade<br>${uc}g + ${5 * b.level}🪵 ${rareTags(upReq(b))}`}</button></div>`; else h += '</div></div>';
-      if (b.type !== 'hall') h += `<button class="act red" data-act="moveB" data-id="${b.id}" style="margin:6px 0">🧭 Move building (free)</button>`;
+      if (b.type !== 'hall' && !t.walkable) h += `<button class="act red" data-act="moveB" data-id="${b.id}" style="margin:6px 0">🧭 Move building (free)</button>`;
       if (b.type === 'portal') h += `<div class="s">Deepest dive so far: floor <b>${G.diveBest}</b></div><button class="act" data-act="open" data-k="quests" style="margin:6px 0">Open the Endless Dive</button>`;
       if (b.type === 'hall') h += `<button class="act" data-act="open" data-k="quests" style="margin:6px 0">Open Quest Board</button>`;
       if (b.type === 'market') {
@@ -1734,7 +1736,7 @@ function confirmPlacement() {
   }
   sfx('build'); G.gold -= t.cost; const b = addBuilding(placing, ghostCell[0], ghostCell[1], ghostRot);
   floatText(new THREE.Vector3(b.cx + b.w / 2, 1, b.cz + b.d / 2), `-${t.cost} Gold`, '#ff9a9a');
-  toast(`${t.name} constructed!`); cancelPlacement();
+  toast(`${t.name} constructed!`); if (t.walkable) { moveGhost(ghostCell[0], ghostCell[1]); return; } cancelPlacement();
 }
 $('placeL').onclick = () => rotateGhost(-1); $('placeR').onclick = () => rotateGhost(1);
 $('placeOk').onclick = confirmPlacement; $('placeNo').onclick = cancelPlacement;
@@ -2199,4 +2201,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__api = { watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__api = { defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
