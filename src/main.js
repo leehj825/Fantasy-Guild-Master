@@ -710,7 +710,7 @@ function makeQuest(o = {}) {
 const genQuest = () => makeQuest();
 const bossTag = q => { const B = BOSS[q.boss]; return B ? `<span class="tag" style="border-color:#ff9a4a" title="${B.note}">👑 ${ENEMY_NAME[q.boss]} · weak: ${B.weak.map(c => CLASSES[c].icon).join('')}</span>` : ''; };
 const ENEMY_NAME = { frostgiant: 'Frost Giant', duneking: 'Dune Warlord', lich: 'Bone Lich' };
-const modTags = q => bossTag(q) + (q.town ? `<span class="tag" title="A small favour for the town: low pay, but the villagers will remember it.">🏘 ${q.who}</span>` : '') + (q.region && q.region !== 'greenwood' && REGIONS[q.region] ? `<span class="tag">${REGIONS[q.region].icon} ${REGIONS[q.region].name}</span>` : '') + (q.mods || []).map(k => `<span class="tag" title="${MODS[k].desc}">${MODS[k].icon} ${MODS[k].label}</span>`).join('');
+const modTags = q => (q.contested ? `<span class="tag" style="border-color:#ff6a6a" title="A rival guild is after this job. Finish before the timer runs out!">⚔ ${Math.max(0, Math.ceil((q.expire || 0) - G.time))}s</span>` : '') + bossTag(q) + (q.town ? `<span class="tag" title="A small favour for the town: low pay, but the villagers will remember it.">🏘 ${q.who}</span>` : '') + (q.region && q.region !== 'greenwood' && REGIONS[q.region] ? `<span class="tag">${REGIONS[q.region].icon} ${REGIONS[q.region].name}</span>` : '') + (q.mods || []).map(k => `<span class="tag" title="${MODS[k].desc}">${MODS[k].icon} ${MODS[k].label}</span>`).join('');
 const questPay = q => Math.round(q.gold * questGoldMul() * (q.approachGold || 1));
 const readyHeroes = () => G.heroes.filter(h => h.gear && !(h.train > 0) && h.stamina >= 45 && h.state !== 'quest' && h.state !== 'leaving');
 function bestParty(q) {
@@ -811,6 +811,7 @@ function resolveQuest(q) {
     if (q.loot.wood) G.wood += Math.round(q.loot.wood * oreMul / (G.research.prospect ? 1.5 : 1));
     if (q.loot.arcane) G.mana += Math.round(q.loot.arcane * 5 * oreMul / (G.research.prospect ? 1.5 : 1));
     (q.script && q.script.enemies || []).filter(e => e.boss).forEach(e => codexAdd('bosses', e.kind));
+    if (q.contested && G.flags.rival) { G.flags.rival.fame = Math.max(0, G.flags.rival.fame - 1); toast(`⚔ You beat ${G.flags.rival.name} to it!`); chron(`⚔ Beat ${G.flags.rival.name} to “${q.name.replace('Contested: ', '')}”.`); }
     G.questsDone++; if (q.mods && q.mods.includes('elite')) G.stats.elite = (G.stats.elite || 0) + 1; if (q.town) G.stats.town = (G.stats.town || 0) + 1; if (q.legend) legendWon(q); else if (q.special) chron(`✔ ${q.name}`);
     if (q.town) { repGain(q.rep || 3); toast(`🏘 ${q.who} thanks you warmly. (+${q.rep || 3} town reputation)`); }
     if (q.region && REGIONS[q.region]) { const rec = (G.regions[q.region] = G.regions[q.region] || { done: 0 }), before = regionLevel(q.region); rec.done++; if (regionLevel(q.region) > before) toast(`🗺 ${REGIONS[q.region].name} mastery level ${regionLevel(q.region)}! ${REGIONS[q.region].perk}`); }
@@ -1111,7 +1112,7 @@ function updateEconomy(dt) {
     if (ofType('tavern').length && G.heroes.length < popCap()) spawnHero();
   }
   for (const b of ofType('lumber')) { b.acc = (b.acc || 0) + dt; if (b.acc >= 8 / (1 + 0.3 * (b.level - 1))) { b.acc = 0; G.wood++; } }
-  tickWear(dt); tickWeekly(dt); tickAuto(dt); tickSeason(dt); tickFestival(dt); { const cot = ofType('cottage').length; if (cot) G.gold += cot * 0.06 * dt * (1 + 0.004 * (G.flags.rep ?? 10)); }
+  tickRival(dt); tickWear(dt); tickWeekly(dt); tickAuto(dt); tickSeason(dt); tickFestival(dt); { const cot = ofType('cottage').length; if (cot) G.gold += cot * 0.06 * dt * (1 + 0.004 * (G.flags.rep ?? 10)); }
   // quests
   t.quest -= dt;
   if (t.quest <= 0) { t.quest = 14; if (G.quests.filter(q => q.state === 'open').length < boardSlots()) genQuest(); legendTick(); }
@@ -1151,6 +1152,26 @@ const GOALS = [
   ['Reach 100 renown', () => G.renown >= 100, { gold: 4000 }],
 ];
 const rewardTags = r => Object.entries(r).map(([k, v]) => k === 'gold' ? `💰${v}` : k === 'renown' ? `⭐${v}` : Object.entries(v).map(([rk, rv]) => `${RARE[rk].icon}${rv}`).join('')).join(' ');
+// ---- the rival guild: it tracks your fame, steals contested quests when you are slow, and every 10 minutes the town compares you
+const RIVALS = ['The Silver Lantern', 'The Crimson Compass', 'Ironvale Company', 'The Wandering Blades'];
+const ourFame = () => G.renown + 2 * codexN('bosses') + 0.5 * (G.stats.chapters || 0);
+const rivalName = () => (G.flags.rival ? G.flags.rival.name : 'A rival guild');
+const CONTESTS = [['gather', 'Contested: The Merchant’s Escort'], ['combat', 'Contested: The Bridge Toll'], ['arcane', 'Contested: The Wandering Relic'], ['combat', 'Contested: The Wolf Bounty']];
+function tickRival(dt) {
+  const f = G.flags;
+  if (!f.rival) { if (G.renown >= 15 && G.questsDone >= 10) { f.rival = { name: pick(RIVALS), fame: Math.round(G.renown * 0.8), t: 600, cq: 80, truce: 0, wins: 0, losses: 0 }; toast(`⚔ A rival guild, ${f.rival.name}, has set up shop nearby!`); chron(`⚔ ${f.rival.name} opened a rival guild hall.`); } return; }
+  const r = f.rival; r.fame += (ourFame() * 0.85 + 10 - r.fame) * 0.0015 * dt; r.t -= dt; r.cq -= dt; if (r.truce > 0) r.truce -= dt;
+  for (const q of G.quests.filter(x => x.contested && x.state === 'open' && G.time > x.expire)) { G.quests.splice(G.quests.indexOf(q), 1); r.fame += 2; toast(`⚔ ${r.name} took “${q.name.replace('Contested: ', '')}” first!`); }
+  if (r.cq <= 0) {
+    r.cq = 150 + Math.random() * 120;
+    if (r.truce <= 0 && !G.quests.some(x => x.contested && x.state === 'open')) { const [type, name] = pick(CONTESTS), q = makeQuest({ type, minH: 1 + Math.floor(Math.random() * 2), mods: ['bounty'], name, goldMul: 1.6 }); q.contested = true; q.expire = G.time + 140; toast(`⚔ Contested quest! Beat ${r.name} to “${name.replace('Contested: ', '')}”.`); }
+  }
+  if (r.t <= 0) {
+    r.t = 600; const mine = ourFame();
+    if (mine >= r.fame) { const g = 300 + 100 * G.rank; G.gold += g; G.renown += 2; r.wins++; r.fame = Math.max(0, r.fame - 2); toast(`🏆 The town prefers your guild over ${r.name}! (+${g}g, +2⭐)`); chron(`🏆 The guild outshone ${r.name}.`); }
+    else { const l = Math.min(Math.round(G.gold * 0.1), 400 + 150 * G.rank); G.gold -= l; G.renown = Math.max(0, G.renown - 1); r.losses++; r.fame += 3; toast(`😤 ${r.name} won the town’s favour. (−${l}g, −1⭐)`); chron(`😤 ${r.name} outshone the guild.`); }
+  }
+}
 // ---- legacy: when the guild passes to the next generation, it earns Legacy Points to spend on permanent family perks
 const LEG_KEY = 'fantasy-guild-master-legacy';
 let LEGACY = { lp: 0, gen: 0, perks: {} }; try { Object.assign(LEGACY, JSON.parse(localStorage.getItem(LEG_KEY) || '{}')); } catch (e) { /* fresh family */ }
@@ -1344,7 +1365,7 @@ function tickPeople(dt) {
   }
   if (!G.flags.poach && Math.random() < 0.2) {   // a rival guild tries to hire a disloyal hero
     const h = G.heroes.find(x => (x.loy ?? 60) < 30 && x.state !== 'quest');
-    if (h) { G.flags.poach = h.id; showBanner('poach', `📨 A rival guild is trying to hire ${h.name}!`, [['Counter-offer (−200g)', 'poachPay', 'red'], ['Let them go', 'poachGo', '']]); }
+    if (h) { G.flags.poach = h.id; showBanner('poach', `📨 ${rivalName()} is trying to hire ${h.name}!`, [['Counter-offer (−200g)', 'poachPay', 'red'], ['Let them go', 'poachGo', '']]); }
   }
   for (const h of G.heroes.slice()) if ((h.loy ?? 60) <= 5 && h.state !== 'quest') { chron(`🚪 ${h.name} left the guild for good.`); return removeHero(h, `🚪 ${h.name} lost faith in the guild and left.`); }
   if (Math.random() < 0.1) {   // two rivals quarrel
@@ -1589,7 +1610,8 @@ function modalContent() {
     }
     case 'inbox': {
       const items = inboxItems(), pol = G.flags.pol || {}, POL = { hstory: ['Hero stories', { ask: 'Ask me', auto: 'Auto: best choice' }], story: ['Guild events', { ask: 'Ask me', auto: 'Auto: first option' }], fest: ['Festivals', { ask: 'Ask me', modest: 'Auto: modest', lavish: 'Auto: lavish', skip: 'Skip them' }] };
-      let h = items.length ? items.map(x => `<div class="row"><div style="font-size:26px">${x.icon}</div><div class="grow"><div class="t">${x.title}</div><div class="s">${x.sub}</div></div><button class="act" data-act="${x.act}" ${x.id ? `data-id="${x.id}"` : ''}>Open</button></div>`).join('') : '<div class="s">Nothing is waiting for you. Enjoy the quiet.</div>';
+      const R = G.flags.rival, me = ourFame(), tot = Math.max(1, me + (R ? R.fame : 0)), card = R ? `<div class="row" style="border-color:#ff6a6a"><div style="font-size:26px">⚔</div><div class="grow"><div class="t">Rival: ${R.name}</div><div class="s">Fame — you ${Math.round(me)} vs them ${Math.round(R.fame)} · next town comparison in ${Math.max(0, Math.ceil(R.t / 60))} min · record ${R.wins}–${R.losses}</div><div class="bar"><i style="width:${me / tot * 100}%;background:#5be35b"></i></div></div></div>` : '';
+      let h = card + (items.length ? items.map(x => `<div class="row"><div style="font-size:26px">${x.icon}</div><div class="grow"><div class="t">${x.title}</div><div class="s">${x.sub}</div></div><button class="act" data-act="${x.act}" ${x.id ? `data-id="${x.id}"` : ''}>Open</button></div>`).join('') : '<div class="s">Nothing is waiting for you. Enjoy the quiet.</div>');
       h += '<div class="sec">When something arrives…</div>' + Object.entries(POL).map(([k, [n, opts]]) => `<div class="row"><div class="grow"><div class="t">${n}</div></div><button class="act red" data-act="polcycle" data-k="${k}">${opts[pol[k] || 'ask']}</button></div>`).join('');
       return ['📬 Inbox', h];
     }
@@ -2383,4 +2405,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__api = { legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__api = { tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };

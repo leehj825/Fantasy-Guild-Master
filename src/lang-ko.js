@@ -274,6 +274,15 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^⚔ A rival guild, (.+), has set up shop nearby!$/, n => `⚔ 경쟁 길드 ${f(n)}이(가) 근처에 문을 열었습니다!`],
+    [/^⚔ Contested quest! Beat (.+) to “(.+)”\.$/, (n, q) => `⚔ 경합 퀘스트! ${f(n)}보다 먼저 “${f(q)}”을(를) 끝내세요.`],
+    [/^⚔ (.+) took “(.+)” first!$/, (n, q) => `⚔ ${f(n)}이(가) “${f(q)}”을(를) 먼저 가져갔습니다!`],
+    [/^⚔ You beat (.+) to it!$/, n => `⚔ ${f(n)}보다 먼저 해냈습니다!`],
+    [/^🏆 The town prefers your guild over (.+)! \(\+(\d+)g, \+2⭐\)$/, (n, g) => `🏆 마을이 ${f(n)}보다 우리 길드를 선택했습니다! (+${g}골드, +2⭐)`],
+    [/^😤 (.+) won the town’s favour\. \(−(\d+)g, −1⭐\)$/, (n, g) => `😤 ${f(n)}이(가) 마을의 호감을 얻었습니다. (−${g}골드, −1⭐)`],
+    [/^Rival: (.+)$/, n => `경쟁 길드: ${f(n)}`],
+    [/^Fame — you (\d+) vs them (\d+) · next town comparison in (\d+) min · record (\d+)–(\d+)$/, (a, b, m, w, l) => `명성 — 우리 ${a} 대 상대 ${b} · 다음 마을 비교까지 ${m}분 · 전적 ${w}승 ${l}패`],
+    [/^📨 (.+) is trying to hire (.+)!$/, (r, n) => `📨 ${f(r)}이(가) ${f(n)} 영웅을 데려가려 합니다!`],
     [/^Generation (\d+) · Legacy Points: (\d+)$/, (g, p) => `${g}세대 · 유산 점수: ${p}`],
     [/^Generation (\d+) · (\d+) Legacy Points\. Pass the guild to an heir for permanent perks\.$/, (g, p) => `${g}세대 · 유산 점수 ${p}. 후계자에게 길드를 물려주면 영구 특전을 받습니다.`],
     [/^Earn (\d+) Legacy Points$/, n => `유산 점수 ${n} 획득`],
