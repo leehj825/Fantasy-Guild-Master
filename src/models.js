@@ -527,6 +527,25 @@ export function factionDecor(kind) {
   return g;
 }
 
+// Draw-call saver for finished buildings: every plain mesh that shares a material is baked into one (a tavern is ~150 boxes). Anything animated by
+// the game (listed in some userData: flames, swirls, lids...), glowing, transparent or instanced is left alone so it still moves and glows.
+export function mergeStatic(root) {
+  root.updateMatrixWorld(true); const keep = new Set();
+  const protect = o => { if (o && o.isObject3D) o.traverse(c => keep.add(c)); };
+  root.traverse(o => { for (const v of Object.values(o.userData || {})) { if (Array.isArray(v)) v.forEach(protect); else protect(v); } });
+  const byMat = new Map(), inv = new THREE.Matrix4().copy(root.matrixWorld).invert(), rel = new THREE.Matrix4();
+  root.traverse(o => { if (!o.isMesh || o.isInstancedMesh || keep.has(o) || !o.material || o.material.isMaterial === false || Array.isArray(o.material)) return; const m = o.material; if (m.transparent || (m.emissive && m.emissive.getHex() !== 0 && m.emissiveIntensity > 0) || !m.isMeshLambertMaterial) return; if (!byMat.has(m)) byMat.set(m, []); byMat.get(m).push(o); });
+  for (const [m, list] of byMat) {
+    if (list.length < 2) continue; let nv = 0, ni = 0;
+    const geos = list.map(o => { const g = o.geometry.clone(); rel.multiplyMatrices(inv, o.matrixWorld); g.applyMatrix4(rel); nv += g.attributes.position.count; ni += g.index ? g.index.count : g.attributes.position.count; return g; });
+    const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), uv = new Float32Array(nv * 2), idx = new Uint32Array(ni); let vo = 0, io = 0;
+    for (const g of geos) { const n = g.attributes.position.count; pos.set(g.attributes.position.array, vo * 3); nor.set(g.attributes.normal.array, vo * 3); if (g.attributes.uv) uv.set(g.attributes.uv.array, vo * 2); if (g.index) for (let i = 0; i < g.index.count; i++) idx[io++] = g.index.array[i] + vo; else for (let i = 0; i < n; i++) idx[io++] = vo + i; vo += n; g.dispose(); }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    const mesh = new THREE.Mesh(geo, m); mesh.castShadow = mesh.receiveShadow = true; root.add(mesh);
+    list.forEach(o => { o.parent.remove(o); o.geometry.dispose(); });
+  }
+  return root;
+}
 export function buildBuilding(type, variant = 0) {
   switch (type) {
     case 'tavern': return tavern();

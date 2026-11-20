@@ -1,5 +1,5 @@
 import * as THREE from '../vendor/three.module.js';
-import { buildChar, factionDecor, BUILDINGS, buildBuilding, buildHero, buildStaff, buildGoblin, buildMerchantCart, vox, mat, PROPS, setCharMaker } from './models.js';
+import { mergeStatic, buildChar, factionDecor, BUILDINGS, buildBuilding, buildHero, buildStaff, buildGoblin, buildMerchantCart, vox, mat, PROPS, setCharMaker } from './models.js';
 import { makeRigChar, makeRigGolem, makeRigOgre, autoAnim } from './rigchar.js';
 import { createTutorial } from './tutorial.js';
 import { TAGS, makeProfile, tagMods, SEASON_NAMES, RESIDENTS, residentHome, ARCS, pickArc } from './people.js';
@@ -17,8 +17,15 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const LOWFX = matchMedia('(pointer: coarse)').matches;   // phones/tablets: lighter rendering so the game runs at full speed
-renderer.setPixelRatio(LOWFX ? Math.min(devicePixelRatio, 1.25) : Math.min(devicePixelRatio, 2));
-const stripLights = o => { if (!LOWFX) return; const ls = []; o.traverse(c => { if (c.isPointLight) ls.push(c); }); ls.forEach(l => l.parent.remove(l)); };
+const frustum = new THREE.Frustum(), frustumM = new THREE.Matrix4();
+const PIXEL_MAX = LOWFX ? Math.min(devicePixelRatio, 1.25) : Math.min(devicePixelRatio, 2), GFX_KEY = 'fantasy-guild-master-gfx';
+let gfx = 'auto'; try { const v = localStorage.getItem(GFX_KEY); if (['auto', 'high', 'low'].includes(v)) gfx = v; } catch (e) { /* default */ }
+let quality = gfx === 'low' ? 0.6 : 1, perfEma = 0.0167, adaptT = 0, frameN = 0;
+renderer.setPixelRatio(PIXEL_MAX * quality);
+renderer.shadowMap.autoUpdate = false;   // the shadow map is redrawn every other frame (see frame())
+// Point lights are expensive for every lit pixel: phones get none, desktops at most LIGHT_BUDGET in the whole town (the first buildings keep theirs).
+const LIGHT_BUDGET = 8; let lightsKept = 0;
+const stripLights = o => { const ls = []; o.traverse(c => { if (c.isPointLight) ls.push(c); }); for (const l of ls) { if (LOWFX || lightsKept >= LIGHT_BUDGET) l.parent.remove(l); else lightsKept++; } };
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x2f7a32);
@@ -63,7 +70,7 @@ function panBy(dx, dy) {
 function rotateBy(dyaw, dpitch) { yaw += dyaw; pitch += dpitch; updateCamera(); }
 function zoomBy(f) { viewS *= f; updateCamera(); }
 function resetView() { yaw = VIEW0.yaw; pitch = VIEW0.pitch; viewS = VIEW0.zoom; camTarget.set(N / 2 + 1, 0, N / 2 + 1); updateCamera(); }
-function resize() { renderer.setSize(innerWidth, innerHeight, false); updateCamera(); }
+function resize() { renderer.setPixelRatio(PIXEL_MAX * quality); renderer.setSize(innerWidth, innerHeight, false); updateCamera(); }
 addEventListener('resize', resize);
 
 let groundMesh = null;
@@ -277,13 +284,22 @@ function canPlace(type, cx, cz, rot = 0) {
   for (let x = cx; x < cx + w; x++) for (let z = cz; z < cz + d; z++) if (occ.has(key(x, z))) return false;
   return true;
 }
+// Cobble tiles are merged into a single mesh (hundreds of tiles would otherwise be hundreds of draw calls)
+const roadTiles = []; let roadDirty = false, roadMesh = null, roadT = 0;
+function rebuildRoads() {
+  roadDirty = false; if (roadMesh) { scene.remove(roadMesh); roadMesh.geometry.dispose(); roadMesh = null; } if (!roadTiles.length) return;
+  const n = roadTiles.length, pos = new Float32Array(n * 12), nor = new Float32Array(n * 12), col = new Float32Array(n * 12), idx = new Uint32Array(n * 6), c = new THREE.Color();
+  roadTiles.forEach((t, i) => { const x = t.x, z = t.z; pos.set([x, 0.05, z, x + 1, 0.05, z, x + 1, 0.05, z + 1, x, 0.05, z + 1], i * 12); for (let k = 0; k < 4; k++) { nor[i * 12 + k * 3 + 1] = 1; c.setHex(t.shade); col.set([c.r, c.g, c.b], i * 12 + k * 3); } idx.set([i * 4, i * 4 + 2, i * 4 + 1, i * 4, i * 4 + 3, i * 4 + 2], i * 6); });
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  roadMesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true })); roadMesh.receiveShadow = true; scene.add(roadMesh);
+}
 function addBuilding(type, cx, cz, rot = 0) {
   const t = BUILDINGS[type], [w, d] = footprint(type, rot), th = rot * Math.PI / 2;
   const variant = type === 'tent' ? (ofType('tent').length % 2 ? 0 : 1) : 0;
-  const group = buildBuilding(type, variant);
+  const group = BUILDINGS[type].road ? new THREE.Group() : mergeStatic(buildBuilding(type, variant));   // a road tile has no mesh of its own; the rest is merged to save draw calls
   group.position.set(cx + w / 2, 0, cz + d / 2);
   group.rotation.y = th;
-  if (t.road) { const shade = [0x8f8a80, 0x9a958a, 0x86817a, 0x938d82][(cx * 7 + cz * 13 + 400) % 4]; group.traverse(o => { if (o.isMesh) { o.material = mat(shade); o.castShadow = false; } }); }
+  if (t.road) { roadTiles.push({ x: cx, z: cz, shade: [0x8f8a80, 0x9a958a, 0x86817a, 0x938d82][(cx * 7 + cz * 13 + 400) % 4] }); roadDirty = true; }
   stripLights(group);
   bGroup.add(group);
   const b = {
@@ -500,7 +516,7 @@ function removeHero(h, why) {
 const OFF = 14, MG = N + 2 * OFF;   // pathfinding grid covers the base and every possible expansion
 // ---- worn paths: wherever people keep walking, the grass wears into dirt. No fixed roads: the town's streets grow from its traffic,
 // and "Pave worn paths" turns them into cobbles (which are faster still).
-const wear = new Float32Array(MG * MG), WEAR_S = 8, WEAR_LO = 3, WEAR_DIRT = 11, WEAR_FULL = 35;
+const wear = new Float32Array(MG * MG), WEAR_S = 6, WEAR_LO = 3, WEAR_DIRT = 11, WEAR_FULL = 35;
 let wearDirty = true, wearTick = 0, wearDraw = 0;
 const wearCanvas = document.createElement('canvas'); wearCanvas.width = wearCanvas.height = MG * WEAR_S;
 const wearTex = new THREE.CanvasTexture(wearCanvas); wearTex.minFilter = THREE.LinearFilter;
@@ -523,7 +539,7 @@ function drawWear() {
 }
 function tickWear(dt) {
   wearTick += dt; if (wearTick >= 5) { wearTick = 0; for (let i = 0; i < wear.length; i++) if (wear[i] > 0) { wear[i] *= 0.998; if (wear[i] < 0.2) wear[i] = 0; } wearDirty = true; }
-  wearDraw -= dt; if (wearDraw <= 0 && wearDirty) { wearDraw = 1.5; wearDirty = false; drawWear(); }
+  wearDraw -= dt; if (wearDraw <= 0 && wearDirty) { wearDraw = 3; wearDirty = false; drawWear(); }
 }
 const blocked = (x, z) => x < -OFF || z < -OFF || x >= N + OFF || z >= N + OFF || occ.has(key(x, z));
 function nearestFree(cx, cz) {
@@ -1148,6 +1164,7 @@ function updateEconomy(dt) {
     if (ofType('tavern').length && G.heroes.length < popCap()) spawnHero();
   }
   for (const b of ofType('lumber')) { b.acc = (b.acc || 0) + dt; if (b.acc >= 8 / (1 + 0.3 * (b.level - 1))) { b.acc = 0; G.wood++; } }
+  roadT -= dt; if (roadDirty && roadT <= 0) { roadT = 0.4; rebuildRoads(); }
   tickRival(dt); tickWear(dt); tickWeekly(dt); tickAuto(dt); tickSeason(dt); tickFestival(dt); { const cot = ofType('cottage').length; if (cot) G.gold += cot * 0.06 * dt * (1 + 0.004 * (G.flags.rep ?? 10)); }
   // quests
   t.quest -= dt;
@@ -1625,6 +1642,7 @@ function modalContent() {
     case 'settings': return ['⚙ Settings & Save', `
       <div class="row"><div class="grow"><div class="t">🔊 Sound</div><div class="s">Procedural sound effects and music (no downloads).</div></div><button class="act ${getPrefs().sfx ? '' : 'red'}" data-act="sfxtoggle">Effects: ${getPrefs().sfx ? 'On' : 'Off'}</button><button class="act ${getPrefs().music ? '' : 'red'}" data-act="musictoggle">Music: ${getPrefs().music ? 'On' : 'Off'}</button></div>
       <div class="row"><div class="grow"><div class="t">🌐 Language</div><div class="s">English / 한국어</div></div>${Object.entries(LANGS).map(([k, n]) => `<button class="act ${getLang() === k ? '' : 'red'}" style="${getLang() === k ? 'outline:2px solid #fff8' : ''}" data-act="lang" data-l="${k}">${n}</button>`).join('')}</div>
+      <div class="row"><div class="grow"><div class="t">🎚 Graphics</div><div class="s">Auto lowers the resolution when the game runs slowly. Low turns shadows off for the smoothest play.</div></div><button class="act red" data-act="gfxcycle">${{ auto: 'Auto', high: 'High', low: 'Low' }[gfx]}</button></div>
       <div class="row"><div class="grow"><div class="t">🛤 Auto paths</div><div class="s">Link every new building to the street network with a short cobble path (a few coins).</div></div><button class="act ${G.flags.noAutoRoad ? 'red' : ''}" data-act="autoroadtoggle">${G.flags.noAutoRoad ? 'Off' : 'On'}</button></div>
       <div class="row"><div class="grow"><div class="t">📂 Save slots & export</div><div class="s">Three extra slots, plus copy/paste a save between devices.</div></div><button class="act" data-act="saveio">Open</button></div>
       <div class="row"><div class="grow"><div class="t">🏛 Legacy</div><div class="s">Generation ${LEGACY.gen + 1} · ${LEGACY.lp} Legacy Points. Pass the guild to an heir for permanent perks.</div></div><button class="act" data-act="legacy">Open</button></div>
@@ -1843,6 +1861,7 @@ const ACT = {
   sendall() { sendAll(0); },
   chron() { openModal('chronicle'); },
   relmap() { openModal('relmap'); },
+  gfxcycle() { gfx = { auto: 'high', high: 'low', low: 'auto' }[gfx]; quality = gfx === 'low' ? 0.6 : 1; try { localStorage.setItem(GFX_KEY, gfx); } catch (e) { /* ignore */ } resize(); },
   codex() { openModal('codex'); },
   legacy() { openModal('legacy'); },
   legbuy(d) { const P = PERKS[d.k], l = legacyLvl(d.k), c = l + 1; if (!P || l >= 5 || LEGACY.lp < c) return; LEGACY.lp -= c; (LEGACY.perks ||= {})[d.k] = l + 1; saveLegacy(); sfx('goal'); toast(`🏛 ${P.name} is now level ${l + 1}.`); },
@@ -2356,8 +2375,10 @@ function frame() {
   updateEconomy(dt);
   G.heroes.slice().forEach(h => updateHero(h, dt));
   updateGoblins(dt);
-  updateSeasonFx(rdt); updateConfetti(rdt); updateDayNight(); tickChat(dt); tickResidents(dt); residentGroup.children.forEach(m => autoAnim(m, rdt));
-  if (charStyle !== 'classic') { heroGroup.children.forEach(m => autoAnim(m, rdt)); staffMeshes.forEach(x => autoAnim(x.mesh, rdt)); G.goblins.forEach(x => autoAnim(x.mesh, rdt)); }
+  updateSeasonFx(rdt); updateConfetti(rdt); updateDayNight(); tickChat(dt); tickResidents(dt); residentGroup.children.forEach(m => autoAnim(m, rdt, frustum.containsPoint(m.position)));
+  camera.updateMatrixWorld(); frustumM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); frustum.setFromProjectionMatrix(frustumM);
+  const seen = m => frustum.containsPoint(m.position);
+  if (charStyle !== 'classic') { heroGroup.children.forEach(m => autoAnim(m, rdt, seen(m))); staffMeshes.forEach(x => autoAnim(x.mesh, rdt, seen(x.mesh))); G.goblins.forEach(x => autoAnim(x.mesh, rdt, seen(x.mesh))); }
   // animation: building pop-in, light flicker
   for (const b of G.buildings) {
     if (b.pop < 1) { b.pop = Math.min(1, b.pop + rdt * 3); const s = b.pop; b.group.scale.setScalar(Math.max(0.01, 1 - Math.pow(1 - s, 2) + Math.sin(s * Math.PI) * 0.1)); }
@@ -2421,6 +2442,10 @@ function frame() {
   saveTick -= rdt; if (saveTick <= 0) { saveTick = 15; saveGame(); }
   hudTick -= rdt; if (hudTick <= 0) { hudTick = 0.15; updateHUD(); }
   modalTick -= rdt; if (modalTick <= 0) { modalTick = 0.4; renderModal(false); }
+  // quality: in Auto the resolution follows the frame rate (down when slower than ~28 fps, back up when there is room)
+  perfEma = perfEma * 0.96 + Math.min(rdt, 0.2) * 0.04; adaptT += rdt;
+  if (adaptT > 3) { adaptT = 0; if (gfx === 'auto') { if (perfEma > 0.036 && quality > 0.55) { quality = Math.max(0.55, quality - 0.15); resize(); } else if (perfEma < 0.021 && quality < 1) { quality = Math.min(1, quality + 0.1); resize(); } } }
+  sun.castShadow = gfx !== 'low' && quality > 0.6; if ((frameN++ & 1) === 0) renderer.shadowMap.needsUpdate = true;
   renderer.render(scene, camera);
   renderPip();
 }
@@ -2441,4 +2466,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__api = { applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__renderer = renderer; window.__scene = scene; window.__api = { applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
