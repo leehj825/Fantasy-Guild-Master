@@ -274,6 +274,15 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^📬 New event: (.+)$/, t => `📬 새 사건: ${f(t)}`],
+    [/^📬 Auto-handled: (.+) — (.+)$/, (n, t) => `📬 자동 처리: ${f(n)} — ${f(t)}`],
+    [/^📬 Auto-handled: (.+)$/, t => `📬 자동 처리: ${f(t)}`],
+    [/^📬 (.+) has a story to tell\.$/, n => `📬 ${f(n)} 영웅이 들려줄 이야기가 있습니다.`],
+    [/^📬 The villagers want to hold the (.+)!$/, n => `📬 주민들이 ${f(n)}을(를) 열고 싶어 합니다!`],
+    [/^📨 Word from (.+)'s story: a grateful gift of (\d+) gold\.$/, (n, g) => `📨 ${f(n)} 영웅의 이야기에서 감사의 선물이 도착했습니다: ${g}골드.`],
+    [/^📨 (.+) is still brooding over the decision\. \(−3 loyalty\)$/, n => `📨 ${f(n)} 영웅이 그 결정을 아직도 곱씹고 있습니다. (충성도 −3)`],
+    [/^Chapter (\d+) is ready\.$/, n => `${n}장이 준비되었습니다.`],
+    [/^The villagers want to hold the (.+)\. A festival lifts everyone's mood.*$/s, n => `주민들이 ${f(n)}을(를) 열고 싶어 합니다. 축제는 모두의 기분을 올리고 마을의 평판을 높이며, 진행 중에는 술집 식사 수입이 50% 늘어납니다.`],
     [/^Lavish \(−(\d+)g\)$/, n => `성대하게 (−${n}골드)`],
     [/^Modest \(−(\d+)g\)$/, n => `소박하게 (−${n}골드)`],
     [/^💪 (.+) finished intensive training\.$/, n => `💪 ${f(n)} 영웅이 집중 훈련을 마쳤습니다.`],

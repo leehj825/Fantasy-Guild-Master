@@ -403,7 +403,7 @@ function createHero(d) {
     mesh, pos: mesh.position, bub, state: 'idle', target: null, onArrive: null, timer: 0, onDone: null, cool: 0, phase: Math.random() * 6, vis: true,
   };
   if (d.tags) { h.tags = d.tags; h.bio = d.bio; h.likes = d.likes; h.dislikes = d.dislikes; } else Object.assign(h, makeProfile(h.cls));
-  h.loy = d.loy ?? 60; h.title = d.title || null; h.boon = d.boon || null; h.arc = d.arc || { id: pickArc(h), ch: 0 };
+  h.loy = d.loy ?? 60; h.marks = d.marks || []; h.title = d.title || null; h.boon = d.boon || null; h.arc = d.arc || { id: pickArc(h), ch: 0 };
   mesh.userData.hid = h.id; G.heroes.push(h); if (h.vip) addStar(h); if (h.promo) addPromoGear(h); if (d.bonds === undefined) assignBonds(h); else if (!h.aff) { h.aff = {}; for (const [id, k] of Object.entries(h.bonds || {})) h.aff[id] = k === 'rival' ? -35 : 35; }
   return h;
 }
@@ -799,14 +799,14 @@ const STORIES = [
     { label: 'Ignore the rumours', hint: 'Heroes lose some happiness.', fx: () => { G.heroes.forEach(h => { h.happy = Math.max(10, h.happy - 10); }); } }] },
 ];
 function checkStories() {
-  if (G.flags.pending) return;
+  if (G.flags.pending || G.time - (G.flags.lastEv || -999) < 150) return;   // guild events keep a calm gap of at least 2.5 minutes
   const st = STORIES.find(x => !G.flags['story_' + x.id] && x.when()); if (!st) return;
-  G.flags['story_' + st.id] = 1; G.flags.pending = st.id; showStoryBanner();
+  G.flags['story_' + st.id] = 1; G.flags.pending = st.id; G.flags.lastEv = G.time; showStoryBanner();
 }
-function showStoryBanner() { sfx('chime'); const st = STORIES.find(x => x.id === G.flags.pending); if (st) showBanner('story', `📖 ${st.title} — a decision awaits`, [['Read', 'openStory', '']]); }
+function showStoryBanner() { const st = STORIES.find(x => x.id === G.flags.pending); if (!st) return; if (G.flags.pol && G.flags.pol.story === 'auto') { const i = st.choices.findIndex(c => !c.ok || c.ok()); if (i >= 0) { chooseStory(i); toast('📬 Auto-handled: ' + st.title); return; } } sfx('chime'); toast('📬 New event: ' + st.title); }
 function chooseStory(i) {
   const st = STORIES.find(x => x.id === G.flags.pending); if (!st) return; const c = st.choices[i]; if (!c || (c.ok && !c.ok())) return;
-  c.fx(); G.flags.pending = null; hideBanner('story'); closeModal(); toast(`📖 ${st.title}: ${c.label}`);
+  c.fx(); G.flags.pending = null; hideBanner('story'); closeModal(); toast(`📖 ${st.title}: ${c.label}`); chron(`📖 ${st.title}: ${c.label}`);
 }
 
 /* ------------------------------------------------------------------ *
@@ -1159,7 +1159,7 @@ const TOWN_JOBS = [
 ];
 let townT = 30;
 function townTick(dt) {
-  townT -= dt; if (townT > 0) return; townT = 45 + Math.random() * 30;
+  townT -= dt; if (townT > 0) return; townT = 90 + Math.random() * 60;
   if (G.quests.filter(q => q.town && q.state === 'open').length >= 2) return;
   const who = residents.map(r => r.def.name), opts = TOWN_JOBS.filter(j => who.includes(j.who) && !G.quests.some(q => q.name === j.name)); if (!opts.length) return;
   const j = pick(opts), q = makeQuest({ type: j.type, minH: 1, mods: [], name: j.name, goldMul: 0.5 }); q.town = true; q.who = j.who; q.dur = Math.round(rnd(20, 30)); q.diff *= 0.6; q.rep = 3; q.renown = Math.max(0, q.renown - 1);
@@ -1177,11 +1177,15 @@ const confetti = (() => {
 function tickFestival(dt) {
   const f = G.flags, i = seasonIdx(), key = Math.floor((f.sT || 0) / SEASON_LEN), into = (f.sT || 0) % SEASON_LEN;
   if (f.fest) { f.fest.t -= dt; if (f.fest.t <= 0) { f.fest = null; hideBanner('feston'); toast('🎉 The festival is over. What a night!'); } }
-  if (banners.fest && f.festOffer !== key) hideBanner('fest');
-  if (!f.fest && f.festOffer !== key && into >= 90 && G.buildings.length > 3 && !banners.fest) { f.festOffer = key; const F = FEST[i]; showBanner('fest', `${F.icon} The villagers want to hold the ${F.name}!`, [[`Lavish (−${festCost(true)}g)`, 'festL', 'red'], [`Modest (−${festCost(false)}g)`, 'festM', ''], ['Skip', 'festS', '']]); }
+  if (f.festPending !== undefined && f.festPending !== null && f.festPending !== key) f.festPending = null;   // the season moved on
+  if (!f.fest && f.festOffer !== key && into >= 90 && G.buildings.length > 3) {
+    f.festOffer = key; const pol = (f.pol && f.pol.fest) || 'ask';
+    if (pol === 'ask') { f.festPending = key; toast(`📬 The villagers want to hold the ${FEST[i].name}!`); sfx('chime'); }
+    else if (pol !== 'skip') { startFest(pol === 'lavish' ? 'L' : 'M'); }
+  }
 }
 function startFest(kind) {
-  const F = FEST[seasonIdx()], lavish = kind === 'L', cost = festCost(lavish); hideBanner('fest');
+  const F = FEST[seasonIdx()], lavish = kind === 'L', cost = festCost(lavish); hideBanner('fest'); G.flags.festPending = null;
   if (G.gold < cost) return toast('Not enough gold.');
   G.gold -= cost; G.flags.fest = { name: F.name, t: lavish ? 60 : 40 }; repGain(lavish ? 6 : 2); if (lavish) G.renown += 2;
   for (const h of G.heroes) { h.happy = Math.min(100, h.happy + (lavish ? 25 : 10)); h.loy = Math.min(100, (h.loy ?? 60) + (lavish ? 5 : 2)); }
@@ -1199,17 +1203,30 @@ function applyFx(h, fx) {
   if (fx.boon) { const b = (h.boon = h.boon || {}); for (const [k, v] of Object.entries(fx.boon)) { if (k === 'pw') b.pw = (b.pw || 1) * v; else b[k] = (b[k] || 0) + v; } }
   if (fx.title) h.title = fx.title; if (fx.chron) chron('📖 ' + sub(fx.chron, h));
 }
+// score a choice and take it (used by the story window and by the auto policy)
+function choiceScore(c) { const f = c.fx; return (f.loy || 0) + (f.happy || 0) * 0.5 + (f.rep || 0) * 3 + (f.renown || 0) * 3 + (f.boon ? 6 : 0) + (f.title ? 4 : 0) + (f.stamina || 0) * 0.2; }
+function bestChoice(ch) { let best = -1, bs = -1e9; ch.choices.forEach((c, i) => { if (c.cost && G.gold < c.cost) return; const sc = choiceScore(c); if (sc > bs) { bs = sc; best = i; } }); return best; }
+function resolveHeroStory(h, i) {
+  const ch = storyChapter(h), c = ch && ch.choices[i]; if (!c) return false; if (c.cost && G.gold < c.cost) { toast('Not enough gold.'); return false; } if (c.cost) G.gold -= c.cost;
+  applyFx(h, c.fx); (h.marks = h.marks || []).push(c.label.replace(/ \(.*\)$/, '')); if (h.marks.length > 6) h.marks.shift(); chron(`📖 ${h.name}: ${c.label.replace(/ \(.*\)$/, '')}`);
+  (G.flags.after = G.flags.after || []).push({ t: G.time + 90 + Math.random() * 90, hid: h.id, good: choiceScore(c) > 0 && Math.random() < 0.6 });
+  h.arc.ch++; sfx('goal'); toast(`📖 ${h.name}: ${(h.arc.ch >= ARCS[h.arc.id].ch.length ? 'their story reaches its end.' : 'the story goes on…')}`); return true;
+}
 function storyChapter(h) { const a = ARCS[h.arc && h.arc.id]; return a && h.arc.ch < a.ch.length ? a.ch[h.arc.ch] : null; }
-let storyT = 6, stepT = 0;
+let storyT = 6, stepT = 0; const notified = new Set();
 function tickPeople(dt) {
   stepT += dt; storyT -= dt;
   if (stepT >= 5) {   // loyalty drifts with mood
     stepT = 0; for (const h of G.heroes) { const l = h.loy ?? 60; h.loy = Math.max(0, Math.min(100, l + (h.happy > 70 ? 0.5 : h.happy < 35 ? -1 : 0))); }
   }
   if (storyT > 0) return; storyT = 8;
-  if (!G.flags.hs) {   // a hero has reached their next chapter
-    const h = G.heroes.find(x => x.state !== 'quest' && x.state !== 'leaving' && storyChapter(x) && x.level >= storyChapter(x).lv);
-    if (h) { G.flags.hs = h.id; showBanner('hstory', `📖 ${h.name} has something to tell you.`, [['Listen', 'hstoryopen', '']]); sfx('chime'); }
+  for (const h of G.heroes) {   // heroes who reached their next chapter wait in the inbox (one note each)
+    const ch = storyChapter(h); if (!ch || h.level < ch.lv || h.state === 'quest') continue; const k = h.id + ':' + h.arc.ch;
+    if (G.flags.pol && G.flags.pol.hstory === 'auto') { const i = bestChoice(ch); if (i >= 0) { const t = ARCS[h.arc.id].title; resolveHeroStory(h, i); toast(`📬 Auto-handled: ${h.name} — ${t}`); } } else if (!notified.has(k)) { notified.add(k); toast(`📬 ${h.name} has a story to tell.`); sfx('chime'); }
+  }
+  for (const a of (G.flags.after || []).filter(x => x.t <= G.time)) {   // the aftermath of an earlier choice arrives
+    G.flags.after.splice(G.flags.after.indexOf(a), 1); const h = G.heroes.find(x => x.id === a.hid); if (!h) continue;
+    if (a.good) { const g = 60 + 30 * G.rank; G.gold += g; h.loy = Math.min(100, (h.loy ?? 60) + 3); toast(`📨 Word from ${h.name}'s story: a grateful gift of ${g} gold.`); } else { h.loy = Math.max(0, (h.loy ?? 60) - 3); toast(`📨 ${h.name} is still brooding over the decision. (−3 loyalty)`); }
   }
   if (!G.flags.poach && Math.random() < 0.2) {   // a rival guild tries to hire a disloyal hero
     const h = G.heroes.find(x => (x.loy ?? 60) < 30 && x.state !== 'quest');
@@ -1220,6 +1237,13 @@ function tickPeople(dt) {
     const idle = G.heroes.filter(x => x.state !== 'quest' && x.state !== 'leaving'), pair = []; for (const a of idle) for (const [id, k] of Object.entries(a.bonds || {})) { const b = idle.find(x => x.id === +id); if (k === 'rival' && b && a.id < b.id) pair.push([a, b]); }
     if (pair.length) { const [a, b] = pick(pair); a.happy = Math.max(0, a.happy - 10); b.happy = Math.max(0, b.happy - 10); a.loy = Math.max(0, (a.loy ?? 60) - 2); b.loy = Math.max(0, (b.loy ?? 60) - 2); addAff(a, b, -5, true); floatText(a.pos, '💢', '#ff7a7a'); floatText(b.pos, '💢', '#ff7a7a'); toast(`💢 ${a.name} and ${b.name} had a loud quarrel.`); }
   }
+}
+function inboxItems() {
+  const out = [], st = STORIES.find(x => x.id === G.flags.pending);
+  if (st) out.push({ icon: '📖', title: st.title, sub: 'A decision awaits.', act: 'openStory' });
+  for (const h of G.heroes) { const ch = storyChapter(h); if (ch && h.level >= ch.lv && h.state !== 'quest') out.push({ icon: '🗣', title: `${h.name}: ${ARCS[h.arc.id].title}`, sub: `Chapter ${h.arc.ch + 1} is ready.`, act: 'hstoryopen', id: h.id }); }
+  if (G.flags.festPending !== undefined && G.flags.festPending !== null) out.push({ icon: FEST[seasonIdx()].icon, title: FEST[seasonIdx()].name, sub: 'The villagers are waiting for your answer.', act: 'festinbox' });
+  return out;
 }
 const SCENE = {
   friend: { e: ['🤝', '😄'], a: ['Care to share a table?', 'Good to see you!'], b: ['Always!', 'Pull up a chair.'] },
@@ -1238,7 +1262,7 @@ const plusCost = h => ({ gold: Math.round(100 * Math.pow(1.7, h.plus || 0)), ore
 const trainCost = h => 100 + 50 * h.level;
 const decorBonus = () => Math.min(0.4, (first('monument') ? 0.1 : 0) + 0.05 * (ofType('fountain').length + ofType('banner').length + ofType('statue').length) + 0.01 * Math.min(10, ofType('lamp').length + ofType('campfire').length));
 function tickChat(dt) {
-  chatT -= dt; if (chatT > 0) return; chatT = 14 + Math.random() * 22;
+  chatT -= dt; if (chatT > 0) return; chatT = 40 + Math.random() * 50;
   const c = G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving' && h.mesh.visible); if (!c.length) return; const h = pick(c);
   if (Math.random() < 0.4) {   // two bonded heroes meet in the guild: a little scene (emoji, a line, a bit more affinity)
     const pairs = []; for (const a of c) for (const [id, k] of Object.entries(a.bonds || {})) { const b = c.find(x => x.id === +id); if (b && a.id < b.id) pairs.push([a, b, k]); }
@@ -1291,6 +1315,7 @@ function updateHUD() {
   $('hMana').textContent = G.mana;
   $('hPop').textContent = `${G.heroes.length}/${popCap()}`;
   { const S = SEASONS[seasonIdx()]; $('hSeason').textContent = S.icon + ' ' + tr(S.name); $('seasonPill').title = tr(S.desc); }
+  { const n = inboxItems().length, el = $('hInbox'); if (el.textContent !== String(n)) { el.textContent = n; $('inboxPill').classList.toggle('new', n > 0); } }
   $('hReady').textContent = readyHeroes().length; $('hOpen').textContent = G.quests.filter(q => q.state === 'open').length;
   { const r = G.rare; $('hRare').classList.toggle('hidden', !(r.mythril || r.scale || r.feather)); $('hMyth').textContent = r.mythril; $('hScale').textContent = r.scale; $('hFeather').textContent = r.feather; }
   $('hIngot').classList.toggle('hidden', !first('smelter') && G.ingots === 0); $('hIng').textContent = G.ingots;
@@ -1404,6 +1429,13 @@ function modalContent() {
       h += `<div class="sec">Export / import</div><textarea id="saveText" rows="4" style="width:100%;box-sizing:border-box;font:11px monospace" placeholder="Press Export, or paste a save here and press Import">${saveBuf}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="act" data-act="exportsave">Export</button><button class="act red" data-act="importsave">Import (replaces your guild)</button></div>`;
       return ['💾 Save slots', h];
     }
+    case 'inbox': {
+      const items = inboxItems(), pol = G.flags.pol || {}, POL = { hstory: ['Hero stories', { ask: 'Ask me', auto: 'Auto: best choice' }], story: ['Guild events', { ask: 'Ask me', auto: 'Auto: first option' }], fest: ['Festivals', { ask: 'Ask me', modest: 'Auto: modest', lavish: 'Auto: lavish', skip: 'Skip them' }] };
+      let h = items.length ? items.map(x => `<div class="row"><div style="font-size:26px">${x.icon}</div><div class="grow"><div class="t">${x.title}</div><div class="s">${x.sub}</div></div><button class="act" data-act="${x.act}" ${x.id ? `data-id="${x.id}"` : ''}>Open</button></div>`).join('') : '<div class="s">Nothing is waiting for you. Enjoy the quiet.</div>';
+      h += '<div class="sec">When something arrives…</div>' + Object.entries(POL).map(([k, [n, opts]]) => `<div class="row"><div class="grow"><div class="t">${n}</div></div><button class="act red" data-act="polcycle" data-k="${k}">${opts[pol[k] || 'ask']}</button></div>`).join('');
+      return ['📬 Inbox', h];
+    }
+    case 'fest': { const F = FEST[seasonIdx()]; return [F.icon + ' ' + F.name, `<div class="s" style="line-height:1.5">The villagers want to hold the ${F.name}. A festival lifts everyone's mood, raises the town's opinion of the guild, and tavern meals pay 50% more while it lasts.</div><div style="display:flex;gap:6px;margin-top:8px"><button class="act red" data-act="festL">Lavish (−${festCost(true)}g)</button><button class="act" data-act="festM">Modest (−${festCost(false)}g)</button><button class="act red" data-act="festS">Skip</button></div>`]; }
     case 'heroStory': {
       const h = G.heroes.find(x => x.id === modalArg), ch = h && storyChapter(h); if (!h || !ch) return ['', '<div class="s">No story to tell right now.</div>'];
       return ['📖 ' + ARCS[h.arc.id].title, `<div class="s" style="font-size:14px;line-height:1.5">${sub(tr(ch.text), h)}</div>` + ch.choices.map((c, i) => `<div class="row" style="border-color:#c9a0ff"><div class="grow"><div class="t">${sub(tr(c.label), h)}</div></div><button class="act" data-act="hstorypick" data-i="${i}" ${c.cost && G.gold < c.cost ? 'disabled' : ''}>Choose</button></div>`).join('')];
@@ -1474,7 +1506,8 @@ function modalContent() {
       if (h.tags) { const L = h.likes || {}, D = h.dislikes || {}; body += `<div class="row"><div class="grow"><div class="t">Personality</div><div class="s">${h.tags.map(t => `<span class="tag" title="${TAGS[t].desc}">${TAGS[t].icon} ${TAGS[t].label}</span>`).join(' ')}</div><div class="s" style="margin-top:4px">${h.bio[0]}</div><div class="s" style="margin-top:4px">❤ Likes: ${L.type} quests · ${L.bld && BUILDINGS[L.bld] ? BUILDINGS[L.bld].name : ''} · ${SEASON_NAMES[L.season]} · ${L.food}</div><div class="s">💢 Dislikes: ${D.type} quests · ${SEASON_NAMES[D.season]}</div></div></div>`; }
       { const ch = storyChapter(h), A = ARCS[h.arc && h.arc.id], ready = ch && h.level >= ch.lv;
         body += `<div class="s" style="margin-top:6px">Loyalty ${Math.round(h.loy ?? 60)}${(h.loy ?? 60) >= 80 ? ' · devoted (+4% power)' : (h.loy ?? 60) <= 25 ? ' · restless (−4% power)' : ''}</div>${bar(h.loy ?? 60, '#ff9ac8')}`;
-        if (A) body += `<div class="row" style="border-color:#c9a0ff"><div style="font-size:26px">📖</div><div class="grow"><div class="t">${A.title}${h.title ? ' · ' + h.title : ''}</div><div class="s">Chapter ${Math.min(h.arc.ch + 1, A.ch.length)}/${A.ch.length}${!ch ? ' · complete' : ready ? ' · ready' : ' · unlocks at level ' + ch.lv}</div></div>${ready && !h.vip ? '' : ''}${ready ? `<button class="act" data-act="hstoryopen" data-id="${h.id}">Read</button>` : ''}</div>`; }
+        if (A) body += `<div class="row" style="border-color:#c9a0ff"><div style="font-size:26px">📖</div><div class="grow"><div class="t">${A.title}${h.title ? ' · ' + h.title : ''}</div><div class="s">Chapter ${Math.min(h.arc.ch + 1, A.ch.length)}/${A.ch.length}${!ch ? ' · complete' : ready ? ' · ready' : ' · unlocks at level ' + ch.lv}</div></div>${ready && !h.vip ? '' : ''}${ready ? `<button class="act" data-act="hstoryopen" data-id="${h.id}">Read</button>` : ''}</div>`;
+        if ((h.marks || []).length) body += `<div class="s" style="margin-top:4px">📜 Choices so far: ${h.marks.join(' · ')}</div>`; }
       body += `<div class="s" style="margin-top:6px">Experience ${h.xp}/${h.level + 1}</div>${bar(h.xp / (h.level + 1) * 100, '#8fd4ff')}
         <div class="s" style="margin-top:6px">Stamina ${Math.round(h.stamina)}</div>${bar(h.stamina, h.stamina < 45 ? '#e0503a' : '#5be35b')}
         <div class="s" style="margin-top:6px">Happiness ${Math.round(h.happy)}</div>${bar(h.happy, h.happy < 30 ? '#e0503a' : '#f0c040')}
@@ -1576,12 +1609,15 @@ const ACT = {
   sendall() { sendAll(0); },
   chron() { openModal('chronicle'); },
   relmap() { openModal('relmap'); },
+  inbox() { openModal('inbox'); },
+  polcycle(d) { const O = { hstory: ['ask', 'auto'], story: ['ask', 'auto'], fest: ['ask', 'modest', 'lavish', 'skip'] }[d.k]; if (!O) return; const p = (G.flags.pol = G.flags.pol || {}); p[d.k] = O[(O.indexOf(p[d.k] || 'ask') + 1) % O.length]; },
   reinforce(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h || !first('forge') || (h.plus || 0) >= maxPlus()) return; const c = plusCost(h); if (G.gold < c.gold || G.ore < c.ore || G.ingots < c.ing) return toast('Not enough materials.'); G.gold -= c.gold; G.ore -= c.ore; G.ingots -= c.ing; h.plus = (h.plus || 0) + 1; floatText(h.pos, `⚒ +${h.plus}`, '#ffd24a'); sfx('build'); toast(`⚒ ${h.name}'s gear is now +${h.plus}.`); },
   trainhero(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h || !first('training') || h.train > 0 || h.state === 'quest') return; const c = trainCost(h); if (G.gold < c) return toast('Not enough gold.'); G.gold -= c; h.train = 80; toast(`🏋 ${h.name} begins intensive training.`); },
   bannerx(d) { hideBanner(d.id); },
-  festL() { startFest('L'); }, festM() { startFest('M'); }, festS() { hideBanner('fest'); },
+  festL() { startFest('L'); closeModal(); }, festM() { startFest('M'); closeModal(); }, festS() { G.flags.festPending = null; closeModal(); },
+  festinbox() { openModal('fest'); },
   hstoryopen(d) { const id = d.id ? +d.id : G.flags.hs; if (id) openModal('heroStory', id); },
-  hstorypick(d) { const h = G.heroes.find(x => x.id === modalArg), ch = h && storyChapter(h), c = ch && ch.choices[+d.i]; if (!c) return; if (c.cost && G.gold < c.cost) return toast('Not enough gold.'); if (c.cost) G.gold -= c.cost; applyFx(h, c.fx); h.arc.ch++; if (G.flags.hs === h.id) { G.flags.hs = null; hideBanner('hstory'); } sfx('goal'); toast(`📖 ${h.name}: ${(h.arc.ch >= ARCS[h.arc.id].ch.length ? 'their story reaches its end.' : 'the story goes on…')}`); closeModal(); },
+  hstorypick(d) { const h = G.heroes.find(x => x.id === modalArg); if (!h) return; if (resolveHeroStory(h, +d.i)) { sfx('goal'); closeModal(); } },
   poachPay() { const h = G.heroes.find(x => x.id === G.flags.poach); G.flags.poach = null; hideBanner('poach'); if (!h) return; if (G.gold < 200) { toast('Not enough gold.'); h.loy = Math.max(0, h.loy - 15); return; } G.gold -= 200; h.loy = Math.min(100, (h.loy ?? 60) + 35); h.happy = Math.min(100, h.happy + 15); toast(`🤝 ${h.name} chose to stay.`); },
   poachGo() { const h = G.heroes.find(x => x.id === G.flags.poach); G.flags.poach = null; hideBanner('poach'); if (!h) return; chron(`🚪 ${h.name} left for a rival guild.`); removeHero(h, `🚪 ${h.name} joined a rival guild.`); },
   saveio() { openModal('saveio'); },
@@ -1865,7 +1901,7 @@ function serialize() {
   return {
     v: 1, savedAt: Date.now(), g,
     buildings: G.buildings.map(b => ({ type: b.type, cx: b.cx, cz: b.cz, rot: b.rot || 0, level: b.level, stock: b.stock, progress: b.progress })),
-    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, promo: h.promo, talents: h.talents, bonds: h.bonds, aff: h.aff, vow: h.vow, quests: h.quests, vip: h.vip, tags: h.tags, bio: h.bio, likes: h.likes, dislikes: h.dislikes, loy: h.loy, plus: h.plus, train: h.train, arc: h.arc, title: h.title, boon: h.boon, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
+    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, promo: h.promo, talents: h.talents, bonds: h.bonds, aff: h.aff, vow: h.vow, quests: h.quests, vip: h.vip, tags: h.tags, bio: h.bio, likes: h.likes, dislikes: h.dislikes, loy: h.loy, marks: h.marks, plus: h.plus, train: h.train, arc: h.arc, title: h.title, boon: h.boon, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
     quests: G.quests.map(q => { const o = {}; for (const [k, v] of Object.entries(q)) if (k !== 'heroes' && k !== 'script') o[k] = v; o.heroIds = (q.heroes || []).map(h => h.id); return o; }),
     extra: serializeExtra(),
   };
@@ -1904,7 +1940,7 @@ function loadGame() {
       G.quests.push(q);
     });
     applyExtra(d.extra || {});
-    if (G.flags.pending) showStoryBanner();
+    if (G.flags.pending && !(G.flags.pol && G.flags.pol.story === 'auto')) { /* waits in the inbox */ }
     G.alarm = false; $('speedBtn').textContent = '⏵ x' + G.speed;
     toast(away > 20 ? `💾 Welcome back! Away for ${Math.round(away / 60)} min — quests kept going.` : '💾 Save loaded.');
     return true;
@@ -2042,7 +2078,7 @@ $('wPipBtn').onclick = () => { if (watching) { watching.pip = !watching.pip; upd
 $('wSpeed').onclick = () => $('speedBtn').click();
 $('wRelic').onclick = () => openModal('relic'); $('wEnchant').onclick = watchEnchant; $('wPotion').onclick = watchPotion; { const ob = $('objectives'), K = 'fantasy-guild-master-obj', set = c => { ob.classList.toggle('collapsed', c); $('objToggle').textContent = c ? '📋' : '▾'; try { localStorage.setItem(K, c ? '1' : '0'); } catch (e) { /* ignore */ } };
   let c0 = false; try { c0 = localStorage.getItem(K) === '1'; } catch (e) { /* default open */ } set(c0); $('objToggle').onclick = () => set(!ob.classList.contains('collapsed')); }
-  $('wRecall').onclick = watchRecall; $('wSkills').onclick = e => { const b = e.target.closest('[data-skill]'); if (b && !b.disabled) watchSkill(b.dataset.skill); }; $('readyPill').onclick = () => openModal('quests'); $('seasonPill').onclick = () => openModal('chronicle');
+  $('wRecall').onclick = watchRecall; $('wSkills').onclick = e => { const b = e.target.closest('[data-skill]'); if (b && !b.disabled) watchSkill(b.dataset.skill); }; $('readyPill').onclick = () => openModal('quests'); $('inboxPill').onclick = () => openModal('inbox'); $('seasonPill').onclick = () => openModal('chronicle');
 function renderPip() {
   const w = watching; if (!w || w.exiting || !w.pip || !watchSaved) return;
   const r = $('pipFrame').getBoundingClientRect(); if (r.width < 10) return;
