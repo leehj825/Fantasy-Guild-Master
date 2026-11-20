@@ -393,5 +393,11 @@ export const KO_PEOPLE = {
   'Contested: The Wandering Relic': '경합: 떠도는 유물',
   'Contested: The Wolf Bounty': '경합: 늑대 현상금',
   'A rival guild is after this job. Finish before the timer runs out!': '경쟁 길드가 이 일을 노리고 있습니다. 시간이 다 되기 전에 끝내세요!',
+  'a quiet pond': '조용한 연못',
+  'boulders': '바윗덩이',
+  'an ancient oak': '오래된 참나무',
+  'a ring of old stones': '오래된 돌 고리',
+  'a ruined watchtower': '무너진 망루',
+  'a warm spring': '따뜻한 온천',
   'hearty stew': '푸짐한 스튜', 'roast boar': '멧돼지 구이', 'honey bread': '꿀빵', 'mushroom pie': '버섯 파이', 'herbal tea': '약초차',
 };

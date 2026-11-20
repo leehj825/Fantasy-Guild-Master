@@ -204,11 +204,47 @@ const forest = { trees: [], meshes: [] };
   stripLights(g); scene.add(g); window.__decor = g;
 }
 
+// Each expansion reveals landmarks in the new ring of land (always the same ones: they come from a seeded layout). Cells they use are blocked.
+const landmarkGroup = new THREE.Group(); scene.add(landmarkGroup); let landmarksBuilt = 0;
+const LANDMARKS = [
+  null,
+  [['pond', 3, 2], ['rocks', 1, 1], ['rocks', 1, 1], ['rocks', 1, 1], ['oak', 2, 2]],
+  [['oak', 2, 2], ['stones', 2, 1], ['rocks', 1, 1], ['pond', 3, 2], ['rocks', 1, 1]],
+  [['ruin', 3, 3], ['spring', 2, 2], ['rocks', 1, 1], ['stones', 2, 1], ['oak', 2, 2]],
+];
+const LM_NAME = { pond: 'a quiet pond', rocks: 'boulders', oak: 'an ancient oak', stones: 'a ring of old stones', ruin: 'a ruined watchtower', spring: 'a warm spring' };
+function buildLandmark(kind) {
+  const g = new THREE.Group();
+  if (kind === 'pond' || kind === 'spring') { const hot = kind === 'spring'; g.add(cyl(1.5, 1.55, 0.12, 0x8a8f98, 0, 0, 0, 16), cyl(1.36, 1.36, 0.08, hot ? 0x5ad8d0 : 0x3b8fd8, 0, 0.1, 0, 16, hot ? 0x2fb8b0 : 0x1d5fa8, 0.5)); if (!hot) g.add(sph(0.18, 0x5aa03a, -0.5, 0.12, 0.2, 0, 0, 6), sph(0.14, 0x6bbf4a, 0.6, 0.12, -0.2, 0, 0, 6)); else g.add(sph(0.22, 0xe8f6ff, 0, 0.3, 0, 0xffffff, 0.3, 6)); g.scale.set(1, 1, 0.7); }
+  else if (kind === 'rocks') g.add(PROPS.rockCluster(1.3));
+  else if (kind === 'oak') { g.add(cyl(0.34, 0.5, 1.3, 0x6b4a2a, 0, 0, 0, 7), sph(1.15, 0x2f7a32, 0, 0.9, 0, 0, 0, 8), sph(0.8, 0x3a8a2a, 0.7, 1.4, 0.3, 0, 0, 8), sph(0.7, 0x2a8a3a, -0.6, 1.3, -0.3, 0, 0, 8)); }
+  else if (kind === 'stones') { for (let i = 0; i < 5; i++) { const a = i / 5 * 6.283; g.add(rot(vox(0.22, 0.9 + (i % 2) * 0.3, 0.22, 0x9a9ea6, Math.cos(a) * 0.8, 0, Math.sin(a) * 0.55), 0, a, 0.05)); } }
+  else if (kind === 'ruin') { g.add(vox(2.2, 0.25, 2.2, 0x7f838b, 0, 0, 0), vox(0.5, 1.9, 0.5, 0x9a9ea6, -0.8, 0.25, -0.8), vox(0.5, 1.3, 0.5, 0x8a8e96, 0.8, 0.25, -0.8), vox(0.5, 0.8, 0.5, 0x9a9ea6, 0.8, 0.25, 0.8), vox(1.5, 0.3, 0.4, 0x8a8e96, 0, 1.5, -0.8)); }
+  return g;
+}
+function buildLandmarks(announce = true) {
+  while (landmarksBuilt < Math.min(3, G.land)) {
+    landmarksBuilt++; const L = landmarksBuilt, E = L * 4, E0 = (L - 1) * 4; let seed = 1234 + L * 777; const r = () => (seed = (seed * 9301 + 49297) % 233280) / 233280, made = [];
+    for (const [kind, w, d] of LANDMARKS[L]) {
+      for (let tries = 0; tries < 40; tries++) {   // somewhere in the new ring, away from where heroes arrive
+        const x = Math.floor(2 - E + r() * (N - 4 + 2 * E - w)), z = Math.floor(2 - E + r() * (N - 4 + 2 * E - d));
+        const inOld = x >= 2 - E0 - 1 && x + w <= N - 2 + E0 + 1 && z >= 2 - E0 - 1 && z + d <= N - 2 + E0 + 1; if (inOld) continue;
+        if ((x + w > N - 7 && Math.abs(z + d / 2 - (HALL.cz + 2)) < 4) || (z + d > N - 7 && Math.abs(x + w / 2 - (HALL.cx + 2.5)) < 4)) continue;
+        let free = true; for (let i = x; i < x + w; i++) for (let j = z; j < z + d; j++) if (occ.has(key(i, j))) free = false; if (!free) continue;
+        for (let i = x; i < x + w; i++) for (let j = z; j < z + d; j++) occ.add(key(i, j));
+        const m = buildLandmark(kind); m.position.set(x + w / 2, 0, z + d / 2); m.rotation.y = r() * 6.28; stripLights(m); landmarkGroup.add(m); made.push(kind); break;
+      }
+    }
+    occVersion++; if (made.length && announce) toast(`🏞 New land revealed: ${[...new Set(made)].map(k => LM_NAME[k]).join(', ')}.`);
+  }
+}
+let loadedOnce = false;
 function applyLand() {   // clear the trees from newly unlocked land and redraw the boundary
   const B = landBounds(), dummy = new THREE.Object3D(); dummy.scale.setScalar(0); dummy.updateMatrix();
   for (const t of forest.trees) if (!t.hidden && t.x > B.x0 - 0.6 && t.x < B.x1 + 0.6 && t.z > B.z0 - 0.6 && t.z < B.z1 + 0.6) { t.hidden = true; forest.meshes.forEach(m => m.setMatrixAt(t.n, dummy.matrix)); }
   forest.meshes.forEach(m => { m.instanceMatrix.needsUpdate = true; });
   if (typeof buildGrid === 'function' && typeof scene !== 'undefined' && grid !== undefined) buildGrid();
+  if (loadedOnce) { try { buildLandmarks(); } catch (e) { /* landmarks are decoration */ } }
 }
 /* ------------------------------------------------------------------ *
  *  Buildings
@@ -1434,7 +1470,7 @@ const forgeLv = () => ofType('forge').reduce((m, b) => Math.max(m, b.level), 0);
 const maxPlus = () => Math.min(5, forgeLv() + 1);
 const plusCost = h => ({ gold: Math.round(100 * Math.pow(1.7, h.plus || 0)), ore: 4 * ((h.plus || 0) + 1), ing: (h.plus || 0) >= 3 ? (h.plus || 0) - 2 : 0 });
 const trainCost = h => 100 + 50 * h.level;
-const decorBonus = () => Math.min(0.5, Math.min(3, ofType('hill').length) * 0.02 + squares() * 0.02 + Math.min(3, ofType('pond').length) * 0.05 + 0.01 * Math.min(10, ofType('flowers').length + ofType('sapling').length) + (first('monument') ? 0.1 : 0) + 0.05 * (ofType('fountain').length + ofType('banner').length + ofType('statue').length) + 0.01 * Math.min(10, ofType('lamp').length + ofType('campfire').length));
+const decorBonus = () => Math.min(0.55, landmarkGroup.children.length * 0.01 + Math.min(3, ofType('hill').length) * 0.02 + squares() * 0.02 + Math.min(3, ofType('pond').length) * 0.05 + 0.01 * Math.min(10, ofType('flowers').length + ofType('sapling').length) + (first('monument') ? 0.1 : 0) + 0.05 * (ofType('fountain').length + ofType('banner').length + ofType('statue').length) + 0.01 * Math.min(10, ofType('lamp').length + ofType('campfire').length));
 function tickChat(dt) {
   chatT -= dt; if (chatT > 0) return; chatT = 40 + Math.random() * 50;
   const c = G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving' && h.mesh.visible); if (!c.length) return; const h = pick(c);
@@ -2394,7 +2430,7 @@ function frame() {
  * ------------------------------------------------------------------ */
 initLang();
 resize();
-const loaded = loadGame();
+const loaded = loadGame(); loadedOnce = true; try { buildLandmarks(false); } catch (e) { /* decoration */ }
 if (!loaded) {
   G.gold += 300 * legacyLvl('purse'); G.renown += 2 * legacyLvl('name'); G.flags.gen = LEGACY.gen + 1; if (LEGACY.gen) chron(`🏛 Generation ${LEGACY.gen + 1} of the guild begins.`);
   spawnHero('knight', true); spawnHero('ranger', true);
@@ -2405,4 +2441,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__api = { tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__api = { applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };

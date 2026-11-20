@@ -274,6 +274,7 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^🏞 New land revealed: (.+)\.$/, l => `🏞 새 땅이 열렸습니다: ${l.split(', ').map(x => f(x)).join(', ')}.`],
     [/^⚔ A rival guild, (.+), has set up shop nearby!$/, n => `⚔ 경쟁 길드 ${f(n)}이(가) 근처에 문을 열었습니다!`],
     [/^⚔ Contested quest! Beat (.+) to “(.+)”\.$/, (n, q) => `⚔ 경합 퀘스트! ${f(n)}보다 먼저 “${f(q)}”을(를) 끝내세요.`],
     [/^⚔ (.+) took “(.+)” first!$/, (n, q) => `⚔ ${f(n)}이(가) “${f(q)}”을(를) 먼저 가져갔습니다!`],
