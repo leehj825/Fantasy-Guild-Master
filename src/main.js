@@ -215,6 +215,17 @@ const worldEl = document.getElementById('world');
 
 const footprint = (type, rot) => { const t = BUILDINGS[type]; return rot % 2 ? [t.d, t.w] : [t.w, t.d]; };
 const roadCells = new Set();   // paved tiles: walkable, so they are not in `occ`
+// A new building is linked to the street network: a short cobble path from its door to the nearest paved tile or to the hall
+function autoRoad(b) {
+  const hall = G.buildings[0], from = b.door.clone(); let best = null, bd = 1e9;
+  const consider = v => { const d = Math.hypot(v.x - from.x, v.z - from.z); if (d < bd) { bd = d; best = v; } };
+  consider(hall.door); for (const k of roadCells) { const [x, z] = k.split(',').map(Number); consider(new THREE.Vector3(x + 0.5, 0, z + 0.5)); }
+  if (!best || bd < 2.2) return;
+  const wp = findPath(from, best), cells = [], seen = new Set(); let cur = from;
+  for (const q of wp) { const n = Math.max(1, Math.ceil(Math.hypot(q.x - cur.x, q.z - cur.z) / 0.35)); for (let i = 0; i <= n; i++) { const x = Math.floor(cur.x + (q.x - cur.x) * i / n), z = Math.floor(cur.z + (q.z - cur.z) * i / n), k = key(x, z); if (!seen.has(k)) { seen.add(k); if (canPlace('road', x, z)) cells.push([x, z]); } } cur = q; }
+  const c = cells.length * BUILDINGS.road.cost; if (!cells.length || cells.length > 40 || G.gold < c) return;
+  G.gold -= c; cells.forEach(([x, z]) => addBuilding('road', x, z)); toast(`🛤 Linked to the town with ${cells.length} path tiles (−${c}g).`);
+}
 function pavable() {   // worn cells inside the land that are free of buildings and not yet paved
   const B = landBounds(), out = [];
   for (let z = B.z0; z < B.z1; z++) for (let x = B.x0; x < B.x1; x++) if (wear[(z + OFF) * MG + x + OFF] >= WEAR_DIRT && !occ.has(key(x, z)) && !roadCells.has(key(x, z))) out.push([x, z]);
@@ -233,6 +244,7 @@ function addBuilding(type, cx, cz, rot = 0) {
   const group = buildBuilding(type, variant);
   group.position.set(cx + w / 2, 0, cz + d / 2);
   group.rotation.y = th;
+  if (t.walkable) { const shade = [0x8f8a80, 0x9a958a, 0x86817a, 0x938d82][(cx * 7 + cz * 13 + 400) % 4]; group.traverse(o => { if (o.isMesh) { o.material = mat(shade); o.castShadow = false; } }); }
   stripLights(group);
   bGroup.add(group);
   const b = {
@@ -1479,6 +1491,7 @@ function modalContent() {
     case 'settings': return ['⚙ Settings & Save', `
       <div class="row"><div class="grow"><div class="t">🔊 Sound</div><div class="s">Procedural sound effects and music (no downloads).</div></div><button class="act ${getPrefs().sfx ? '' : 'red'}" data-act="sfxtoggle">Effects: ${getPrefs().sfx ? 'On' : 'Off'}</button><button class="act ${getPrefs().music ? '' : 'red'}" data-act="musictoggle">Music: ${getPrefs().music ? 'On' : 'Off'}</button></div>
       <div class="row"><div class="grow"><div class="t">🌐 Language</div><div class="s">English / 한국어</div></div>${Object.entries(LANGS).map(([k, n]) => `<button class="act ${getLang() === k ? '' : 'red'}" style="${getLang() === k ? 'outline:2px solid #fff8' : ''}" data-act="lang" data-l="${k}">${n}</button>`).join('')}</div>
+      <div class="row"><div class="grow"><div class="t">🛤 Auto paths</div><div class="s">Link every new building to the street network with a short cobble path (a few coins).</div></div><button class="act ${G.flags.noAutoRoad ? 'red' : ''}" data-act="autoroadtoggle">${G.flags.noAutoRoad ? 'Off' : 'On'}</button></div>
       <div class="row"><div class="grow"><div class="t">📂 Save slots & export</div><div class="s">Three extra slots, plus copy/paste a save between devices.</div></div><button class="act" data-act="saveio">Open</button></div>
       <div class="row"><div class="grow"><div class="t">📖 Guild Chronicle</div><div class="s">The diary of your guild's big moments.</div></div><button class="act" data-act="chron">Open</button></div>
       <div class="row"><div class="grow"><div class="t">🔔 Notifications</div><div class="s">Alert when a quest ends or a raid arrives while the game is in the background (browser only; needs permission).</div></div><button class="act ${G.flags.notif ? '' : 'red'}" data-act="notiftoggle">${G.flags.notif ? 'On' : 'Off'}</button></div>
@@ -1675,6 +1688,7 @@ const ACT = {
   sendall() { sendAll(0); },
   chron() { openModal('chronicle'); },
   relmap() { openModal('relmap'); },
+  autoroadtoggle() { G.flags.noAutoRoad = G.flags.noAutoRoad ? 0 : 1; },
   pave() { const pv = pavable(), c = pv.length * BUILDINGS.road.cost; if (!pv.length || G.gold < c) return; G.gold -= c; pv.forEach(([x, z]) => addBuilding('road', x, z)); sfx('build'); toast(`🛤 Paved ${pv.length} tiles (−${c}g).`); },
   inbox() { openModal('inbox'); },
   polcycle(d) { const O = { hstory: ['ask', 'auto'], story: ['ask', 'auto'], fest: ['ask', 'modest', 'lavish', 'skip'] }[d.k]; if (!O) return; const p = (G.flags.pol = G.flags.pol || {}); p[d.k] = O[(O.indexOf(p[d.k] || 'ask') + 1) % O.length]; },
@@ -1799,9 +1813,10 @@ function confirmPlacement() {
     for (let x = cx; x < cx + w; x++) for (let z = cz; z < cz + d; z++) occ.add(key(x, z));
     occVersion++; moveVer++; sfx('build'); toast(`${t.name} moved.`); cancelPlacement(); saveGame(); return;
   }
-  sfx('build'); G.gold -= t.cost; const b = addBuilding(placing, ghostCell[0], ghostCell[1], ghostRot);
-  floatText(new THREE.Vector3(b.cx + b.w / 2, 1, b.cz + b.d / 2), `-${t.cost} Gold`, '#ff9a9a');
-  toast(`${t.name} constructed!`); if (t.walkable) { moveGhost(ghostCell[0], ghostCell[1]); return; } cancelPlacement();
+  G.gold -= t.cost; const b = addBuilding(placing, ghostCell[0], ghostCell[1], ghostRot);
+  if (t.walkable) { moveGhost(ghostCell[0], ghostCell[1]); return; }   // paths: no fuss, drag to lay a whole street
+  sfx('build'); floatText(new THREE.Vector3(b.cx + b.w / 2, 1, b.cz + b.d / 2), `-${t.cost} Gold`, '#ff9a9a');
+  toast(`${t.name} constructed!`); if (!t.decor && !G.flags.noAutoRoad) autoRoad(b); cancelPlacement();
 }
 $('placeL').onclick = () => rotateGhost(-1); $('placeR').onclick = () => rotateGhost(1);
 $('placeOk').onclick = confirmPlacement; $('placeNo').onclick = cancelPlacement;
@@ -1821,7 +1836,7 @@ canvas.addEventListener('pointerdown', e => {
     drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, btn: e.button, mode: (e.button === 2 || e.button === 1 || e.shiftKey || e.ctrlKey) ? 'pan' : 'orbit' };
     if (placing && drag.mode === 'orbit') {
       const p = groundAt(e.clientX, e.clientY), [w, d] = footprint(placing, ghostRot);
-      if (p && Math.abs(p.x - ghost.position.x) < w / 2 + 0.8 && Math.abs(p.z - ghost.position.z) < d / 2 + 0.8) { drag.mode = 'ghost'; drag.off = [p.x - ghost.position.x, p.z - ghost.position.z]; }
+      if (p && (BUILDINGS[placing].walkable || (Math.abs(p.x - ghost.position.x) < w / 2 + 0.8 && Math.abs(p.z - ghost.position.z) < d / 2 + 0.8))) { drag.mode = 'ghost'; drag.off = [p.x - ghost.position.x, p.z - ghost.position.z]; }
     }
   } else if (pts.size === 2) {
     const [a, b] = [...pts.values()]; two = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), mx: (a[0] + b[0]) / 2, my: (a[1] + b[1]) / 2 };
@@ -1841,7 +1856,7 @@ canvas.addEventListener('pointermove', e => {
     const dx = e.clientX - drag.lx, dy = e.clientY - drag.ly;
     if (drag.mode === 'orbit') rotateBy(-dx * 0.008, dy * 0.005);
     else if (drag.mode === 'pan') panBy(dx, dy);
-    else if (drag.mode === 'ghost') { const p = groundAt(e.clientX, e.clientY); if (p) { const [cx, cz] = cellFor(p.x - drag.off[0], p.z - drag.off[1]); moveGhost(cx, cz); } }
+    else if (drag.mode === 'ghost') { const p = groundAt(e.clientX, e.clientY); if (p) { const [cx, cz] = cellFor(p.x - drag.off[0], p.z - drag.off[1]); moveGhost(cx, cz); if (BUILDINGS[placing].walkable && ghost.userData.ok) confirmPlacement(); } }
   }
   drag.lx = e.clientX; drag.ly = e.clientY;
 });
@@ -2266,4 +2281,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__api = { pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__api = { autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };

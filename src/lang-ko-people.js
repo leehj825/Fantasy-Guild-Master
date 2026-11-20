@@ -246,5 +246,8 @@ export const KO_PEOPLE = {
   'Pave worn paths': '밟은 길 포장',
   'Pave': '포장',
   'No well-trodden paths yet — your streets form where people walk.': '아직 닳은 길이 없습니다. 사람이 걷는 곳에 길이 생깁니다.',
+  '🛤 Auto paths': '🛤 자동 길',
+  'Auto paths': '자동 길',
+  'Link every new building to the street network with a short cobble path (a few coins).': '새 건물을 짧은 돌길로 길 네트워크에 연결합니다(몇 푼의 비용).',
   'hearty stew': '푸짐한 스튜', 'roast boar': '멧돼지 구이', 'honey bread': '꿀빵', 'mushroom pie': '버섯 파이', 'herbal tea': '약초차',
 };

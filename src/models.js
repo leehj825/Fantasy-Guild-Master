@@ -541,7 +541,7 @@ export function buildBuilding(type, variant = 0) {
     case 'campfire': return campfire();
     case 'weapons': return grp(at(weaponRack(), 0, 0, 0), at(shieldRack(), 0, 0, 0).translateX(0));
     case 'cart': return grp(at(cartProp(0), -0.7, 0, 0), at(cartProp(1), 0.7, 0, 0.6).rotateY(-0.4));
-    case 'road': return vox(0.96, 0.05, 0.96, 0x8f8a80, 0, 0, 0);
+    case 'road': return vox(1.0, 0.05, 1.0, 0x8f8a80, 0, 0, 0);
     case 'palisade': { const g = new THREE.Group(); for (let i = 0; i < 7; i++) { const x = -1.35 + i * 0.45; g.add(cyl(0.17, 0.19, 0.95 + (i % 2) * 0.12, 0x7a4f28, x, 0, 0, 7), cone(0.17, 0.3, 0x7a4f28, x, 0.95 + (i % 2) * 0.12, 0, 7)); } g.add(vox(2.9, 0.1, 0.12, 0x5a3a1a, 0, 0.45, 0.16), vox(2.9, 0.1, 0.12, 0x5a3a1a, 0, 0.8, 0.16)); return g; }
     case 'lumber': { const g = new THREE.Group(); g.add(vox(1.3, 0.2, 1.1, 0x6b4a2a, -0.7, 0, -0.1), vox(1.1, 0.7, 0.9, 0x8a5a2b, -0.7, 0.2, -0.1), vox(0.3, 0.5, 0.06, 0x3b2a18, -0.7, 0.2, 0.37)); g.add(roof(1.5, 1.3, 0.55, 0x7a3a1a, 0.9, 'x').translateX(-0.7).translateZ(-0.1)); g.add(logs(0.9, 0.2, 0.3), logs(1.2, -0.3, -0.2), stump(0.8, 0.7), stump(1.3, 0.55)); const ax = vox(0.05, 0.4, 0.05, 0x5a3a1a, 0.5, 0, 0.8); g.add(ax, vox(0.2, 0.12, 0.04, 0xb8bcc4, 0.58, 0.32, 0.8)); return g; }
     case 'monument': { const g = new THREE.Group(); g.add(vox(2.4, 0.3, 2.4, 0x9aa0a8, 0, 0, 0), vox(1.8, 0.3, 1.8, 0xb8bcc4, 0, 0.3, 0), vox(1.2, 0.3, 1.2, 0xc9ccd2, 0, 0.6, 0), vox(0.5, 2.6, 0.5, 0xd0d3da, 0, 0.9, 0), cone(0.34, 0.7, 0xe8c04a, 0, 3.5, 0, 4), sph(0.16, 0xffd24a, 0, 4.1, 0, 0xffd24a, 1.2), vox(0.9, 0.12, 0.12, 0xe8c04a, 0, 2.3, 0.28), vox(0.12, 0.12, 0.9, 0xe8c04a, 0, 2.3, 0.28)); return g; }

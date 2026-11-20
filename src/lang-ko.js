@@ -274,6 +274,7 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^🛤 Linked to the town with (\d+) path tiles \(−(\d+)g\)\.$/, (n, g) => `🛤 길 ${n}칸으로 마을과 연결했습니다 (−${g}골드).`],
     [/^(\d+) well-trodden tiles can be paved with cobbles: (\d+)g$/, (n, g) => `${n}칸의 닳은 길을 돌길로 포장할 수 있습니다: ${g}골드`],
     [/^🛤 Paved (\d+) tiles \(−(\d+)g\)\.$/, (n, g) => `🛤 ${n}칸을 포장했습니다 (−${g}골드).`],
     [/^Complete (\d+) quests$/, n => `퀘스트 ${n}개 완료`],
