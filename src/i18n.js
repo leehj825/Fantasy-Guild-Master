@@ -57,7 +57,7 @@ export function translateStatic(root = document.body) {
   if (!root) return;
   const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   for (let n = w.nextNode(); n; n = w.nextNode()) {
-    const p = n.parentElement; if (!p || p.closest('#modalBody,#world,#stageEl,#watchLog,#toasts,#wParty,#wSwitch,#objList,#expeds,#royal,#banner,#placeHint')) continue;
+    const p = n.parentElement; if (!p || p.closest('#modalBody,#world,#stageEl,#watchLog,#toasts,#wParty,#wSwitch,#objList,#expeds,#royal,#weekly,#banner,#placeHint')) continue;
     if (n.__en === undefined) { if (!/[A-Za-z]/.test(n.nodeValue)) continue; n.__en = n.nodeValue; }
     n.nodeValue = tr(n.__en);
   }

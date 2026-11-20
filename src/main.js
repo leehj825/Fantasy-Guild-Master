@@ -531,7 +531,7 @@ const nearCampfire = h => ofType('campfire').some(b => Math.hypot(b.cx + b.w / 2
 function updateHero(h, dt) {
   h.phase += dt * 8;
   if (h.state === 'quest') return;
-  if (h.train > 0) { h.train -= dt; gainXp(h, 0.05 * dt * Math.max(1, ofType('training').length)); if (h.train <= 0) { h.train = 0; floatText(h.pos, '💪', '#9bff9b'); toast(`💪 ${h.name} finished intensive training.`); } }
+  if (h.train > 0) { h.train -= dt; gainXp(h, 0.05 * dt * Math.max(1, ofType('training').length)); if (h.train <= 0) { h.train = 0; G.stats.train = (G.stats.train || 0) + 1; floatText(h.pos, '💪', '#9bff9b'); toast(`💪 ${h.name} finished intensive training.`); } }
   const decay = Math.pow(0.7, G.staff.bard);
   h.stamina = Math.max(0, h.stamina - 0.7 * (traitOf(h) === 'glutton' ? 1.4 : 1) * (1 - Math.min(0.6, heroMods(h).decay + (G.flags.faction === 'rangers' ? 0.1 : 0))) * dt);
   if (h.mesh.userData.star) h.mesh.userData.star.rotation.y += dt * 2.5;
@@ -741,7 +741,7 @@ function resolveQuest(q) {
     if (q.loot.herbs) G.herbs += Math.round(q.loot.herbs * oreMul / (G.research.prospect ? 1.5 : 1));
     if (q.loot.wood) G.wood += Math.round(q.loot.wood * oreMul / (G.research.prospect ? 1.5 : 1));
     if (q.loot.arcane) G.mana += Math.round(q.loot.arcane * 5 * oreMul / (G.research.prospect ? 1.5 : 1));
-    G.questsDone++; if (q.legend) legendWon(q); else if (q.special) chron(`✔ ${q.name}`);
+    G.questsDone++; if (q.mods && q.mods.includes('elite')) G.stats.elite = (G.stats.elite || 0) + 1; if (q.town) G.stats.town = (G.stats.town || 0) + 1; if (q.legend) legendWon(q); else if (q.special) chron(`✔ ${q.name}`);
     if (q.town) { repGain(q.rep || 3); toast(`🏘 ${q.who} thanks you warmly. (+${q.rep || 3} town reputation)`); }
     if (q.region && REGIONS[q.region]) { const rec = (G.regions[q.region] = G.regions[q.region] || { done: 0 }), before = regionLevel(q.region); rec.done++; if (regionLevel(q.region) > before) toast(`🗺 ${REGIONS[q.region].name} mastery level ${regionLevel(q.region)}! ${REGIONS[q.region].perk}`); }
     toast(`✔ ${q.name} complete! +${g}g, +${q.renown}⭐, loot collected.`);
@@ -1041,7 +1041,7 @@ function updateEconomy(dt) {
     if (ofType('tavern').length && G.heroes.length < popCap()) spawnHero();
   }
   for (const b of ofType('lumber')) { b.acc = (b.acc || 0) + dt; if (b.acc >= 8 / (1 + 0.3 * (b.level - 1))) { b.acc = 0; G.wood++; } }
-  tickAuto(dt); tickSeason(dt); tickFestival(dt); { const cot = ofType('cottage').length; if (cot) G.gold += cot * 0.06 * dt * (1 + 0.004 * (G.flags.rep ?? 10)); }
+  tickWeekly(dt); tickAuto(dt); tickSeason(dt); tickFestival(dt); { const cot = ofType('cottage').length; if (cot) G.gold += cot * 0.06 * dt * (1 + 0.004 * (G.flags.rep ?? 10)); }
   // quests
   t.quest -= dt;
   if (t.quest <= 0) { t.quest = 14; if (G.quests.filter(q => q.state === 'open').length < boardSlots()) genQuest(); legendTick(); }
@@ -1189,7 +1189,7 @@ function tickFestival(dt) {
 function startFest(kind) {
   const F = FEST[seasonIdx()], lavish = kind === 'L', cost = festCost(lavish); hideBanner('fest'); G.flags.festPending = null;
   if (G.gold < cost) return toast('Not enough gold.');
-  G.gold -= cost; G.flags.fest = { name: F.name, t: lavish ? 60 : 40 }; repGain(lavish ? 6 : 2); if (lavish) G.renown += 2;
+  G.gold -= cost; G.stats.fests = (G.stats.fests || 0) + 1; G.flags.fest = { name: F.name, t: lavish ? 60 : 40 }; repGain(lavish ? 6 : 2); if (lavish) G.renown += 2;
   for (const h of G.heroes) { h.happy = Math.min(100, h.happy + (lavish ? 25 : 10)); h.loy = Math.min(100, (h.loy ?? 60) + (lavish ? 5 : 2)); }
   chron(`${F.icon} The guild held the ${F.name}${lavish ? ' with great pomp' : ''}.`); sfx('goal'); showBanner('feston', `${F.icon} ${F.name} is on! Tavern meals pay 50% more.`, []);
 }
@@ -1212,7 +1212,7 @@ function resolveHeroStory(h, i) {
   const ch = storyChapter(h), c = ch && ch.choices[i]; if (!c) return false; if (c.cost && G.gold < c.cost) { toast('Not enough gold.'); return false; } if (c.cost) G.gold -= c.cost;
   applyFx(h, c.fx); (h.marks = h.marks || []).push(c.label.replace(/ \(.*\)$/, '')); if (h.marks.length > 6) h.marks.shift(); chron(`📖 ${h.name}: ${c.label.replace(/ \(.*\)$/, '')}`);
   (G.flags.after = G.flags.after || []).push({ t: G.time + 90 + Math.random() * 90, hid: h.id, good: choiceScore(c) > 0 && Math.random() < 0.6 });
-  h.arc.ch++; sfx('goal'); toast(`📖 ${h.name}: ${(h.arc.ch >= ARCS[h.arc.id].ch.length ? 'their story reaches its end.' : 'the story goes on…')}`); return true;
+  h.arc.ch++; G.stats.chapters = (G.stats.chapters || 0) + 1; sfx('goal'); toast(`📖 ${h.name}: ${(h.arc.ch >= ARCS[h.arc.id].ch.length ? 'their story reaches its end.' : 'the story goes on…')}`); return true;
 }
 function storyChapter(h) { const a = ARCS[h.arc && h.arc.id]; return a && h.arc.ch < a.ch.length ? a.ch[h.arc.ch] : null; }
 let storyT = 6, stepT = 0; const notified = new Set();
@@ -1239,6 +1239,37 @@ function tickPeople(dt) {
     const idle = G.heroes.filter(x => x.state !== 'quest' && x.state !== 'leaving'), pair = []; for (const a of idle) for (const [id, k] of Object.entries(a.bonds || {})) { const b = idle.find(x => x.id === +id); if (k === 'rival' && b && a.id < b.id) pair.push([a, b]); }
     if (pair.length) { const [a, b] = pick(pair); a.happy = Math.max(0, a.happy - 10); b.happy = Math.max(0, b.happy - 10); a.loy = Math.max(0, (a.loy ?? 60) - 2); b.loy = Math.max(0, (b.loy ?? 60) - 2); addAff(a, b, -5, true); floatText(a.pos, '💢', '#ff7a7a'); floatText(b.pos, '💢', '#ff7a7a'); toast(`💢 ${a.name} and ${b.name} had a loud quarrel.`); }
   }
+}
+// ---- weekly guild orders: three optional goals every 5 minutes; finish them for gold and renown (and a bonus for all three)
+const WEEK_LEN = 300;
+const WK = [
+  { id: 'quests', text: n => `Complete ${n} quests`, val: () => G.questsDone, n: [4, 6, 8], w: 3 },
+  { id: 'elite', text: n => `Win ${n} Elite quest${n > 1 ? 's' : ''}`, val: () => G.stats.elite || 0, n: [1, 2, 2], w: 1.5, ok: () => G.renown >= 3 },
+  { id: 'town', text: n => `Help the villagers ${n} time${n > 1 ? 's' : ''}`, val: () => G.stats.town || 0, n: [1, 2, 3], w: 2, ok: () => residents.length > 0 },
+  { id: 'orders', text: n => `Deliver ${n} trade order${n > 1 ? 's' : ''}`, val: () => G.stats.orders || 0, n: [1, 2, 2], w: 1.5, ok: () => !!first('market') || G.renown >= 4 },
+  { id: 'reinf', text: n => `Reinforce gear ${n} time${n > 1 ? 's' : ''}`, val: () => G.stats.reinf || 0, n: [1, 2, 3], w: 1.5, ok: () => !!first('forge') && G.heroes.some(h => (h.plus || 0) < maxPlus()) },
+  { id: 'chapters', text: n => `Hear ${n} hero stor${n > 1 ? 'ies' : 'y'}`, val: () => G.stats.chapters || 0, n: [1, 2, 3], w: 1.5, ok: () => G.heroes.some(h => storyChapter(h)) },
+  { id: 'train', text: n => `Finish ${n} training session${n > 1 ? 's' : ''}`, val: () => G.stats.train || 0, n: [1, 1, 2], w: 1, ok: () => !!first('training') },
+  { id: 'raid', text: n => `Repel ${n} raid${n > 1 ? 's' : ''}`, val: () => G.stats.raidsWon || 0, n: [1, 1, 2], w: 0.6, ok: () => G.renown >= 6 },
+];
+function newWeek() {
+  const lvl = Math.min(2, G.rank), pool = WK.filter(t => !t.ok || t.ok()), picks = [];
+  while (picks.length < 3 && pool.length) { const tot = pool.reduce((a, t) => a + t.w, 0); let r = Math.random() * tot, i = 0; for (; i < pool.length - 1; i++) { r -= pool[i].w; if (r <= 0) break; } picks.push(pool.splice(i, 1)[0]); }
+  G.flags.wk = { t: WEEK_LEN, goals: picks.map(t => ({ id: t.id, need: t.n[lvl], base: t.val(), done: 0 })), claimed: 0 };
+}
+function tickWeekly(dt) {
+  if (!G.flags.tutDone || G.questsDone < 2) return;
+  if (!G.flags.wk) newWeek(); const w = G.flags.wk; w.t -= dt;
+  for (const g of w.goals) { const t = WK.find(x => x.id === g.id); if (!g.done && t.val() - g.base >= g.need) { g.done = 1; const gold = 200 + 150 * G.rank; G.gold += gold; G.renown += 1; w.claimed++; sfx('goal'); toast(`📅 Weekly order done: ${t.text(g.need)} (+${gold}g, +1⭐)`); chron(`📅 ${t.text(g.need)}`); } }
+  if (w.claimed === w.goals.length && !w.bonus && w.goals.length) { w.bonus = 1; const gold = 400 + 300 * G.rank; G.gold += gold; if (G.rank >= 1) G.rare.mythril++; toast(`📅 All weekly orders done! +${gold}g${G.rank >= 1 ? ' and a Mythril shard' : ''}`); }
+  if (w.t <= 0) { if (w.claimed < w.goals.length) toast('📅 The week ended. New orders are posted.'); newWeek(); }
+}
+let wkHtml = '';
+function renderWeekly() {
+  const el = $('weekly'), w = G.flags.wk; if (!w) { el.innerHTML = ''; return; }
+  const m = Math.floor(Math.max(0, w.t) / 60), sec = String(Math.floor(Math.max(0, w.t) % 60)).padStart(2, '0');
+  const html = `<h4 style="margin-top:6px">📅 Weekly orders <span style="font-weight:400;opacity:.8">${m}:${sec}</span></h4><ul>` + w.goals.map(g => { const t = WK.find(x => x.id === g.id), have = Math.min(g.need, t.val() - g.base); return `<li class="${g.done ? 'done' : ''}">${g.done ? '☑' : '☐'} ${t.text(g.need)} (${have}/${g.need})</li>`; }).join('') + '</ul>';
+  if (html !== wkHtml) { wkHtml = html; el.innerHTML = trHtml(html); }
 }
 function inboxItems() {
   const out = [], st = STORIES.find(x => x.id === G.flags.pending);
@@ -1317,6 +1348,7 @@ function updateHUD() {
   $('hMana').textContent = G.mana;
   $('hPop').textContent = `${G.heroes.length}/${popCap()}`;
   { const S = SEASONS[seasonIdx()]; $('hSeason').textContent = S.icon + ' ' + tr(S.name); $('seasonPill').title = tr(S.desc); }
+  renderWeekly();
   { const n = inboxItems().length, el = $('hInbox'); if (el.textContent !== String(n)) { el.textContent = n; $('inboxPill').classList.toggle('new', n > 0); } }
   $('hReady').textContent = readyHeroes().length; $('hOpen').textContent = G.quests.filter(q => q.state === 'open').length;
   { const r = G.rare; $('hRare').classList.toggle('hidden', !(r.mythril || r.scale || r.feather)); $('hMyth').textContent = r.mythril; $('hScale').textContent = r.scale; $('hFeather').textContent = r.feather; }
@@ -1613,7 +1645,7 @@ const ACT = {
   relmap() { openModal('relmap'); },
   inbox() { openModal('inbox'); },
   polcycle(d) { const O = { hstory: ['ask', 'auto'], story: ['ask', 'auto'], fest: ['ask', 'modest', 'lavish', 'skip'] }[d.k]; if (!O) return; const p = (G.flags.pol = G.flags.pol || {}); p[d.k] = O[(O.indexOf(p[d.k] || 'ask') + 1) % O.length]; },
-  reinforce(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h || !first('forge') || (h.plus || 0) >= maxPlus()) return; const c = plusCost(h); if (G.gold < c.gold || G.ore < c.ore || G.ingots < c.ing) return toast('Not enough materials.'); G.gold -= c.gold; G.ore -= c.ore; G.ingots -= c.ing; h.plus = (h.plus || 0) + 1; floatText(h.pos, `⚒ +${h.plus}`, '#ffd24a'); sfx('build'); toast(`⚒ ${h.name}'s gear is now +${h.plus}.`); },
+  reinforce(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h || !first('forge') || (h.plus || 0) >= maxPlus()) return; const c = plusCost(h); if (G.gold < c.gold || G.ore < c.ore || G.ingots < c.ing) return toast('Not enough materials.'); G.gold -= c.gold; G.ore -= c.ore; G.ingots -= c.ing; h.plus = (h.plus || 0) + 1; G.stats.reinf = (G.stats.reinf || 0) + 1; floatText(h.pos, `⚒ +${h.plus}`, '#ffd24a'); sfx('build'); toast(`⚒ ${h.name}'s gear is now +${h.plus}.`); },
   trainhero(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h || !first('training') || h.train > 0 || h.state === 'quest') return; const c = trainCost(h); if (G.gold < c) return toast('Not enough gold.'); G.gold -= c; h.train = 80; toast(`🏋 ${h.name} begins intensive training.`); },
   bannerx(d) { hideBanner(d.id); },
   festL() { startFest('L'); closeModal(); }, festM() { startFest('M'); closeModal(); }, festS() { G.flags.festPending = null; closeModal(); },

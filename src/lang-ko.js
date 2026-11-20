@@ -274,6 +274,17 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^Complete (\d+) quests$/, n => `퀘스트 ${n}개 완료`],
+    [/^Win (\d+) Elite quests?$/, n => `정예 퀘스트 ${n}번 승리`],
+    [/^Help the villagers (\d+) times?$/, n => `주민 돕기 ${n}번`],
+    [/^Deliver (\d+) trade orders?$/, n => `무역 주문 ${n}건 납품`],
+    [/^Reinforce gear (\d+) times?$/, n => `장비 강화 ${n}번`],
+    [/^Hear (\d+) hero stor(?:y|ies)$/, n => `영웅 이야기 ${n}개 듣기`],
+    [/^Finish (\d+) training sessions?$/, n => `훈련 ${n}번 마치기`],
+    [/^Repel (\d+) raids?$/, n => `약탈 ${n}번 격퇴`],
+    [/^(☐|☑) (.+) \((\d+)\/(\d+)\)$/, (c, t, a, b) => `${c} ${f(t)} (${a}/${b})`],
+    [/^📅 Weekly order done: (.+) \(\+(\d+)g, \+1⭐\)$/, (t, g) => `📅 주간 임무 완료: ${f(t)} (+${g}골드, +1⭐)`],
+    [/^📅 All weekly orders done! \+(\d+)g(?: and a Mythril shard)?$/, g => `📅 주간 임무 모두 완료! +${g}골드`],
     [/^📬 New event: (.+)$/, t => `📬 새 사건: ${f(t)}`],
     [/^📬 Auto-handled: (.+) — (.+)$/, (n, t) => `📬 자동 처리: ${f(n)} — ${f(t)}`],
     [/^📬 Auto-handled: (.+)$/, t => `📬 자동 처리: ${f(t)}`],

@@ -240,5 +240,8 @@ export const KO_PEOPLE = {
   'Paving: heroes and villagers walk 25% faster on it. Keep placing to lay a whole road; press ✖ when done.': '포장길: 영웅과 주민이 25% 더 빨리 걷습니다. 계속 놓아서 길을 만들고, 끝나면 ✖를 누르세요.',
   'Palisade Wall': '목책',
   'A wall of sharpened logs: +2 raid defense per segment (up to 8 segments count).': '뾰족한 통나무 벽: 구간마다 약탈 방어 +2 (최대 8구간까지 적용).',
+  '📅 Weekly orders': '📅 주간 임무',
+  'Weekly orders': '주간 임무',
+  '📅 The week ended. New orders are posted.': '📅 한 주가 끝났습니다. 새 임무가 게시됩니다.',
   'hearty stew': '푸짐한 스튜', 'roast boar': '멧돼지 구이', 'honey bread': '꿀빵', 'mushroom pie': '버섯 파이', 'herbal tea': '약초차',
 };
