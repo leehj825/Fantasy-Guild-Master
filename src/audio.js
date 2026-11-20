@@ -13,7 +13,19 @@ function ensure() {
   const n = ctx.sampleRate; noiseBuf = ctx.createBuffer(1, n, n); const d = noiseBuf.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
   startMusic(); return ctx;
 }
-export function unlock() { const c = ensure(); if (c && c.state === 'suspended') c.resume(); }
+export function unlock() { const c = ensure(); unlocked = true; if (c && c.state === 'suspended' && !document.hidden) c.resume(); }
+// Silence everything while the page or app is in the background (tab hidden, phone locked, app switched), resume when it returns.
+let unlocked = false;
+function setHidden(hide) {
+  if (!ctx) return;
+  if (hide) { if (ctx.state === 'running') ctx.suspend(); }
+  else if (unlocked && !document.hidden) ctx.resume();
+}
+if (typeof document !== 'undefined' && typeof addEventListener === 'function') {
+  document.addEventListener('visibilitychange', () => setHidden(document.hidden));
+  addEventListener('pagehide', () => setHidden(true)); addEventListener('pageshow', () => setHidden(false));
+  window.__audioHidden = setHidden;   // the Android wrapper calls this from onPause / onResume
+}
 export const audioState = () => (ctx ? ctx.state : 'none');
 export const getPrefs = () => ({ ...prefs });
 export function setPref(k, on) {

@@ -9,9 +9,12 @@ import { clipInfo } from './rigchar.js';
 import { makeChar, buildChar, buildHero, buildGoblin, buildBuilding, vox, tbox, mat, cyl, cone, sph, rot, PROPS } from './models.js';
 
 export const STAGE_X = 170;                                   // stage sits far off the base map
-export const TL = { enc: [[0.10, 0.36], [0.36, 0.62], [0.62, 0.90]], loot: 0.90, cutoff: 0.62 };
+export const TL = { enc: [[0.03, 0.36], [0.36, 0.62], [0.62, 0.90]], loot: 0.90, cutoff: 0.62 };
 const ARENA = [-4, 3.5, 11];                                  // x of each fight
 const CHEST_X = 17;
+const MAX_IDLE = 2.0;                                        // longest pause before the party sets off for a fight
+const ENEMY_RUN = 2.0;                                       // seconds the enemies take to run in (they appear just before the fight)
+const RUN_SPEED = 4.4;                                       // units per second when the party runs between fights
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const sm = x => { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); };
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -21,13 +24,14 @@ export function mulberry(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 
 const ENEMY = {
   goblin: { name: 'Goblin', make: () => buildGoblin(), h: 1.35 },
   wolf:   { name: 'Dire Wolf', make: () => wolf(), h: 1.3 },
-  ogre:   { name: 'Ogre Warchief', make: () => ogre(), h: 3.4, boss: true },
+  ogre:   { name: 'Ogre Warchief', make: () => (BIG.ogre ? BIG.ogre() : ogre()), h: 3.4, boss: true },
   bandit: { name: 'Bandit', make: () => bandit(false), h: 1.5 },
   chief:  { name: 'Bandit Chief', make: () => bandit(true), h: 2.3, boss: true },
   wisp:   { name: 'Wisp', make: () => wisp(), h: 1.6 },
   imp:    { name: 'Imp', make: () => imp(), h: 1.3 },
-  golem:  { name: 'Ancient Golem', make: () => golem(), h: 3.4, boss: true },
+  golem:  { name: 'Ancient Golem', make: () => (BIG.golem ? BIG.golem() : golem()), h: 3.4, boss: true },
 };
+const BIG = {}; export const setBigMakers = m => Object.assign(BIG, m);   // main.js sets the rigged golem / ogre when rigged bodies are on
 function charEnemy(look, scale) {
   const g = buildChar(look); g.scale.multiplyScalar(scale); if (g.userData.anim) return g;   // rigged: the clips animate it
   const [L, A] = [g.userData.legs, g.userData.arms];
@@ -55,9 +59,11 @@ function ogre() {
   return g;
 }
 function bandit(chief) {
-  return charEnemy(chief
+  const g = charEnemy(chief
     ? { skin: 0xe6b88a, shirt: 0x55555d, plate: 0x55555d, sleeve: 0x55555d, pants: 0x2a2a2a, hat: 'helm', metal: 0x55555d, plume: 0x8b1d1d, sword: true, cape: 0x6b1d1d, shield: { body: 0x5a3a1a, trim: 0x8b1d1d } }
     : { skin: 0xf0c8a0, shirt: 0x3a3a46, sleeve: 0x3a3a46, pants: 0x2a2a2a, hat: 'hood', hatColor: 0x2a2a30, cape: 0x2a2a30, sword: true }, chief ? 1.45 : 1);
+  if (chief && g.userData.anim) g.userData.clips = { attack: 'slash3', attacks: ['slash3', 'slash1', 'slash5', 'kick', 'slash3', 'attack2'], walk: 'walkCalm', walkSpeed: 1.0, run: 'runCalm', runSpeed: 1.0 };
+  return g;
 }
 function wisp() {
   const g = new THREE.Group(); const col = 0x7affff;
@@ -292,6 +298,12 @@ function genFloor(q, S) {
   S.encs.push({ name: boss ? `${ENEMY[bossKind].name} (Boss)` : [...new Set(kinds.map(x => ENEMY[x].name))].join(', '), idxs, s, e });
   scanDeaths(q, S, f); setEnemyTimes(S, f); genFloorEvents(q, S, f, -Infinity);
 }
+// When the show is over: a won quest ends once the chest has opened and the coins have flown, a lost one once the party has
+// fallen back. The quest completes then, instead of idling until the progress bar fills (the outcome is already decided).
+export function questEnd(q) {
+  if (q.dive || !q.script || !q.script.win) return q.dur;
+  return Math.min(q.dur, q.ok ? q.dur * 0.93 + 3.0 : q.script.win[2].b + 3.5);
+}
 export function ensureFloors(q, now) {
   const S = q.script; let guard = 0;
   while (!S.wiped && guard++ < 60 && (S.floors.length === 0 || S.floors[S.floors.length - 1].e < now + 20)) genFloor(q, S);
@@ -369,6 +381,10 @@ export class Expedition {
     this.foe = [];
     // pooled effects: projectiles and hit sparks
     this.proj = Array.from({ length: 8 }, () => { const m = sph(0.12, 0xffffff, 0, 0, 0, 0xffffff, 1.2, 6); m.visible = false; this.group.add(m); return m; });
+    // arrows (a real shaft that flies straight), spell bolts/fireballs with trails, and ground rings for impacts
+    this.arrows = Array.from({ length: 8 }, () => { const g = new THREE.Group(); g.add(vox(0.035, 0.035, 0.8, 0x8a5a2b, 0, -0.0175, -0.4), cone(0.06, 0.16, 0xdfe3ea, 0, 0, 0.0, 4), vox(0.1, 0.012, 0.16, 0xc0392b, 0, -0.006, -0.78), vox(0.012, 0.1, 0.16, 0xc0392b, 0, -0.05, -0.78)); g.children[1].rotation.x = Math.PI / 2; g.children[1].position.set(0, 0, 0.08); g.scale.setScalar(0.7); g.visible = false; this.group.add(g); return g; });
+    this.bolts = Array.from({ length: 6 }, () => { const g = new THREE.Group(); g.userData.parts = Array.from({ length: 7 }, (_, i) => { const m = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false })); g.add(m); return m; }); g.visible = false; this.group.add(g); return g; });
+    this.rings = Array.from({ length: 6 }, () => { const m = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.75, 20), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false })); m.rotation.x = -Math.PI / 2; m.visible = false; this.group.add(m); return m; });
     this.spark = Array.from({ length: 8 }, () => { const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.3), new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.9 })); m.visible = false; this.group.add(m); return m; });
     this.coins = Array.from({ length: 8 }, () => { const m = sph(0.07, 0xffd24a, 0, 0, 0, 0xffd24a, 1.4, 5); m.visible = false; this.group.add(m); return m; });
     this.nums = []; this.fired = new Set(); this.T = 0; scene.add(this.group);
@@ -402,7 +418,8 @@ export class Expedition {
   // A rigged hero at moment T: march, run in to melee range, strike with the class's clip, flinch, fall, or cast a heal
   driveHero(o, h, T, hp, dead, moving, retreat, px, n, rdt) {
     const m = o.m, S = this.S, q = this.q, H = S.heroes[h], cls = o.p.cls, melee = cls === 'knight', clips = ATTACKS[cls] || ATTACKS.knight, hits = this.hitsBy[h] || [];
-    let x = px - (h % 2) * 0.6, z = (h - (n - 1) / 2) * 1.25, rotY = Math.PI / 2, name = 'idleEase', t = T + h * 0.9, atk = null, env = 0, fwd = false;
+    const fm = q.formation || 'line';      // the formation sets who stands in front
+    let x = px - (h % 2) * 0.6 + (fm === 'skirmish' ? 0 : (melee ? 0.8 : -0.4)), z = (h - (n - 1) / 2) * (fm === 'wall' ? 0.95 : 1.25), rotY = Math.PI / 2, name = 'idleEase', t = T + h * 0.9, atk = null, env = 0, fwd = false;
     for (let i = firstAfter(hits, T - 3); i < hits.length; i++) {
       const nm = clips[i % clips.length], ci = clipInfo(nm), s0 = hits[i].t - ci.hit, RUN = 0.5, BACK = 0.55;
       if (s0 - RUN > T) break;
@@ -416,16 +433,123 @@ export class Expedition {
     const eh = this.last(this.ehitsOnHero[h], T), healer = q.party.findIndex(p => p.cls === 'wizard'), hi = healer < 0 ? 0 : healer;
     let cast = null;
     if (h === hi) { for (const e of q.heals || []) if (T >= e.t && T < e.t + 1.1) cast = ['mgHeal', T - e.t]; for (const e of q.enchants || []) if (T >= e.t && T < e.t + 1.1) cast = ['mgBless', T - e.t]; }
+    for (const c of q.casts || []) if (c.h === h) { const nm = { wall: 'block', volley: 'shoot', nova: 'mgNova' }[c.kind], ci = clipInfo(nm); if (T >= c.t && T < c.t + ci.d) cast = [nm, T - c.t]; }
     const DASH = 2.4; x += dead ? 0 : DASH * env;
     if (dead) { name = 'die'; t = T - H.D; }
     else if (atk) { name = atk.nm; t = atk.t; }
     else if (eh && T - eh.t < 0.75) { name = 'impact'; t = T - eh.t; }
     else if (cast) { name = cast[0]; t = cast[1]; }
     else if (env > 0.02) { name = 'runCalm'; t = T * 1.4; if (!fwd) rotY = -Math.PI / 2; }      // run to the enemy, then back
-    else if (moving) { name = retreat ? 'runCalm' : 'walkCalm'; t = T * (retreat ? 1.2 : 1.15) + h * 0.3; if (retreat) rotY = -Math.PI / 2; }
+    else if (moving) { const v = this.vMarch || RUN_SPEED; name = v >= 2.8 ? 'runCalm' : 'walkCalm'; t = T * (v >= 2.8 ? Math.max(0.8, Math.min(1.5, v / 3.2)) : Math.max(0.7, v / 1.35)) + h * 0.3; if (retreat) rotY = -Math.PI / 2; }
     o.m.userData.anim.drive(name, t, rdt);
     m.rotation.set(0, rotY, 0); m.position.set(x, 0, z);
     this.setBar(o.bar, m.position, 2.15, hp, dead);
+  }
+  // Ranged attack visuals around the hit event e (damage lands at e.t + 0.3): a charge glow before release, then a straight flight.
+  castFx(e, ho, fo, from, to, T, n) {
+    const cls = ho.p.cls, idx = (this.hitsBy[e.h] || []).indexOf(e), kind = cls === 'ranger' ? 'arrow' : (idx % 2 ? 'fire' : 'bolt');
+    const eh = ENEMY[this.S.enemies[e.e].kind].h, ty = clamp(eh * 0.4, 0.5, 1.4);
+    const hand = cls === 'ranger' ? 0.55 : 1.0, sx = from.x + 0.3, sy = hand, sz = from.z + 0.2;
+    const f = (T - e.t) / 0.3;                                  // 0 at release, 1 at the target
+    if (kind === 'arrow') {
+      if (f < 0 || f > 1) return; const a = this.arrows[(n - 1) % this.arrows.length]; a.visible = true;
+      const x = lerp(sx, to.x, f), y = lerp(sy, ty, f), z = lerp(sz, to.z, f);
+      a.position.set(x, y, z); a.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(to.x - sx, ty - sy, to.z - sz).normalize());
+      return;
+    }
+    const b = this.bolts[(n - 1) % this.bolts.length], parts = b.userData.parts, fire = kind === 'fire', now = performance.now() / 1000;
+    const core = fire ? 0xffb030 : 0x9affff, mid = fire ? 0xff5a20 : 0x4aa8ff;
+    b.visible = true;
+    if (f < 0) {        // charging: a small orb grows at the staff
+      const c = clamp((f + 1.5) / 1.5, 0, 1); parts.forEach((m, i) => { m.visible = i < 2; });
+      parts[0].position.set(sx, sy, sz); parts[0].scale.setScalar(0.05 + 0.13 * c); parts[0].material.color.setHex(core);
+      parts[1].position.set(sx, sy, sz); parts[1].scale.setScalar(0.1 + 0.2 * c * (0.85 + 0.15 * Math.sin(now * 30))); parts[1].material.color.setHex(mid); parts[1].material.opacity = 0.35;
+      return;
+    }
+    if (f > 1) { b.visible = false; return; }
+    const dx = to.x - sx, dy = ty - sy, dz = to.z - sz, L = Math.hypot(dx, dy, dz), ux = dx / L, uy = dy / L, uz = dz / L;
+    const x = lerp(sx, to.x, f), y = lerp(sy, ty, f), z = lerp(sz, to.z, f);
+    parts.forEach((m, i) => {
+      m.visible = true;
+      if (i === 0) { m.position.set(x, y, z); m.scale.setScalar(fire ? 0.2 : 0.13); m.material.color.setHex(core); m.material.opacity = 1; }
+      else if (i === 1) { m.position.set(x, y, z); m.scale.setScalar((fire ? 0.34 : 0.22) * (0.9 + 0.1 * Math.sin(now * 40))); m.material.color.setHex(mid); m.material.opacity = 0.45; }
+      else {            // the trail: embers drifting up (fire) or a crackling zig-zag (arcane bolt), fading behind
+        const k = (i - 1) * 0.07 * L / 8, wob = fire ? 0 : Math.sin(now * 55 + i * 2.1) * 0.09, rise = fire ? (i - 1) * 0.03 : 0;
+        m.position.set(x - ux * k + wob * uz, y - uy * k + rise + wob * 0.5, z - uz * k - wob * ux);
+        m.scale.setScalar((fire ? 0.16 : 0.08) * (1 - (i - 1) / 7) + 0.02); m.material.color.setHex(i % 2 ? core : mid); m.material.opacity = 0.75 * (1 - (i - 1) / 6);
+      }
+    });
+  }
+  // A ring expanding on the ground where a spell lands
+  impactRing(e, ho, age, n) {
+    if (ho.p.cls === 'ranger') return;
+    const fo = this.foe[e.e], idx = (this.hitsBy[e.h] || []).indexOf(e), fire = idx % 2 === 1, r = this.rings[n % this.rings.length], f = age / 0.4;
+    r.visible = true; r.position.set(fo.m.position.x, 0.06, fo.m.position.z); r.scale.setScalar(0.4 + f * (fire ? 2.4 : 1.8)); r.material.opacity = 0.8 * (1 - f); r.material.color.setHex(fire ? 0xff7a30 : 0x7affff);
+  }
+  // Heal beams, ward bubbles, boss-slam dust and scorch marks. All pure functions of T, so scrubbing and speed-ups stay correct.
+  buildFx() {
+    const mk = (geo, color, op, add) => { const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: op, depthWrite: false, blending: add ? THREE.AdditiveBlending : THREE.NormalBlending })); m.visible = false; this.group.add(m); return m; };
+    this.hfx = this.hero.map(() => ({ col: mk(new THREE.CylinderGeometry(0.3, 0.3, 1.7, 14, 1, true), 0xffd96a, 0.4, true), orb: mk(new THREE.SphereGeometry(0.14, 8, 6), 0xfff2a0, 0.9, true),
+      sparks: Array.from({ length: 6 }, () => mk(new THREE.SphereGeometry(0.05, 6, 4), 0xfff2a0, 0.9, true)), bub: mk(new THREE.SphereGeometry(0.7, 14, 10), 0x9ad8ff, 0.25, true), halo: mk(new THREE.RingGeometry(0.45, 0.6, 20), 0x9ad8ff, 0.6, true) }));
+    this.hfx.forEach(f => { f.halo.rotation.x = -Math.PI / 2; });
+    this.warn = Array.from({ length: 4 }, () => { const m = mk(new THREE.RingGeometry(0.35, 0.7, 24), 0xff3a2a, 0.7, true); m.rotation.x = -Math.PI / 2; return m; });
+    this.dust = Array.from({ length: 10 }, () => mk(new THREE.SphereGeometry(0.18, 7, 5), 0xb09a78, 0.55, false));
+    this.scorch = Array.from({ length: 4 }, () => { const m = mk(new THREE.CircleGeometry(0.9, 16), 0x1a1208, 0.5, false); m.rotation.x = -Math.PI / 2; return m; });
+  }
+  // some expeditions happen in the rain (decided by the quest seed): drops fall around the camera's focus
+  rainUpdate(T) {
+    const wet = this.q.seed % 3 === 0 && this.theme !== 'cave' && !this.S.dive;
+    if (!this.rain) {
+      const n = 380, g = new THREE.BufferGeometry(), a = new Float32Array(n * 3); for (let i = 0; i < n; i++) { a[i * 3] = (Math.random() - 0.5) * 26; a[i * 3 + 1] = Math.random() * 12; a[i * 3 + 2] = (Math.random() - 0.5) * 22; }
+      g.setAttribute('position', new THREE.BufferAttribute(a, 3)); this.rain = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xaecbff, size: 0.09, transparent: true, opacity: 0.7, depthWrite: false })); this.rain.frustumCulled = false; this.group.add(this.rain);
+    }
+    this.rain.visible = wet; if (!wet) return;
+    const f = this.focus(T), pos = this.rain.geometry.attributes.position; this.rain.position.set(f.x - this.origin.x, 0, f.z - this.origin.z);
+    for (let i = 0; i < pos.count; i++) { let y = pos.getY(i) - 0.22 - (i % 4) * 0.03; if (y < 0) y += 12; pos.setY(i, y); } pos.needsUpdate = true;
+  }
+  fxUpdate(T) {
+    if (!this.hfx) this.buildFx();
+    this.rainUpdate(T);
+    const q = this.q, S = this.S; this.shake = 0;
+    this.hfx.forEach(f => { f.col.visible = f.orb.visible = f.bub.visible = f.halo.visible = false; f.sparks.forEach(m => { m.visible = false; }); });
+    this.warn.forEach(m => { m.visible = false; }); this.dust.forEach(m => { m.visible = false; }); this.scorch.forEach(m => { m.visible = false; });
+    const healer = Math.max(0, q.party.findIndex(p => p.cls === 'wizard')), src = this.hero[healer] && this.hero[healer].m.position;
+    const casts = [...(q.heals || []).map(e => ({ t: e.t, ward: false })), ...(q.enchants || []).map(e => ({ t: e.t, ward: true })), ...(q.casts || []).filter(c => c.kind === 'wall').map(c => ({ t: c.t, ward: true }))];
+    for (const c of casts) {
+      const age = T - c.t; if (age < 0 || age > 1.8) continue;
+      this.hero.forEach((o, h) => {
+        const f = this.hfx[h], H = S.heroes[h]; if (!o.m.visible || (H.dies && T >= H.D)) return; const pos = o.m.position;
+        if (c.ward) {
+          const k = Math.sin(clamp(age / 1.8, 0, 1) * Math.PI); f.bub.visible = f.halo.visible = true; f.bub.position.set(pos.x, 0.5, pos.z); f.bub.scale.setScalar(0.85 + 0.12 * Math.sin(age * 9)); f.bub.material.opacity = 0.32 * k;
+          f.halo.position.set(pos.x, 0.05, pos.z); f.halo.scale.setScalar(0.8 + age * 0.5); f.halo.material.opacity = 0.7 * k; return;
+        }
+        if (age < 0.4 && src) { const u = age / 0.4; f.orb.visible = true; f.orb.position.set(lerp(src.x, pos.x, u), 1.0 + Math.sin(u * Math.PI) * 0.5, lerp(src.z, pos.z, u)); return; }
+        const a = (age - 0.4) / 1.4, k = Math.sin(clamp(a, 0, 1) * Math.PI);
+        f.col.visible = true; f.col.position.set(pos.x, 0.85, pos.z); f.col.scale.set(1 - 0.35 * a, 1, 1 - 0.35 * a); f.col.material.opacity = 0.45 * k;
+        f.sparks.forEach((m, i) => { m.visible = true; const ang = a * 5 + i * 1.05, r = 0.32 * (1 - a * 0.4); m.position.set(pos.x + Math.cos(ang) * r, ((a * 1.4 + i * 0.17) % 1.5), pos.z + Math.sin(ang) * r); m.material.opacity = 0.9 * k; });
+      });
+    }
+    // class skills: a volley of arrows at every enemy, a nova ring that rolls over the field
+    const foes = this.foe.filter(o => !o.gone && o.m.visible && !o.dead);
+    for (const c of q.casts || []) {
+      const age = T - c.t, caster = this.hero[c.h]; if (age < 0 || age > 1.6 || !caster) continue; const cp = caster.m.position;
+      if (c.kind === 'volley' && age >= 0.45 && age <= 0.85) foes.slice(0, 5).forEach((o, i) => { const a = this.arrows[7 - i], f = (age - 0.45) / 0.4, tp = o.m.position; a.visible = true; a.position.set(lerp(cp.x + 0.3, tp.x, f), lerp(0.55, 0.7, f) + Math.sin(f * Math.PI) * 0.05 * i, lerp(cp.z, tp.z, f)); a.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(tp.x - cp.x, 0.15, tp.z - cp.z).normalize()); });
+      if (c.kind === 'nova' && age < 0.9) {
+        const r = this.rings[5]; r.visible = true; r.position.set(cp.x, 0.07, cp.z); r.scale.setScalar(0.5 + age * 7); r.material.color.setHex(0xffa040); r.material.opacity = 0.75 * (1 - age / 0.9);
+        foes.slice(0, 3).forEach((o, i) => { if (age > 0.35) { const f = this.rings[2 + i], k = (age - 0.35) / 0.55; f.visible = true; f.position.set(o.m.position.x, 0.07, o.m.position.z); f.scale.setScalar(0.5 + k * 2.2); f.material.color.setHex(0xff7a30); f.material.opacity = 0.8 * (1 - k); } });
+      }
+    }
+    // boss blows: the camera shakes, dust bursts and a scorch mark stays on the ground where the hero stood
+    let di = 0, sc = 0, wi = 0;
+    for (let i = firstAfter(S.events, T - 3.2); i < S.events.length; i++) {
+      const e = S.events[i]; if (e.t > T + 1.2) break; if (e.type !== 'ehit') continue;
+      const E = S.enemies[e.e]; if (!E || !E.boss) continue; const ho = this.hero[e.h]; if (!ho) continue;
+      const age = T - (e.t + 0.28), p = ho.m.position;
+      if (age < 0 && age > -1.0 && wi < this.warn.length) { const w = this.warn[wi++], k = 1 + age; w.visible = true; w.position.set(p.x, 0.06, p.z); w.scale.setScalar(2.2 - 1.2 * k + 0.1 * Math.sin(T * 24)); w.material.opacity = 0.25 + 0.5 * k; }   // red circle: a heavy blow is coming
+      if (age >= 0 && age < 0.4) this.shake = Math.max(this.shake, 0.16 * (1 - age / 0.4));
+      if (age >= 0 && age < 0.8) for (let j = 0; j < 4 && di < this.dust.length; j++, di++) { const m = this.dust[di], ang = (e.id || i) * 0.7 + j * 1.6, r = 0.3 + age * 1.6; m.visible = true; m.position.set(p.x + Math.cos(ang) * r, 0.15 + age * 0.9, p.z + Math.sin(ang) * r); m.scale.setScalar(0.7 + age * 1.8); m.material.opacity = 0.5 * (1 - age / 0.8); }
+      if (age >= 0 && age < 3.0 && sc < this.scorch.length) { const m = this.scorch[sc++]; m.visible = true; m.position.set(p.x, 0.04, p.z); m.scale.setScalar(0.8 + (E.kind === 'golem' ? 0.4 : 0.2)); m.material.opacity = 0.45 * (1 - age / 3.0); }
+    }
   }
   update(T, rdt) {
     const q = this.q, S = q.script; T = clamp(T, 0, S.dur); this.T = T;
@@ -435,11 +559,22 @@ export class Expedition {
     const w = S.win, n = this.hero.length, stand = ARENA.map(a => a - 2.6), dive = !!S.dive;
     // party march: walking segments between fights (a dive keeps the party in place after the walk-in)
     let px = -19, moving = false, retreat = false;
-    if (dive) { if (T < w[0].a) { px = lerp(-19, stand[0], T / w[0].a); moving = true; } else px = stand[0]; }
+    // The party runs to each fight so that it arrives just as the enemy does (the enemy runs in too, see below), never
+    // waiting around: it leaves late and runs fast, or - if the gap is long - sets off after a short pause at a jog.
+    this.vMarch = RUN_SPEED;
+    const leg = (t0, t1, x0, x1, fight) => {
+      const dist = Math.abs(x1 - x0), by = fight ? t1 - 0.25 : t1, avail = Math.max(0.5, by - t0);
+      let rd = fight ? Math.max(Math.min(avail, dist / RUN_SPEED), avail - MAX_IDLE) : Math.min(avail, dist / RUN_SPEED);
+      rd = Math.max(0.5, rd); const start = fight ? by - rd : t0;
+      if (T >= by) { px = x1; return true; }
+      if (T >= start) { const u = clamp((T - start) / rd, 0, 1); px = lerp(x0, x1, u); moving = u < 1; this.vMarch = dist / rd; } else px = x0;
+      return false;
+    };
+    if (dive) leg(0, w[0].a, -19, stand[0], true);
     else {
-      const segs = [[0, w[0].a, -19, stand[0]], [w[0].b, w[1].a, stand[0], stand[1]], [w[1].b, w[2].a, stand[1], stand[2]]];
-      segs.push(q.ok ? [w[2].b, S.dur * 0.93, stand[2], CHEST_X - 2.6] : [w[2].b, S.dur, stand[2], stand[2] - 6]);
-      for (const [t0, t1, x0, x1] of segs) { if (T >= t1) px = x1; else { if (T >= t0) { px = lerp(x0, x1, (T - t0) / (t1 - t0)); moving = true; } else px = x0; break; } }
+      const segs = [[0, w[0].a, -19, stand[0], true], [w[0].b, w[1].a, stand[0], stand[1], true], [w[1].b, w[2].a, stand[1], stand[2], true]];
+      segs.push(q.ok ? [w[2].b, S.dur * 0.93, stand[2], CHEST_X - 2.6, false] : [w[2].b, S.dur, stand[2], stand[2] - 6, false]);
+      for (const sg of segs) if (!leg(...sg)) break;
       retreat = !q.ok && T > w[2].b;
     }
     // heroes
@@ -468,17 +603,20 @@ export class Expedition {
     this.foe.forEach((o, k) => {
       if (o.gone) return;
       const E = S.enemies[k], m = o.m, hp = enemyHp(S, k, T), dying = T >= E.D;
-      const encEnd = S.encs[E.enc].e, show = T >= E.s && (T <= encEnd + 1.2 || (!isFinite(E.D) && T <= S.dur));
+      const appear = Math.max(E.s, E.a - ENEMY_RUN), encEnd = S.encs[E.enc].e, show = T >= appear && (T <= encEnd + 1.2 || (!isFinite(E.D) && T <= S.dur));
       m.visible = show; o.dead = dying; if (!show) { o.bar.style.display = 'none'; return; }
-      const info = m.userData; const approach = clamp((T - E.s) / (E.a - E.s), 0, 1), walking = approach < 1 && !dying;
+      const info = m.userData; const approach = clamp((T - appear) / Math.max(0.3, E.a - appear), 0, 1), walking = approach < 1 && !dying;
       if (info.anim) {      // rigged raider: walk in, swing, flinch, fall — all from clips
-        const approach2 = approach, hitsE = this.ehitsBy[k] || [], ci = clipInfo('attack1'); let name = 'idleEase', t = T + k * 0.6, atk = null, lunge2 = 0;
-        for (let i = firstAfter(hitsE, T - 1.6); i < hitsE.length; i++) { const s0 = hitsE[i].t - ci.hit; if (s0 > T) break; if (T < s0 + ci.d) atk = T - s0; }
+        const approach2 = approach, hitsE = this.ehitsBy[k] || [], cl = info.clips || {}, list = cl.attacks || [cl.attack || 'attack1']; let name = 'idleEase', t = T + k * 0.6, atk = null, lunge2 = 0, atkName = null, ci = null;
+        for (let i = firstAfter(hitsE, T - 2.6); i < hitsE.length; i++) {      // each blow uses the next clip of the list, so big enemies vary their attacks
+          const nm = list[(i + k) % list.length], c = clipInfo(nm), s0 = hitsE[i].t - c.hit; if (s0 > T) break;
+          if (T < s0 + c.d) { atk = T - s0; atkName = nm; ci = c; }
+        }
         const hh = this.last(this.hitsOnFoe[k], T);
         if (dying) { name = 'die'; t = T - E.D; }
-        else if (atk !== null) { name = 'attack1'; t = atk; lunge2 = -0.9 * Math.sin(clamp(atk / ci.d, 0, 1) * Math.PI); }
+        else if (atk !== null) { name = atkName; t = atk; lunge2 = -(atkName === 'attackJump' ? 1.4 : atkName === 'kick' ? 0.6 : 0.9) * Math.sin(clamp(atk / ci.d, 0, 1) * Math.PI); }
         else if (hh && T - hh.t < 0.7) { name = 'impact'; t = T - hh.t; }
-        else if (approach2 < 1) { name = 'walkCalm'; t = T * 1.15; }
+        else if (approach2 < 1) { name = cl.run || 'runCalm'; t = T * (cl.runSpeed || 1.35) + k * 0.4; }
         info.anim.drive(name, t, rdt); m.rotation.set(0, -Math.PI / 2, 0); m.scale.setScalar(m.userData.s0 ??= m.scale.x);
         m.position.set(E.home.x + 9 * (1 - approach2) + lunge2, 0, E.home.z); this.setBar(o.bar, m.position, ENEMY[E.kind].h, hp, dying); return;
       }
@@ -499,6 +637,7 @@ export class Expedition {
       m.position.set(x + lunge, y, z);
       this.setBar(o.bar, m.position, ENEMY[E.kind].h, hp, dying);
     });
+    this.fxUpdate(T);
     // chest, coins, swirl, flicker
     const ch = this.stage.chest, lidT = dive ? -1 : T - S.dur * 0.93;
     if (!dive && q.ok && lidT > 0 && !this.chestHeard) { this.chestHeard = true; sfx('chest'); }
@@ -508,23 +647,22 @@ export class Expedition {
     this.stage.flicker.forEach((f, i) => { if (f) f.intensity = 1.0 + Math.sin(performance.now() / 90 + i) * 0.25 + Math.random() * 0.15; });
     // projectiles, sparks, floating numbers (only events near "now")
     this.proj.forEach(p => { p.visible = false; }); this.spark.forEach(p => { p.visible = false; });
-    let pi = 0, si = 0, lo = 0, hi = S.events.length;
+    this.arrows.forEach(a => { a.visible = false; }); this.bolts.forEach(b => { b.visible = false; }); this.rings.forEach(r => { r.visible = false; });
+    let nfx = 0, si = 0, lo = 0, hi = S.events.length;
     while (lo < hi) { const mid = (lo + hi) >> 1; if (S.events[mid].t < T - 1.0) lo = mid + 1; else hi = mid; }
     for (let i = lo; i < S.events.length; i++) {
       const e = S.events[i];
-      if (e.t > T + 0.1) break;
+      if (e.t > T + 0.5) break;
       if (e.type !== 'hit' && e.type !== 'ehit') continue;
       const ho = this.hero[e.h], fo = this.foe[e.e]; if (!ho || !fo || fo.gone) continue;
       const ranged = e.type === 'hit' && ho.p.cls !== 'knight';
       const from = e.type === 'hit' ? ho.m.position : fo.m.position, to = e.type === 'hit' ? fo.m.position : ho.m.position;
-      if (ranged && T >= e.t + 0.1 && T <= e.t + 0.3 && pi < this.proj.length) {
-        const p = this.proj[pi++], f = (T - e.t - 0.1) / 0.2; p.visible = true; p.position.set(lerp(from.x + 0.3, to.x, f), 1.0 + Math.sin(f * Math.PI) * 0.25, lerp(from.z, to.z, f));
-        p.material.color.setHex(ho.p.cls === 'wizard' ? 0x7affff : 0xe8d9a8); p.scale.setScalar(ho.p.cls === 'wizard' ? 1.4 : 0.7);
-      }
+      if (ranged && T >= e.t - 0.45 && T <= e.t + 0.3) this.castFx(e, ho, fo, from, to, T, ++nfx);
       const hit = e.t + (ranged ? 0.3 : 0.28);
       if (T >= hit && T <= hit + 0.25 && si < this.spark.length && (e.type === 'ehit' || fo.m.visible)) {
         const s = this.spark[si++], f = (T - hit) / 0.25; s.visible = true; s.position.set(to.x, 1.0, to.z + 0.1); s.scale.setScalar(0.6 + f); s.material.opacity = 0.9 * (1 - f); s.material.color.setHex(e.type === 'hit' ? 0xffe08a : 0xff6a5a);
       }
+      if (ranged && T >= hit && T <= hit + 0.4 && nfx < 6) this.impactRing(e, ho, T - hit, nfx++);
       if (T >= hit && T - hit < 0.6 && !this.fired.has(e.id)) {
         this.fired.add(e.id); sfx(e.type === 'hit' ? 'hit' : 'ehit'); const el = document.createElement('div'); el.className = 'fl dnum ' + (e.type === 'hit' ? 'dh' : 'de'); el.textContent = '−' + e.dmg; this.labelEl.appendChild(el);
         this.nums.push({ el, pos: this.wpos(to, 1.6), age: 0 });

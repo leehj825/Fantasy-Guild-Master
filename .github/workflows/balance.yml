@@ -1,0 +1,20 @@
+name: Balance simulation
+
+# A bot plays the economy headlessly for 20 game-minutes and the job fails on page errors or a runaway economy.
+# Runs on demand and weekly (it needs a browser, so it is not part of every push).
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 4 * * 1'
+
+jobs:
+  sim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm install --no-save playwright && npx playwright install --with-deps chromium
+      - run: python3 -m http.server 8123 &
+      - run: sleep 2 && node tools/botsim.cjs 20

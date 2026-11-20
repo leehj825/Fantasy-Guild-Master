@@ -116,6 +116,41 @@ const BUILD = {
 };
 
 const PROG = {
+  '💾 Save slots': '💾 저장 슬롯', '📂 Save slots & export': '📂 저장 슬롯 및 내보내기', 'Three extra slots, plus copy/paste a save between devices.': '추가 슬롯 3개와, 저장 데이터를 복사해 다른 기기로 옮기는 기능입니다.',
+  'Keep up to three extra copies of your guild, or move a save to another device by copying the text below.': '길드의 복사본을 최대 3개 더 보관하거나, 아래 텍스트를 복사해 다른 기기로 옮길 수 있습니다.',
+  'Slot 1': '슬롯 1', 'Slot 2': '슬롯 2', 'Slot 3': '슬롯 3', 'Save here': '여기에 저장', 'Load': '불러오기', 'empty': '비어 있음', 'Export / import': '내보내기 / 가져오기', 'Export': '내보내기', 'Import (replaces your guild)': '가져오기 (현재 길드를 대체)',
+  'That slot is empty.': '그 슬롯은 비어 있습니다.', 'Save text copied.': '저장 텍스트를 복사했습니다.', 'That does not look like a valid save.': '올바른 저장 데이터가 아닙니다.',
+
+  'Fountain': '분수', 'Guild Banner': '길드 깃발', 'Hero Statue': '영웅 동상',
+  'Decor. A bubbling fountain: heroes keep their spirits up (+5% happiness upkeep each, up to 30% with other decor).': '장식. 졸졸 흐르는 분수: 영웅들의 사기가 유지됩니다(각각 행복도 유지 +5%, 다른 장식과 합쳐 최대 30%).',
+  'Decor. Your colours on a tall pole (+5% happiness upkeep).': '장식. 높은 깃대에 걸린 길드 깃발(행복도 유지 +5%).', 'Decor. A monument to the guild’s heroes (+5% happiness upkeep).': '장식. 길드 영웅들을 기리는 기념비(행복도 유지 +5%).',
+
+  'What a day!': '오늘 하루 정말 길다!', 'Is the tavern open?': '술집 열었나요?', 'I could use a good meal.': '맛있는 식사 한 끼가 필요해.', 'The guild is growing.': '길드가 점점 커지고 있어.',
+  'My blade is ready.': '내 검은 준비됐다.', 'For the guild!': '길드를 위하여!', 'No foe shall pass.': '어떤 적도 지나가지 못한다.', 'The woods are quiet today.': '오늘 숲은 조용해.', 'Steady hands, sharp eyes.': '손은 안정되게, 눈은 날카롭게.', 'I hear something out there…': '저기서 뭔가 소리가 나는데…',
+  'The stars feel restless.': '별들이 어수선해.', 'Mana is all around us.': '마나가 우리 주위에 가득해.', 'Ah, a fine day for research.': '아, 연구하기 좋은 날이야.', 'Is there any more stew?': '스튜 더 없나요?', 'I have a good feeling about today!': '오늘은 느낌이 좋아!',
+  'Oops… did I drop that?': '어이쿠… 내가 떨어뜨렸나?', 'Bring on the monsters!': '몬스터들아, 덤벼라!', 'Fascinating architecture.': '흥미로운 건축이군.', 'I need a rest…': '좀 쉬어야겠어…', 'This place could be better.': '이곳이 더 나아질 수 있을 텐데.',
+
+  'Spring': '봄', 'Summer': '여름', 'Autumn': '가을', 'Winter': '겨울',
+  'Herbs grow twice as fast.': '약초가 두 배 빨리 자랍니다.', 'Quest gold +10%.': '퀘스트 골드 +10%.', 'Ore and wood trickle in 50% faster.': '광석과 목재가 50% 더 빨리 모입니다.', 'Tavern meals pay 25% more.': '술집 식사 수입 +25%.',
+  '📖 Guild Chronicle': '📖 길드 연대기', 'Guild Chronicle': '길드 연대기', "The diary of your guild's big moments.": '길드의 큰 순간들을 적은 일지입니다.', 'Open': '열기',
+  'Nothing has been written yet. Great deeds will appear here.': '아직 기록이 없습니다. 큰 업적이 여기에 쓰입니다.', 'Continue': '계속',
+  '🏆 A Legend of the Realm': '🏆 왕국의 전설', 'The Ember Peak Omen': '불꽃 봉우리의 전조', 'Embers in the Mines': '광산의 불씨', 'Slay the Ember Colossus': '불꽃 거신을 처치하라',
+  '🐉 Whispers of the Ember Colossus reached the guild.': '🐉 불꽃 거신에 대한 소문이 길드에 닿았습니다.',
+
+  'Formation': '진형', 'Battle line': '전투 대형', 'Shield wall': '방패 벽', 'Skirmish': '산개 전술',
+  'Knights lead, others behind. +4% with a knight and a ranged hero': '기사가 앞, 나머지는 뒤. 기사와 원거리 영웅이 함께 있으면 +4%',
+  'Tight ranks: fewer casualties, −3% success': '촘촘한 대열: 사상자 감소, 성공 −3%', 'Spread out: +5% success, more casualties': '넓게 퍼짐: 성공 +5%, 사상자 증가',
+  'Shield Wall': '방패 벽', 'Volley': '일제 사격', 'Nova': '노바', 'That skill is not ready.': '그 기술은 아직 쓸 수 없습니다.',
+
+  '▶ Send all possible': '▶ 가능한 모두 파견', '⏱ Auto-send: ON': '⏱ 자동 파견: 켜짐', '⏱ Auto-send: OFF': '⏱ 자동 파견: 꺼짐',
+  'Notifications': '알림', 'On': '켜짐', 'Off': '꺼짐', 'No quest has enough ready heroes right now.': '지금은 파견할 준비된 영웅이 충분한 퀘스트가 없습니다.',
+  '⏱ Auto-send on: parties leave when the odds are good.': '⏱ 자동 파견 켜짐: 성공 확률이 좋으면 파티가 출발합니다.', 'Auto-send off.': '자동 파견 꺼짐.',
+  'Alert when a quest ends or a raid arrives while the game is in the background (browser only; needs permission).': '게임이 백그라운드일 때 퀘스트가 끝나거나 약탈이 오면 알려줍니다(브라우저 전용, 권한 필요).',
+  'This device does not support notifications.': '이 기기는 알림을 지원하지 않습니다.', '🏆 Quest complete': '🏆 퀘스트 완료', '☠ Quest failed': '☠ 퀘스트 실패', '👹 Raid!': '👹 약탈!', 'Raiders are at the gates of your guild.': '약탈자들이 길드 문 앞에 왔습니다.',
+  'Ready heroes / open quests (tap for the quest board)': '준비된 영웅 / 열린 퀘스트 (눌러서 퀘스트 보드 열기)',
+
+  'Move building (free)': '건물 이동 (무료)', '🧭 Move building (free)': '🧭 건물 이동 (무료)', 'Move': '이동',
+
   'Characters': '캐릭터', 'Rigged · blocky': '관절형 · 각진 몸', 'Rigged · rounded': '관절형 · 둥근 몸', 'Classic': '클래식',
   'Body style. Rigged bodies use motion-capture clips (walk, run, sword, bow, magic, heal). Changing it reloads the game (progress is saved).': '몸 스타일. 관절형 몸은 모션 클립(걷기, 달리기, 검, 활, 마법, 치유)을 사용합니다. 바꾸면 게임이 다시 로드됩니다(진행 상황은 저장됨).',
 
@@ -232,12 +267,40 @@ const PROG = {
   '✨ Here': '✨ 여기', 'load failed': '불러오기 실패', 'Cancel': '취소', 'Auto': '자동',
 };
 
-export const KO_DICT = Object.assign({}, UI, BUILD, PROG);
+import { KO_PEOPLE } from './lang-ko-people.js';
+export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 
 // full-sentence patterns with variables (T translates names/phrases inside the captures)
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^Lavish \(−(\d+)g\)$/, n => `성대하게 (−${n}골드)`],
+    [/^Modest \(−(\d+)g\)$/, n => `소박하게 (−${n}골드)`],
+    [/^💪 (.+) finished intensive training\.$/, n => `💪 ${f(n)} 영웅이 집중 훈련을 마쳤습니다.`],
+    [/^🏋 (.+) begins intensive training\.$/, n => `🏋 ${f(n)} 영웅이 집중 훈련을 시작했습니다.`],
+    [/^⚒ (.+)'s gear is now \+(\d+)\.$/, (n, k) => `⚒ ${f(n)} 영웅의 장비가 +${k}가 되었습니다.`],
+    [/^⚒ Gear \+(\d+)\/(\d+)$/, (a, b) => `⚒ 장비 +${a}/${b}`],
+    [/^Next: (\d+)g, (\d+) ore(?:, (\d+) ingots)?$/, (g, o, i) => `다음 단계: ${g}골드, 광석 ${o}${i ? ', 주괴 ' + i : ''}`],
+    [/^Training… (\d+)s left$/, n => `훈련 중… ${n}초 남음`],
+    [/^80 s of drills for (\d+)g — heroes in training cannot go on quests\.$/, g => `80초 훈련에 ${g}골드 — 훈련 중인 영웅은 퀘스트에 나갈 수 없습니다.`],
+    [/^(.) The villagers want to hold the (.+)!$/u, (i, n) => `${i} 주민들이 ${f(n)}을(를) 열고 싶어 합니다!`],
+    [/^(.) (.+) is on! Tavern meals pay 50% more\.$/u, (i, n) => `${i} ${f(n)} 진행 중! 술집 식사 수입 +50%.`],
+    [/^📖 (.+) has something to tell you\.$/, n => `📖 ${f(n)} 영웅이 할 말이 있습니다.`],
+    [/^📖 (.+): (.+)$/, (n, t) => `📖 ${f(n)}: ${t === 'their story reaches its end.' ? '이야기가 끝을 맞았습니다.' : t === 'the story goes on…' ? '이야기는 계속됩니다…' : f(t)}`],
+    [/^📨 A rival guild is trying to hire (.+)!$/, n => `📨 경쟁 길드가 ${f(n)} 영웅을 데려가려 합니다!`],
+    [/^🤝 (.+) chose to stay\.$/, n => `🤝 ${f(n)} 영웅이 남기로 했습니다.`],
+    [/^🚪 (.+) joined a rival guild\.$/, n => `🚪 ${f(n)} 영웅이 경쟁 길드로 떠났습니다.`],
+    [/^🚪 (.+) lost faith in the guild and left\.$/, n => `🚪 ${f(n)} 영웅이 길드에 대한 믿음을 잃고 떠났습니다.`],
+    [/^💢 (.+) and (.+) had a loud quarrel\.$/, (a, b) => `💢 ${f(a)} 영웅과 ${f(b)} 영웅이 크게 다퉜습니다.`],
+    [/^🏘 (.+) has a request: (.+)$/, (w, n) => `🏘 ${f(w)}의 부탁: ${f(n)}`],
+    [/^🏘 (.+) thanks you warmly\. \(\+(\d+) town reputation\)$/, (w, n) => `🏘 ${f(w)}이(가) 진심으로 고마워합니다. (마을 평판 +${n})`],
+    [/^🏘 The villagers now consider you (.+)!$/, n => `🏘 주민들이 이제 길드를 '${f(n)}'(으)로 여깁니다!`],
+    [/^💘 (.+) and (.+) have grown close\.$/, (a, b) => `💘 ${f(a)} 영웅과 ${f(b)} 영웅이 가까워졌습니다.`],
+    [/^🎓 (.+) has taken (.+) under their wing\.$/, (a, b) => `🎓 ${f(a)} 영웅이 ${f(b)} 영웅을 제자로 받아들였습니다.`],
+    [/^⚡ (.+) and (.+) have become rivals\.$/, (a, b) => `⚡ ${f(a)} 영웅과 ${f(b)} 영웅이 라이벌이 되었습니다.`],
+    [/^🤝 (.+) and (.+) became friends\.$/, (a, b) => `🤝 ${f(a)} 영웅과 ${f(b)} 영웅이 친구가 되었습니다.`],
+    [/^💔 (.+) mourns (.+)\.$/, (a, b) => `💔 ${f(a)} 영웅이 ${f(b)} 영웅을 애도합니다.`],
+    [/^🗡 (.+) honoured (.+)'s memory\.$/, (a, b) => `🗡 ${f(a)} 영웅이 ${f(b)} 영웅의 넋을 기렸습니다.`],
     [/^✨ (.+) can choose a new talent! \(tap the hero\)$/, n => `✨ ${f(n)} 영웅이 새 재능을 고를 수 있습니다! (영웅을 누르세요)`],
     [/^⭐ (.+) has arrived at your guild! \((.+)\)$/, (n, t) => `⭐ ${f(n)} 영웅이 길드에 도착했습니다! (${f(t)})`],
     [/^(.+) the (.+) got fed up and left\.$/, (n, c) => `${f(n)} ${f(c)} 영웅이 질려서 떠났습니다.`],

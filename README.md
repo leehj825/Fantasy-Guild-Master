@@ -46,5 +46,10 @@ English and 한국어 (Korean). Pick a language in ⚙ Settings; it is remembere
 - **Guild factions:** pick Vanguard, Arcane Circle or Rangers once; each gives a different edge and changes the look of your Guild Hall.
 - **Korean UI:** switch language in ⚙ Settings; text is translated at display time, code stays English.
 - **Tests:** `npm test` runs pure-logic tests (scripts, dive, relics, translation); CI runs them on every push.
+- **Quality of life:** "Send all possible" and an Auto-send queue for quests, a ✅/📜 pill for ready heroes and open quests, background notifications (browser), three save slots plus text export/import.
+- **Battles:** formations (Battle line / Shield wall / Skirmish), class skills during watched fights (Shield Wall, Volley, Nova), heal beams and ward bubbles, straight-flying arrows, fire/arcane bolts, boss blow telegraphs, camera shake, dust and scorch marks, rain on some expeditions, varied attacks for giants.
+- **People:** every hero has two personality tags, a background, likes/dislikes, loyalty and a three-chapter personal story; bonds are an affinity that grows or sours (friends, sweethearts, mentors, rivals) with tavern scenes, grief and a relations map; named residents (innkeeper, apprentice, herbalist, children, scribe) plus villagers per cottage; villager requests and a town reputation; seasonal festivals.
+- **Seasons and time:** four seasons with perks and falling petals/leaves/snow, a day-night cycle, hero chatter, a Guild Chronicle diary, decor with a happiness perk (fountain, banner, statue) and the Ember Colossus legend questline after Fortress.
+- **Tools:** `tools/botsim.cjs` (balance bot, weekly CI workflow), `tools/i18n_audit.mjs` (untranslated toast check, run by `npm test`), `tools/pick_clips.mjs` (builds `src/clips.js`).
 - Events: monster incursion (sound the alarm), wandering merchant, royal demand
 - HTML/CSS HUD overlay with floating world UI (gold popups, mood bubbles, progress bars)
