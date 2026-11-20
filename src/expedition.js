@@ -29,6 +29,9 @@ const ENEMY = {
   chief:  { name: 'Bandit Chief', make: () => bandit(true), h: 2.3, boss: true },
   wisp:   { name: 'Wisp', make: () => wisp(), h: 1.6 },
   imp:    { name: 'Imp', make: () => imp(), h: 1.3 },
+  frostgiant: { name: 'Frost Giant', make: () => (BIG.frostgiant ? BIG.frostgiant() : ogre({ skin: 0xb8d8f0, cloth: 0x4a6a8a, apron: 0x2a3a5a, scale: 2.4 })), h: 3.8, boss: true },
+  duneking: { name: 'Dune Warlord', make: () => (BIG.duneking ? BIG.duneking() : ogre({ skin: 0xd8b06a, cloth: 0x7a2a1a, apron: 0x5a3a1a, scale: 2.2 })), h: 3.4, boss: true },
+  lich: { name: 'Bone Lich', make: () => (BIG.lich ? BIG.lich() : charEnemy({ skin: 0xe8e4d0, shirt: 0x3a1a5a, sleeve: 0x3a1a5a, skirt: 0x3a1a5a, pants: 0x2a1048, hat: 'wizard', hatColor: 0x2a1048, beard: 0xcfd8c0, beardLen: 0.3, staff: 0x7aff7a }, 2.3)), h: 3.0, boss: true },
   golem:  { name: 'Ancient Golem', make: () => (BIG.golem ? BIG.golem() : golem()), h: 3.4, boss: true },
 };
 const BIG = {}; export const setBigMakers = m => Object.assign(BIG, m);   // main.js sets the rigged golem / ogre when rigged bodies are on
@@ -53,8 +56,8 @@ function wolf() {
   g.userData.attack = () => { };
   return g;
 }
-function ogre() {
-  const g = charEnemy({ skin: 0x8aa84e, shirt: 0x7a5a3a, sleeve: 0x8aa84e, pants: 0x5a4636, boots: 0x2a1a0a, hammer: true, belt: 0x3a2a1a, apron: 0x6b4a2a }, 2.1);
+function ogre(o = {}) {
+  const g = charEnemy({ skin: o.skin ?? 0x8aa84e, shirt: o.cloth ?? 0x7a5a3a, sleeve: o.skin ?? 0x8aa84e, pants: o.cloth ?? 0x5a4636, boots: 0x2a1a0a, hammer: true, belt: 0x3a2a1a, apron: o.apron ?? 0x6b4a2a }, o.scale ?? 2.1);
   g.children[0].add(cone(0.05, 0.16, 0xf4f0e6, -0.1, 0.52, 0.2, 4), cone(0.05, 0.16, 0xf4f0e6, 0.1, 0.52, 0.2, 4));
   return g;
 }
@@ -99,8 +102,15 @@ const ENCOUNTERS = {
   arcane: [(m) => ['wisp', Math.min(4, 1 + m)], (m, p) => ['imp', p > 2 ? 3 : 2], () => ['golem', 1, []]],
 };
 ENCOUNTERS.defense = ENCOUNTERS.combat;
-const ENC_NAMES = { goblin: 'Goblin Raiders', wolf: 'Dire Wolves', ogre: 'Ogre Warchief', bandit: 'Bandit Ambush', chief: 'Bandit Chief', wisp: 'Wisp Swarm', imp: 'Imp Pack', golem: 'Ancient Golem' };
-export const themeFor = q => ({ stonepeak: 'cave', ruins: 'ruins', ashen: 'forest', greenwood: 'forest' })[q.region] || (q.type === 'arcane' ? 'ruins' : (q.type === 'combat' && q.seed % 2 ? 'cave' : 'forest'));
+// regions with a boss of their own: the finale of every quest posted there is that boss; each has a weakness (a class that hurts it)
+export const REGION_BOSS = { frostpeak: 'frostgiant', dunes: 'duneking', hollow: 'lich' };
+export const BOSS = {
+  frostgiant: { weak: ['wizard', 'alchemist'], note: 'fire melts its frozen hide' },
+  duneking: { weak: ['rogue', 'ranger'], note: 'sharp, precise strikes find the gaps in its armour' },
+  lich: { weak: ['cleric'], note: 'holy light burns the undead' },
+};
+const ENC_NAMES = { frostgiant: 'Frost Giant', duneking: 'Dune Warlord', lich: 'Bone Lich', goblin: 'Goblin Raiders', wolf: 'Dire Wolves', ogre: 'Ogre Warchief', bandit: 'Bandit Ambush', chief: 'Bandit Chief', wisp: 'Wisp Swarm', imp: 'Imp Pack', golem: 'Ancient Golem' };
+export const themeFor = q => ({ frostpeak: 'cave', dunes: 'forest', hollow: 'ruins', stonepeak: 'cave', ruins: 'ruins', ashen: 'forest', greenwood: 'forest' })[q.region] || (q.type === 'arcane' ? 'ruins' : (q.type === 'combat' && q.seed % 2 ? 'cave' : 'forest'));
 
 /* ------------------------------------------------------------ script */
 export function genScript(q) {
@@ -110,7 +120,8 @@ export function genScript(q) {
   const S = { dur, n, win, theme: themeFor(q), enemies: [], encs: [], heroes: [], events: [] };
   // enemies
   ENCOUNTERS[q.type].forEach((fn, i) => {
-    const [kind, count, extra] = fn(q.minH, n); const kinds = [kind, ...Array(count - 1).fill(kind), ...(extra || [])];
+    let [kind, count, extra] = fn(q.minH, n); if (i === 2 && REGION_BOSS[q.region]) { kind = REGION_BOSS[q.region]; count = 1; }   // the region's own boss closes the quest
+    const kinds = [kind, ...Array(count - 1).fill(kind), ...(extra || [])];
     const w = win[i], m = kinds.length, idxs = [];
     kinds.forEach((k, j) => {
       const info = ENEMY[k], boss = !!info.boss && i === 2 && j === 0, dies = !(boss && !q.ok);

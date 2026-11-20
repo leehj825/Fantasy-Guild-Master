@@ -5,7 +5,7 @@ import { createTutorial } from './tutorial.js';
 import { TAGS, makeProfile, tagMods, SEASON_NAMES, RESIDENTS, residentHome, ARCS, pickArc } from './people.js';
 import { sfx, unlock, setPref, getPrefs, setMusicMood, audioState } from './audio.js';
 import { tr, trHtml, initLang, setLang, getLang, onLangChange, translateStatic, LANGS } from './i18n.js';
-import { Expedition, questEnd, setBigMakers, genScript, STAGE_X, heroHp, phaseText, newDiveScript, ensureFloors, rebuildDive, diveFloorIndex, diveCheckpoint, rewardText, RELICS, relicMods, relicOffer } from './expedition.js';
+import { Expedition, REGION_BOSS, BOSS, questEnd, setBigMakers, genScript, STAGE_X, heroHp, phaseText, newDiveScript, ensureFloors, rebuildDive, diveFloorIndex, diveCheckpoint, rewardText, RELICS, relicMods, relicOffer } from './expedition.js';
 
 /* ------------------------------------------------------------------ *
  *  Setup: renderer, isometric ortho camera, lights, terrain
@@ -27,7 +27,10 @@ scene.background = new THREE.Color(0x2f7a32);
 const STYLE_KEY = 'fantasy-guild-master-charstyle', CHAR_STYLES = { voxel: 'Rigged · blocky', round: 'Rigged · rounded', classic: 'Classic' };
 let charStyle = (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 3 ? 'classic' : 'voxel';   // weak devices start on the lightest bodies
 try { const v = localStorage.getItem(STYLE_KEY); if (CHAR_STYLES[v]) charStyle = v; } catch (e) { /* default */ }
-if (charStyle !== 'classic') { setCharMaker(look => makeRigChar(look, charStyle)); setBigMakers({ golem: () => makeRigGolem(), ogre: () => makeRigOgre() }); }
+if (charStyle !== 'classic') { setCharMaker(look => makeRigChar(look, charStyle)); setBigMakers({ golem: () => makeRigGolem(), ogre: () => makeRigOgre(),
+    frostgiant: () => makeRigOgre({ skin: 0xb8d8f0, dark: 0x8fb4d6, cloth: 0x4a6a8a, belt: 0x2a3a5a, clubHead: 0xcfe8ff, spike: 0xeaf6ff, eye: 0x7affff, tusk: 0xffffff, scale: 1.85 }),
+    duneking: () => makeRigOgre({ skin: 0xd8b06a, dark: 0xb58a42, cloth: 0x7a2a1a, belt: 0x5a3a1a, clubHead: 0xe8c04a, spike: 0xffe27a, eye: 0xff6a3a, scale: 1.7 }),
+    lich: () => { const g = makeRigChar({ skin: 0xe8e4d0, shirt: 0x3a1a5a, sleeve: 0x3a1a5a, skirt: 0x3a1a5a, pants: 0x2a1048, hat: 'wizard', hatColor: 0x2a1048, hatBand: 0x7aff7a, beard: 0xcfd8c0, beardLen: 0.3, staff: 0x7aff7a, belt: 0x7aff7a }, charStyle === 'round' ? 'round' : 'voxel'); g.scale.multiplyScalar(2.1); g.userData.clips = { attack: 'mgBolt', attacks: ['mgBolt', 'mgFire', 'mgNova', 'mgHoly'], walk: 'walkCalm', walkSpeed: 0.8, run: 'runCalm', runSpeed: 0.9 }; return g; } }); }
 
 // Free 3D perspective camera: orbit (yaw/pitch), pan, zoom.
 const VIEW0 = { yaw: Math.PI / 4, pitch: Math.atan(1 / Math.SQRT2), zoom: 10 };   // true isometric angles
@@ -277,7 +280,7 @@ const boardSlots = () => 3 + G.boardLvl + (G.rank >= 2 ? 1 : 0) + (G.rank >= 3 ?
 const craftSpeed = () => (1 + 0.25 * G.staff.smith) * (G.research.forging ? 1.3 : 1) * (G.research.mythril ? 1.4 : 1) * (1 + 0.1 * regionPerk('stonepeak')) * (G.flags.faction === 'vanguard' ? 1.15 : 1) * (G.flags.smithTaught ? 1.1 : 1);
 const alchSpeed = () => (1 + 0.25 * G.staff.alch) * (G.research.forging ? 1.15 : 1) * (1 + 0.1 * regionPerk('ashen')) * (G.flags.faction === 'arcane' ? 1.15 : 1);
 const mealGold = tav => { tav = tav || first('tavern'); return (G.flags.fest ? 1.5 : 1) * (seasonIdx() === 3 ? 1.25 : 1) * 9 * (1 + 0.15 * G.staff.cook) * (1 + 0.3 * ((tav?.level || 1) - 1)) * (tav ? adj(tav).meal : 1); };
-const questGoldMul = () => (G.research.charter ? 1.25 : 1) * (seasonIdx() === 1 ? 1.1 : 1) * (1 + 0.002 * (G.flags.rep ?? 10)) * (first('monument') ? 1.05 : 1) * (1 + 0.03 * squares());
+const questGoldMul = () => (G.research.charter ? 1.25 : 1) * (seasonIdx() === 1 ? 1.1 : 1) * (1 + 0.002 * (G.flags.rep ?? 10)) * (first('monument') ? 1.05 : 1) * (1 + 0.03 * squares()) * (1 + 0.05 * regionPerk('dunes'));
 const trickleMul = () => (1 + 0.5 * G.staff.porter);
 const warehouseBonus = () => ofType('warehouse').reduce((s, w) => s + 6 + 4 * (w.level - 1), 0);
 const stockCap = b => 4 + 2 * b.level + warehouseBonus();
@@ -645,6 +648,12 @@ const REGIONS = {
     names: ['Collapse in the Deep Shaft', 'Clear the Troll Tunnel', 'Escort the Ore Cart', 'Seal the Rockfall'], desc: 'Dark tunnels full of trolls and ore.', summary: 'Mostly combat · +60% ore loot · ×1.1 gold · ×1.15 danger', perk: 'Forge speed +10% (mastery 3), +20% (mastery 5)' },
   ashen: { name: 'Ashen Marsh', icon: '🌫️', unlock: () => G.renown >= 20, need: 'Renown 20', theme: 'forest', types: { combat: 0.8, gather: 2, arcane: 1 }, loot: { herbs: 1.8 }, goldMul: 1.15, diffMul: 1.25, mods: ['poison', 'cursed'],
     names: ['Gather Bog Lotus', 'Hunt the Marsh Hag', 'Cleanse the Poisoned Spring', 'Find the Lost Peddler'], desc: 'Foul mists, rare herbs and curses.', summary: 'Mostly gathering · +80% herb loot · ×1.15 gold · ×1.25 danger', perk: 'Lab speed +10% (mastery 3), +20% (mastery 5)' },
+  frostpeak: { name: 'Frostpeak Pass', icon: '❄️', unlock: () => G.rank >= 1 && G.renown >= 25, need: 'Hold rank, Renown 25', theme: 'cave', types: { combat: 2, gather: 0.8, arcane: 0.8 }, loot: { ore: 1.3 }, goldMul: 1.25, diffMul: 1.35, mods: ['armored', 'storm'], boss: 'frostgiant',
+    names: ['Cross the Frozen Pass', 'Thaw the Stuck Caravan', 'Hunt the Rime Wolves', 'Light the Beacon Fire'], desc: 'A howling mountain pass ruled by the Frost Giant.', summary: 'Mostly combat · ×1.25 gold · ×1.35 danger · Boss: Frost Giant', perk: 'Parties +3% success (mastery 3), +6% (mastery 5)' },
+  dunes: { name: 'Scorched Dunes', icon: '🏜️', unlock: () => G.rank >= 2 && G.renown >= 60, need: 'Keep rank, Renown 60', theme: 'forest', types: { combat: 1, gather: 1.8, arcane: 0.8 }, loot: { herbs: 1.4, wood: 0.5 }, goldMul: 1.45, diffMul: 1.5, mods: ['rush', 'bounty', 'poison'], boss: 'duneking',
+    names: ['Follow the Sand-Map', 'Raid the Oasis Bandits', 'Rescue the Lost Pilgrims', 'Unearth the Buried Vault'], desc: 'Endless dunes, rich bounties, and the Dune Warlord.', summary: 'Mostly gathering · ×1.45 gold · ×1.5 danger · Boss: Dune Warlord', perk: 'Quest gold +5% (mastery 3), +10% (mastery 5)' },
+  hollow: { name: 'Hollow Moor', icon: '💀', unlock: () => G.rank >= 2 && G.renown >= 80, need: 'Keep rank, Renown 80', theme: 'ruins', types: { combat: 1, gather: 0.5, arcane: 2.2 }, loot: { arcane: 2 }, goldMul: 1.5, diffMul: 1.6, mods: ['cursed', 'elite', 'storm'], boss: 'lich',
+    names: ['Lay the Moor Ghosts to Rest', 'Seal the Barrow', 'Silence the Bell Tower', 'Burn the Hollow Tome'], desc: 'A cursed moor where the Bone Lich walks.', summary: 'Mostly arcane · +100% mana loot · ×1.5 gold · ×1.6 danger · Boss: Bone Lich', perk: '+1 Mana per quest success (mastery 3), +2 (mastery 5)' },
   ruins: { name: 'Sunken Ruins', icon: '🏛️', unlock: () => G.rank >= 2, need: 'Guild Rank Keep', theme: 'ruins', types: { combat: 0.7, gather: 0.5, arcane: 2.5 }, loot: { arcane: 1.8 }, goldMul: 1.3, diffMul: 1.4, mods: ['cursed', 'storm', 'elite'],
     names: ['Decipher the Sunken Glyphs', 'Banish the Drowned Wraith', 'Recover the Tidal Relic', 'Calm the Restless Statues'], desc: 'Drowned halls humming with old magic.', summary: 'Mostly arcane · +80% mana loot · ×1.3 gold · ×1.4 danger', perk: 'Mana regeneration +1 (mastery 3), +2 (mastery 5)' },
 };
@@ -694,12 +703,14 @@ function makeQuest(o = {}) {
   gold *= (o.goldMul || 1);
   const q = {
     id: G.nextId++, name: o.name || (!o.type && reg.names && Math.random() < 0.6 ? pick(reg.names) : pick(QNAMES[type])), region: o.type ? null : G.region, type, diff, minH, maxH: Math.min(4, minH + 1), dur, gold: Math.round(gold), renown: (() => { const x = diff / 6 * 40 / (40 + G.renown); return Math.floor(x) + (Math.random() < x - Math.floor(x) ? 1 : 0); })() + (o.renownBonus || 0),   // fractional, with diminishing returns: no runaway renown
-    loot, mods, special: !!o.special, state: 'open', heroes: [], t: 0, enchant: false, chance: 0,
+    loot, mods, boss: o.type ? null : (reg.boss || null), special: !!o.special, state: 'open', heroes: [], t: 0, enchant: false, chance: 0,
   };
   G.quests.push(q); return q;
 }
 const genQuest = () => makeQuest();
-const modTags = q => (q.town ? `<span class="tag" title="A small favour for the town: low pay, but the villagers will remember it.">🏘 ${q.who}</span>` : '') + (q.region && q.region !== 'greenwood' && REGIONS[q.region] ? `<span class="tag">${REGIONS[q.region].icon} ${REGIONS[q.region].name}</span>` : '') + (q.mods || []).map(k => `<span class="tag" title="${MODS[k].desc}">${MODS[k].icon} ${MODS[k].label}</span>`).join('');
+const bossTag = q => { const B = BOSS[q.boss]; return B ? `<span class="tag" style="border-color:#ff9a4a" title="${B.note}">👑 ${ENEMY_NAME[q.boss]} · weak: ${B.weak.map(c => CLASSES[c].icon).join('')}</span>` : ''; };
+const ENEMY_NAME = { frostgiant: 'Frost Giant', duneking: 'Dune Warlord', lich: 'Bone Lich' };
+const modTags = q => bossTag(q) + (q.town ? `<span class="tag" title="A small favour for the town: low pay, but the villagers will remember it.">🏘 ${q.who}</span>` : '') + (q.region && q.region !== 'greenwood' && REGIONS[q.region] ? `<span class="tag">${REGIONS[q.region].icon} ${REGIONS[q.region].name}</span>` : '') + (q.mods || []).map(k => `<span class="tag" title="${MODS[k].desc}">${MODS[k].icon} ${MODS[k].label}</span>`).join('');
 const questPay = q => Math.round(q.gold * questGoldMul() * (q.approachGold || 1));
 const readyHeroes = () => G.heroes.filter(h => h.gear && !(h.train > 0) && h.stamina >= 45 && h.state !== 'quest' && h.state !== 'leaving');
 function bestParty(q) {
@@ -726,6 +737,8 @@ function chanceFor(q, party, o = false) {
   if (factionOf() && factionOf().type === q.type) c += 0.10;
   c += modPenalty(q, party, o)[0] + (APPROACH[o.approach || 'standard'].chance) + bondInfo(party).d + party.reduce((n, h) => n + heroMods(h).succ, 0);
   if (o.enchant) c += G.research.arcane ? 0.3 : 0.2;
+  { const B = BOSS[q.boss]; if (B) c += party.some(h => B.weak.includes(h.cls)) ? 0.08 : -0.04; }
+  c += regionPerk('frostpeak') * 0.03;
   c += fmBonus(party, o.formation); if (o.potion && party.some(h => h.cls === 'alchemist')) c += 0.05;   // an Alchemist makes the potion count for more
   return Math.max(0.03, Math.min(0.97, c));
 }
@@ -792,7 +805,7 @@ function resolveQuest(q) {
     gain(hp, g); G.renown += q.renown;
     floatText(hp.clone().add(new THREE.Vector3(0, 0.6, 0)), `+${q.renown} ⭐`, '#ffd24a');
     const lootBonus = q.heroes.reduce((n, h) => n + heroMods(h).loot, 0), oreMul = (G.research.prospect ? 1.5 : 1) * (1 + 0.2 * q.party.filter(x => x.trait === 'clumsy').length) * (1 + lootBonus + (G.flags.faction === 'rangers' ? 0.1 : 0));
-    G.mana += q.heroes.reduce((n, h) => n + heroMods(h).mana, 0);
+    G.mana += q.heroes.reduce((n, h) => n + heroMods(h).mana, 0) + regionPerk('hollow');
     if (q.loot.ore) G.ore += Math.round(q.loot.ore * oreMul);
     if (q.loot.herbs) G.herbs += Math.round(q.loot.herbs * oreMul / (G.research.prospect ? 1.5 : 1));
     if (q.loot.wood) G.wood += Math.round(q.loot.wood * oreMul / (G.research.prospect ? 1.5 : 1));
@@ -2302,4 +2315,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__api = { squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__api = { chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };

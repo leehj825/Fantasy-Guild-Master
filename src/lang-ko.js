@@ -274,6 +274,7 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^👑 (.+) · weak: (.+)$/, (n, w) => `👑 ${f(n)} · 약점: ${w}`],
     [/^🏛 Town squares: (\d)\/3 active \(a fountain, statue or monument with 3 buildings nearby: \+3% quest gold, \+2% mood each\)$/, n => `🏛 마을 광장: ${n}/3 활성 (분수·동상·기념비 주변 7칸 안에 건물 3개 이상: 각각 퀘스트 골드 +3%, 기분 +2%)`],
     [/^🛤 Linked to the town with (\d+) path tiles \(−(\d+)g\)\.$/, (n, g) => `🛤 길 ${n}칸으로 마을과 연결했습니다 (−${g}골드).`],
     [/^(\d+) well-trodden tiles can be paved with cobbles: (\d+)g$/, (n, g) => `${n}칸의 닳은 길을 돌길로 포장할 수 있습니다: ${g}골드`],
