@@ -1786,7 +1786,7 @@ canvas.addEventListener('pointerup', e => {
   if (d.btn === 2) return cancelPlacement();
   if (d.btn === 1 || d.mode === 'pan') return;
   if (placing) { const p = groundAt(e.clientX, e.clientY); if (p) { const [cx, cz] = cellFor(p.x, p.z); moveGhost(cx, cz); } return; }
-  if (watching) return;
+  if (watching) return watchTap(e);
   ptr.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ptr, camera);
   const rh = ray.intersectObjects(residentGroup.children, true)[0];
   if (rh) { let o = rh.object; while (o && o.userData.rid === undefined) o = o.parent; if (o) return openModal('resident', o.userData.rid); }
@@ -2002,22 +2002,38 @@ function boostQuest(q, amt) {
 // Hero skills during a watched fight: one per class, once per expedition (a dive: once per 5 floors). They give a small boost to the odds
 // (a dive: a ward or a heal) and play a showy effect on the stage.
 const SKILLS = { knight: { icon: '🛡', name: 'Shield Wall', kind: 'wall', boost: 0.06 }, ranger: { icon: '🏹', name: 'Volley', kind: 'volley', boost: 0.05 }, wizard: { icon: '🔥', name: 'Nova', kind: 'nova', boost: 0.05 } };
+const SKILL_CD = 25, SKILL_CAP = 0.12;   // seconds between uses (a dive: floors), and the most the skills can add to one quest's odds
+function skillLeft(q, cls) {
+  const T = nowT(watching), S = q.script, used = ((q.dive ? q.skillsUsed : q.skillT) || {})[cls]; if (used === undefined) return 0;
+  return q.dive ? Math.max(0, used + 5 - diveFloorIndex(S, T)) : Math.max(0, SKILL_CD - (T - used));
+}
 function skillReady(q, cls) {
-  const sk = SKILLS[cls], used = (q.skillsUsed || {})[cls], T = nowT(watching), S = q.script; if (!sk || !canIntervene(q)) return false;
+  const sk = SKILLS[cls], T = nowT(watching), S = q.script; if (!sk || !canIntervene(q)) return false;
   const h = q.party.findIndex((p, i) => p.cls === cls && !(S.heroes[i].dies && T >= S.heroes[i].D)); if (h < 0) return false;
-  return q.dive ? (used === undefined || diveFloorIndex(S, T) >= used + 5) : used === undefined;
+  return skillLeft(q, cls) <= 0;
+}
+// Tap a hero who stands in a boss's red circle to dodge the blow: no damage numbers, a little extra success chance (up to +9%)
+function watchTap(e) {
+  const w = watching; if (!w || w.finish || w.exiting) return;
+  // forgiving tap: the nearest hero on screen within a finger's width (heroes are small)
+  let h = -1, best = 64; w.exp.hero.forEach((o, i) => { const [sx, sy] = toScreen(o.m.position.clone().add(w.exp.origin), 0.45), d = Math.hypot(sx - e.clientX, sy - e.clientY); if (d < best) { best = d; h = i; } });
+  if (h < 0) return;
+  const T = nowT(w), ev = w.exp.dodgeable(h, T); if (!ev) return;
+  w.exp.dodged.add(ev.id); w.exp.fired.add(ev.id); (w.q.casts ||= []).push({ t: T, kind: 'dodge', h });
+  const q = w.q; if (!q.dive) { const add = Math.max(0, Math.min(0.015, 0.09 - (q.dodgeBoost || 0))); q.dodgeBoost = (q.dodgeBoost || 0) + add; if (add > 0) boostQuest(q, add); }
+  floatText(w.exp.hero[h].m.position.clone().add(w.exp.origin), '✓ Dodged!', '#9bff9b'); sfx('chime');
 }
 function watchSkill(cls) {
   const w = watching, q = w?.q, sk = SKILLS[cls]; if (!q || !sk) return;
   if (!skillReady(q, cls)) return toast('That skill is not ready.');
   const T = nowT(w), S = q.script, h = q.party.findIndex((p, i) => p.cls === cls && !(S.heroes[i].dies && T >= S.heroes[i].D));
   (q.casts ||= []).push({ t: T, kind: sk.kind, h });
-  (q.skillsUsed ||= {})[cls] = q.dive ? diveFloorIndex(S, T) : 1;
+  if (q.dive) (q.skillsUsed ||= {})[cls] = diveFloorIndex(S, T); else (q.skillT ||= {})[cls] = T;
   if (q.dive) {
     const next = diveFloorIndex(S, T) + 1;
     if (sk.kind === 'wall' && !(q.enchants || []).some(x => x.floor + 3 > next)) q.enchants.push({ floor: next, t: T }); else q.heals.push({ t: T, amt: 0.15 });
     rebuildDive(q, T); toast(`${sk.icon} ${sk.name}!`);
-  } else { boostQuest(q, sk.boost); toast(`${sk.icon} ${sk.name}! Success chance now ${Math.round(q.chance * 100)}%`); }
+  } else { const add = Math.max(0, Math.min(sk.boost, SKILL_CAP - (q.skillBoost || 0))); q.skillBoost = (q.skillBoost || 0) + add; if (add > 0) boostQuest(q, add); toast(`${sk.icon} ${sk.name}! ${add > 0 ? `Success chance now ${Math.round(q.chance * 100)}%` : 'The party is already at its best.'}`); }
   sfx('chime'); updateWatchHUD();
 }
 function watchEnchant() {
@@ -2060,7 +2076,7 @@ function updateWatchHUD() {
   $('watchBar').classList.toggle('dive', dv);
   $('wParty').innerHTML = trHtml(q.party.map((p, h) => { const hp = heroHp(q, S, h, T), dead = S.heroes[h].dies && T >= S.heroes[h].D; return `<div class="chip ${dead ? 'dead' : ''}"><span>${dead ? '☠' : CLASSES[p.cls].icon} ${p.name}</span><b><i style="width:${hp * 100}%;background:${hp > 0.5 ? '#5be35b' : hp > 0.25 ? '#f0c040' : '#e0503a'}"></i></b></div>`; }).join(''));
   const ci = canIntervene(q), lab = first('alchemy');
-  $('wSkills').innerHTML = trHtml(q.party.map(p => p.cls).filter((c, i, a) => a.indexOf(c) === i && SKILLS[c]).map(c => `<button class="act ${skillReady(q, c) ? '' : 'off'}" data-skill="${c}" ${skillReady(q, c) ? '' : 'disabled'}>${SKILLS[c].icon} ${SKILLS[c].name}</button>`).join(''));
+  $('wSkills').innerHTML = trHtml(q.party.map(p => p.cls).filter((c, i, a) => a.indexOf(c) === i && SKILLS[c]).map(c => `<button class="act ${skillReady(q, c) ? '' : 'off'}" data-skill="${c}" ${skillReady(q, c) ? '' : 'disabled'}>${SKILLS[c].icon} ${SKILLS[c].name}${skillLeft(q, c) > 0 ? ' · ' + Math.ceil(skillLeft(q, c)) + (q.dive ? 'f' : 's') : ''}</button>`).join(''));
   $('wRecall').classList.toggle('hidden', !!q.defense);
   const potions = ofType('alchemy').reduce((n, b) => n + b.stock, 0), nextF = dv ? diveFloorIndex(S, T) + 1 : 0, warded = dv && (q.enchants || []).some(x => x.floor + 3 > nextF);
   $('wEnchant').disabled = !ci || G.mana < 5 || (dv ? warded : !!(q.enchant || q.enchantedMid)); $('wEnchant').textContent = tr(dv ? (warded ? '✨ Ward active' : '✨ Ward (5)') : `✨ Enchant (5) · ${Math.round(q.chance * 100)}%`);
@@ -2070,7 +2086,7 @@ function updateWatchHUD() {
   $('wPipBtn').classList.toggle('on', w.pip); $('pipFrame').classList.toggle('off', !w.pip);
   $('wSpeed').textContent = '⏵ x' + G.speed;
   $('wSwitch').innerHTML = trHtml(G.quests.filter(x => x.state === 'active' && x !== q).map(x => `<button class="act" data-act="watch" data-q="${x.id}">👁 ${x.name}</button>`).join(''));
-  $('wHint').textContent = tr(dv ? (w.finish ? '' : (S.wiped ? 'The party has fallen…' : `At risk: ${rewardText(q.pending)} · next checkpoint: floor ${Math.ceil((q.cleared + 1) / 5) * 5}`)) : (ci ? 'Intervene before the finale!' : (w.finish ? '' : 'The finale has begun — no more help possible')));
+  $('wHint').textContent = tr(dv ? (w.finish ? '' : (S.wiped ? 'The party has fallen…' : `At risk: ${rewardText(q.pending)} · next checkpoint: floor ${Math.ceil((q.cleared + 1) / 5) * 5}`)) : (w.exp.warnActive ? 'Tap a hero inside a red circle to dodge!' : ci ? 'Intervene before the finale!' : (w.finish ? '' : 'The finale has begun — no more help possible')));
 }
 $('wBack').onclick = endWatch; $('pipFrame').onclick = endWatch;
 $('wFollow').onclick = () => { if (watching) { watching.follow = !watching.follow; updateWatchHUD(); } };
@@ -2183,4 +2199,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__api = { startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__api = { watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };

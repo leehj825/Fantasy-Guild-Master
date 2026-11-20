@@ -415,6 +415,10 @@ export class Expedition {
     this.foe.forEach(o => { if (!o.gone && o.m.visible && !o.dead) { x += o.m.position.x * 0.8; z += o.m.position.z * 0.8; n += 0.8; } });
     return new THREE.Vector3(x / n + this.origin.x, 0, z / n + this.origin.z);
   }
+  // is a boss blow about to land on hero h (red circle up)? returns the event so a tap can dodge it
+  dodgeable(h, T) {
+    const S = this.S; for (let i = firstAfter(S.events, T - 0.4); i < S.events.length; i++) { const e = S.events[i]; if (e.t > T + 0.8) break; if (e.type !== 'ehit' || e.h !== h || this.dodged.has(e.id)) continue; const E = S.enemies[e.e]; if (E && E.boss && T >= e.t - 0.72 && T <= e.t + 0.28) return e; } return null;
+  }
   // A rigged hero at moment T: march, run in to melee range, strike with the class's clip, flinch, fall, or cast a heal
   driveHero(o, h, T, hp, dead, moving, retreat, px, n, rdt) {
     const m = o.m, S = this.S, q = this.q, H = S.heroes[h], cls = o.p.cls, melee = cls === 'knight', clips = ATTACKS[cls] || ATTACKS.knight, hits = this.hitsBy[h] || [];
@@ -433,11 +437,11 @@ export class Expedition {
     const eh = this.last(this.ehitsOnHero[h], T), healer = q.party.findIndex(p => p.cls === 'wizard'), hi = healer < 0 ? 0 : healer;
     let cast = null;
     if (h === hi) { for (const e of q.heals || []) if (T >= e.t && T < e.t + 1.1) cast = ['mgHeal', T - e.t]; for (const e of q.enchants || []) if (T >= e.t && T < e.t + 1.1) cast = ['mgBless', T - e.t]; }
-    for (const c of q.casts || []) if (c.h === h) { const nm = { wall: 'block', volley: 'shoot', nova: 'mgNova' }[c.kind], ci = clipInfo(nm); if (T >= c.t && T < c.t + ci.d) cast = [nm, T - c.t]; }
+    for (const c of q.casts || []) if (c.h === h) { const nm = { wall: 'block', volley: 'shoot', nova: 'mgNova', dodge: 'block' }[c.kind], ci = clipInfo(nm); if (T >= c.t && T < c.t + ci.d) cast = [nm, T - c.t]; }
     const DASH = 2.4; x += dead ? 0 : DASH * env;
     if (dead) { name = 'die'; t = T - H.D; }
     else if (atk) { name = atk.nm; t = atk.t; }
-    else if (eh && T - eh.t < 0.75) { name = 'impact'; t = T - eh.t; }
+    else if (eh && T - eh.t < 0.75 && !this.dodged.has(eh.id)) { name = 'impact'; t = T - eh.t; }
     else if (cast) { name = cast[0]; t = cast[1]; }
     else if (env > 0.02) { name = 'runCalm'; t = T * 1.4; if (!fwd) rotY = -Math.PI / 2; }      // run to the enemy, then back
     else if (moving) { const v = this.vMarch || RUN_SPEED; name = v >= 2.8 ? 'runCalm' : 'walkCalm'; t = T * (v >= 2.8 ? Math.max(0.8, Math.min(1.5, v / 3.2)) : Math.max(0.7, v / 1.35)) + h * 0.3; if (retreat) rotY = -Math.PI / 2; }
@@ -492,6 +496,7 @@ export class Expedition {
     this.hfx = this.hero.map(() => ({ col: mk(new THREE.CylinderGeometry(0.3, 0.3, 1.7, 14, 1, true), 0xffd96a, 0.4, true), orb: mk(new THREE.SphereGeometry(0.14, 8, 6), 0xfff2a0, 0.9, true),
       sparks: Array.from({ length: 6 }, () => mk(new THREE.SphereGeometry(0.05, 6, 4), 0xfff2a0, 0.9, true)), bub: mk(new THREE.SphereGeometry(0.7, 14, 10), 0x9ad8ff, 0.25, true), halo: mk(new THREE.RingGeometry(0.45, 0.6, 20), 0x9ad8ff, 0.6, true) }));
     this.hfx.forEach(f => { f.halo.rotation.x = -Math.PI / 2; });
+    this.dodged = new Set(); this.warnActive = false;
     this.warn = Array.from({ length: 4 }, () => { const m = mk(new THREE.RingGeometry(0.35, 0.7, 24), 0xff3a2a, 0.7, true); m.rotation.x = -Math.PI / 2; return m; });
     this.dust = Array.from({ length: 10 }, () => mk(new THREE.SphereGeometry(0.18, 7, 5), 0xb09a78, 0.55, false));
     this.scorch = Array.from({ length: 4 }, () => { const m = mk(new THREE.CircleGeometry(0.9, 16), 0x1a1208, 0.5, false); m.rotation.x = -Math.PI / 2; return m; });
@@ -529,11 +534,13 @@ export class Expedition {
         f.sparks.forEach((m, i) => { m.visible = true; const ang = a * 5 + i * 1.05, r = 0.32 * (1 - a * 0.4); m.position.set(pos.x + Math.cos(ang) * r, ((a * 1.4 + i * 0.17) % 1.5), pos.z + Math.sin(ang) * r); m.material.opacity = 0.9 * k; });
       });
     }
+    this.warnActive = false;   // set below when a red circle is up
     // class skills: a volley of arrows at every enemy, a nova ring that rolls over the field
     const foes = this.foe.filter(o => !o.gone && o.m.visible && !o.dead);
     for (const c of q.casts || []) {
       const age = T - c.t, caster = this.hero[c.h]; if (age < 0 || age > 1.6 || !caster) continue; const cp = caster.m.position;
       if (c.kind === 'volley' && age >= 0.45 && age <= 0.85) foes.slice(0, 5).forEach((o, i) => { const a = this.arrows[7 - i], f = (age - 0.45) / 0.4, tp = o.m.position; a.visible = true; a.position.set(lerp(cp.x + 0.3, tp.x, f), lerp(0.55, 0.7, f) + Math.sin(f * Math.PI) * 0.05 * i, lerp(cp.z, tp.z, f)); a.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(tp.x - cp.x, 0.15, tp.z - cp.z).normalize()); });
+      if (c.kind === 'dodge' && age < 0.6) { const r = this.rings[1]; r.visible = true; r.position.set(cp.x, 0.08, cp.z); r.scale.setScalar(0.6 + age * 3); r.material.color.setHex(0x9bff9b); r.material.opacity = 0.85 * (1 - age / 0.6); }
       if (c.kind === 'nova' && age < 0.9) {
         const r = this.rings[5]; r.visible = true; r.position.set(cp.x, 0.07, cp.z); r.scale.setScalar(0.5 + age * 7); r.material.color.setHex(0xffa040); r.material.opacity = 0.75 * (1 - age / 0.9);
         foes.slice(0, 3).forEach((o, i) => { if (age > 0.35) { const f = this.rings[2 + i], k = (age - 0.35) / 0.55; f.visible = true; f.position.set(o.m.position.x, 0.07, o.m.position.z); f.scale.setScalar(0.5 + k * 2.2); f.material.color.setHex(0xff7a30); f.material.opacity = 0.8 * (1 - k); } });
@@ -545,11 +552,13 @@ export class Expedition {
       const e = S.events[i]; if (e.t > T + 1.2) break; if (e.type !== 'ehit') continue;
       const E = S.enemies[e.e]; if (!E || !E.boss) continue; const ho = this.hero[e.h]; if (!ho) continue;
       const age = T - (e.t + 0.28), p = ho.m.position;
+      if (this.dodged.has(e.id)) continue;
       if (age < 0 && age > -1.0 && wi < this.warn.length) { const w = this.warn[wi++], k = 1 + age; w.visible = true; w.position.set(p.x, 0.06, p.z); w.scale.setScalar(2.2 - 1.2 * k + 0.1 * Math.sin(T * 24)); w.material.opacity = 0.25 + 0.5 * k; }   // red circle: a heavy blow is coming
       if (age >= 0 && age < 0.4) this.shake = Math.max(this.shake, 0.16 * (1 - age / 0.4));
       if (age >= 0 && age < 0.8) for (let j = 0; j < 4 && di < this.dust.length; j++, di++) { const m = this.dust[di], ang = (e.id || i) * 0.7 + j * 1.6, r = 0.3 + age * 1.6; m.visible = true; m.position.set(p.x + Math.cos(ang) * r, 0.15 + age * 0.9, p.z + Math.sin(ang) * r); m.scale.setScalar(0.7 + age * 1.8); m.material.opacity = 0.5 * (1 - age / 0.8); }
       if (age >= 0 && age < 3.0 && sc < this.scorch.length) { const m = this.scorch[sc++]; m.visible = true; m.position.set(p.x, 0.04, p.z); m.scale.setScalar(0.8 + (E.kind === 'golem' ? 0.4 : 0.2)); m.material.opacity = 0.45 * (1 - age / 3.0); }
     }
+    this.warnActive = wi > 0;
   }
   update(T, rdt) {
     const q = this.q, S = q.script; T = clamp(T, 0, S.dur); this.T = T;

@@ -233,5 +233,8 @@ export const KO_PEOPLE = {
   '📜 Choices so far:': '📜 지금까지의 선택:',
   'Choices so far:': '지금까지의 선택:',
   'Skip': '넘어가기',
+  'Tap a hero inside a red circle to dodge!': '붉은 원 안의 영웅을 눌러 피하세요!',
+  '✓ Dodged!': '✓ 회피!',
+  'The party is already at its best.': '파티가 이미 최상의 상태입니다.',
   'hearty stew': '푸짐한 스튜', 'roast boar': '멧돼지 구이', 'honey bread': '꿀빵', 'mushroom pie': '버섯 파이', 'herbal tea': '약초차',
 };
