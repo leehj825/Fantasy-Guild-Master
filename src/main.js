@@ -2,6 +2,7 @@ import * as THREE from '../vendor/three.module.js';
 import { mergeStatic, buildChar, factionDecor, BUILDINGS, buildBuilding, buildHero, buildStaff, buildGoblin, buildMerchantCart, vox, mat, PROPS, setCharMaker } from './models.js';
 import { makeRigChar, makeRigGolem, makeRigOgre, autoAnim } from './rigchar.js';
 import { createTutorial } from './tutorial.js';
+import { Ads } from './ads.js';
 import { TAGS, makeProfile, tagMods, SEASON_NAMES, RESIDENTS, residentHome, ARCS, pickArc } from './people.js';
 import { sfx, unlock, setPref, getPrefs, setMusicMood, audioState } from './audio.js';
 import { tr, trHtml, initLang, setLang, getLang, onLangChange, translateStatic, LANGS } from './i18n.js';
@@ -864,6 +865,10 @@ function resolveQuest(q) {
     if (q.loot.arcane) G.mana += Math.round(q.loot.arcane * 5 * oreMul / (G.research.prospect ? 1.5 : 1));
     (q.script && q.script.enemies || []).filter(e => e.boss).forEach(e => codexAdd('bosses', e.kind));
     if (q.contested && G.flags.rival) { G.flags.rival.fame = Math.max(0, G.flags.rival.fame - 1); toast(`⚔ You beat ${G.flags.rival.name} to it!`); chron(`⚔ Beat ${G.flags.rival.name} to “${q.name.replace('Contested: ', '')}”.`); }
+    if (g >= 40 && !q.contested && !q.legend) {   // an optional ad doubles this quest's gold and loot (capped)
+      const lf = x => Math.round(x * oreMul), bonus = { gold: Math.min(400, g), ore: q.loot.ore ? lf(q.loot.ore) : 0, herbs: q.loot.herbs ? Math.round(q.loot.herbs * oreMul / (G.research.prospect ? 1.5 : 1)) : 0, wood: q.loot.wood ? Math.round(q.loot.wood * oreMul / (G.research.prospect ? 1.5 : 1)) : 0 };
+      showAdOffer('doubleLoot', `▶ Watch an ad: double the loot (+${bonus.gold}g${bonus.ore ? ' +' + bonus.ore + ' ore' : ''}${bonus.herbs ? ' +' + bonus.herbs + ' herbs' : ''}${bonus.wood ? ' +' + bonus.wood + ' wood' : ''})`, 9, () => { gain(hp, bonus.gold); G.ore += bonus.ore; G.herbs += bonus.herbs; G.wood += bonus.wood; toast(`🎁 Bonus loot: +${bonus.gold}g${bonus.ore ? ' +' + bonus.ore + ' ore' : ''}`); });
+    }
     G.questsDone++; if (q.mods && q.mods.includes('elite')) G.stats.elite = (G.stats.elite || 0) + 1; if (q.town) G.stats.town = (G.stats.town || 0) + 1; if (q.legend) legendWon(q); else if (q.special) chron(`✔ ${q.name}`);
     if (q.town) { repGain(q.rep || 3); toast(`🏘 ${q.who} thanks you warmly. (+${q.rep || 3} town reputation)`); }
     if (q.region && REGIONS[q.region]) { const rec = (G.regions[q.region] = G.regions[q.region] || { done: 0 }), before = regionLevel(q.region); rec.done++; if (regionLevel(q.region) > before) toast(`🗺 ${REGIONS[q.region].name} mastery level ${regionLevel(q.region)}! ${REGIONS[q.region].perk}`); }
@@ -974,12 +979,28 @@ function diveTick(q, dt) {
       if (q.offer.length) { sfx('chime'); toast('🎁 A relic awaits — choose one!'); if (!modalKind) openModal('relic'); }
     }
   }
-  if (S.wiped && q.elapsed >= S.endT) resolveDive(q, 'wiped');
+  if (S.wiped && q.elapsed >= S.endT) { if (diveRescueHold(q)) return; resolveDive(q, 'wiped'); }
+}
+// On a wipe-out the dive waits a few seconds so the player can accept a rescue offer: keep half of the unbanked loot and save the hero with the most XP.
+function diveRescueHold(q) {
+  const p = q.pending, worth = (p.gold || 0) + (p.ore || 0) * 3 + (p.mythril + p.scale + p.feather) * 150;
+  if (q.rescue === undefined) {
+    q.rescue = { until: G.time + 10, done: false }; const gold = Math.round((p.gold || 0) / 2);
+    if (worth >= 100 && showAdOffer('diveRescue', `▶ Watch an ad: rescue! Keep half the loot (+${gold}g) and save a hero`, 10, () => doDiveRescue(q), () => { q.rescue.done = true; })) return true;
+    q.rescue.done = true; return false;
+  }
+  return !q.rescue.done && G.time < q.rescue.until;
+}
+function doDiveRescue(q) {
+  const S = q.script, p = q.pending; for (const k of Object.keys(p)) if (typeof p[k] === 'number') p[k] = Math.ceil(p[k] / 2);
+  const txt = bankPending(q); let best = -1, bl = -1; q.party.forEach((pp, i) => { const hh = G.heroes.find(x => x.id === pp.id); if (hh && S.heroes[i].dies && hh.level > bl) { bl = hh.level; best = i; } });
+  if (best >= 0) { S.heroes[best].dies = false; toast(`🛟 Rescued! ${q.party[best].name} is saved. Banked: ${txt}`); } else toast(`🛟 Rescued! Banked: ${txt}`);
+  q.rescue.done = true; q.rescued = true; resolveDive(q, 'wiped');   // the run still ends here, but with half the loot and the hero kept
 }
 function resolveDive(q, mode) {
   const S = q.script, T = q.elapsed; let text;
   if (mode === 'recalled') text = `🏁 Banked & left after floor ${q.cleared} · ${bankPending(q)}`;
-  else text = `☠ Wiped out on floor ${S.floors.length}. Lost unbanked loot: ${rewardText(q.pending)}`;
+  else text = q.rescued ? `🛟 Wiped out on floor ${S.floors.length}, but rescued: half the loot was kept.` : `☠ Wiped out on floor ${S.floors.length}. Lost unbanked loot: ${rewardText(q.pending)}`;
   q.endText = text; G.diveBest = Math.max(G.diveBest, q.cleared);
   onQuestEnd(q, mode === 'recalled');
   q.state = 'done'; G.quests.splice(G.quests.indexOf(q), 1);
@@ -1165,7 +1186,7 @@ function updateEconomy(dt) {
   }
   for (const b of ofType('lumber')) { b.acc = (b.acc || 0) + dt; if (b.acc >= 8 / (1 + 0.3 * (b.level - 1))) { b.acc = 0; G.wood++; } }
   roadT -= dt; if (roadDirty && roadT <= 0) { roadT = 0.4; rebuildRoads(); }
-  tickRival(dt); tickWear(dt); tickWeekly(dt); tickAuto(dt); tickSeason(dt); tickFestival(dt); { const cot = ofType('cottage').length; if (cot) G.gold += cot * 0.06 * dt * (1 + 0.004 * (G.flags.rep ?? 10)); }
+  tickAdOffer(dt); tickRival(dt); tickWear(dt); tickWeekly(dt); tickAuto(dt); tickSeason(dt); tickFestival(dt); { const cot = ofType('cottage').length; if (cot) G.gold += cot * 0.06 * dt * (1 + 0.004 * (G.flags.rep ?? 10)); }
   // quests
   t.quest -= dt;
   if (t.quest <= 0) { t.quest = 14; if (G.quests.filter(q => q.state === 'open').length < boardSlots()) genQuest(); legendTick(); }
@@ -1225,6 +1246,20 @@ function tickRival(dt) {
     else { const l = Math.min(Math.round(G.gold * 0.1), 400 + 150 * G.rank); G.gold -= l; G.renown = Math.max(0, G.renown - 1); r.losses++; r.fame += 3; toast(`😤 ${r.name} won the town’s favour. (−${l}g, −1⭐)`); chron(`😤 ${r.name} outshone the guild.`); }
   }
 }
+// ---- rewarded ads: small optional offers (see ads.js). An offer is a chip above the toolbar; nothing happens unless the player taps it.
+let adOffer = null;
+function hideAdOffer() { adOffer = null; $('adOffer').classList.add('hidden'); }
+function showAdOffer(placement, text, secs, onReward, onExpire) {
+  if (!Ads.canShow(placement)) return false;
+  hideAdOffer(); adOffer = { placement, onReward, onExpire, t: secs };
+  $('adOfferText').textContent = tr(text); $('adOffer').classList.remove('hidden'); return true;
+}
+function tickAdOffer(dt) { if (!adOffer) return; adOffer.t -= dt; if (adOffer.t <= 0) { const o = adOffer; hideAdOffer(); if (o.onExpire) o.onExpire(); } }
+$('adOfferGo').onclick = async () => {
+  const o = adOffer; if (!o) return; hideAdOffer(); const ok = await Ads.show(o.placement);
+  if (ok) { sfx('goal'); o.onReward(); } else { toast('The ad was not completed — no reward.'); if (o.onExpire) o.onExpire(); }
+};
+$('adOfferNo').onclick = () => { const o = adOffer; hideAdOffer(); if (o && o.onExpire) o.onExpire(); };
 // ---- legacy: when the guild passes to the next generation, it earns Legacy Points to spend on permanent family perks
 const LEG_KEY = 'fantasy-guild-master-legacy';
 let LEGACY = { lp: 0, gen: 0, perks: {} }; try { Object.assign(LEGACY, JSON.parse(localStorage.getItem(LEG_KEY) || '{}')); } catch (e) { /* fresh family */ }
@@ -1608,7 +1643,8 @@ function modalContent() {
     case 'quests': {
       const rd = readyHeroes();
       const open = G.quests.filter(q => q.state === 'open'), act = G.quests.filter(q => q.state === 'active');
-      let h = `<div class="s">Ready heroes (geared & rested): <b>${rd.length}</b> / ${G.heroes.length} · 🏘 Town: <b>${REP_NAMES[repLevel()]}</b> (${Math.round(G.flags.rep ?? 10)}/100)</div>`;
+      const tired = G.heroes.filter(x => x.state !== 'quest' && x.state !== 'leaving' && x.stamina < 45);
+      let h = (tired.length >= 2 && open.length && Ads.canShow('restGuild') ? `<div class="row" style="border-color:#ffd24a"><div class="grow"><div class="t">😴 ${tired.length} heroes are too tired to go out</div><div class="s">Watch a short ad to rest them all to full stamina.</div></div><button class="act" data-act="adrest">▶ Rest everyone</button></div>` : '') + `<div class="s">Ready heroes (geared & rested): <b>${rd.length}</b> / ${G.heroes.length} · 🏘 Town: <b>${REP_NAMES[repLevel()]}</b> (${Math.round(G.flags.rep ?? 10)}/100)</div>`;
       h += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0"><button class="act" data-act="sendall">▶ Send all possible</button><button class="act ${G.flags.autoQ ? '' : 'red'}" data-act="autoq">${G.flags.autoQ ? '⏱ Auto-send: ON' : '⏱ Auto-send: OFF'}</button>${G.flags.autoQ ? `<button class="act red" data-act="automin">min ${G.flags.autoMin || 60}%</button>` : ''}</div>`;
       if (first('portal')) {
         const dq = G.quests.find(q => q.dive);
@@ -1642,6 +1678,7 @@ function modalContent() {
     case 'settings': return ['⚙ Settings & Save', `
       <div class="row"><div class="grow"><div class="t">🔊 Sound</div><div class="s">Procedural sound effects and music (no downloads).</div></div><button class="act ${getPrefs().sfx ? '' : 'red'}" data-act="sfxtoggle">Effects: ${getPrefs().sfx ? 'On' : 'Off'}</button><button class="act ${getPrefs().music ? '' : 'red'}" data-act="musictoggle">Music: ${getPrefs().music ? 'On' : 'Off'}</button></div>
       <div class="row"><div class="grow"><div class="t">🌐 Language</div><div class="s">English / 한국어</div></div>${Object.entries(LANGS).map(([k, n]) => `<button class="act ${getLang() === k ? '' : 'red'}" style="${getLang() === k ? 'outline:2px solid #fff8' : ''}" data-act="lang" data-l="${k}">${n}</button>`).join('')}</div>
+      <div class="row"><div class="grow"><div class="t">📺 Rewarded ads</div><div class="s">Optional offers: double a quest's loot, rest tired heroes, rescue a wiped dive. Never forced.</div></div><button class="act ${Ads.enabled ? '' : 'red'}" data-act="adstoggle">${Ads.enabled ? 'On' : 'Off'}</button></div>
       <div class="row"><div class="grow"><div class="t">🎚 Graphics</div><div class="s">Auto lowers the resolution when the game runs slowly. Low turns shadows off for the smoothest play.</div></div><button class="act red" data-act="gfxcycle">${{ auto: 'Auto', high: 'High', low: 'Low' }[gfx]}</button></div>
       <div class="row"><div class="grow"><div class="t">🛤 Auto paths</div><div class="s">Link every new building to the street network with a short cobble path (a few coins).</div></div><button class="act ${G.flags.noAutoRoad ? 'red' : ''}" data-act="autoroadtoggle">${G.flags.noAutoRoad ? 'Off' : 'On'}</button></div>
       <div class="row"><div class="grow"><div class="t">📂 Save slots & export</div><div class="s">Three extra slots, plus copy/paste a save between devices.</div></div><button class="act" data-act="saveio">Open</button></div>
@@ -1861,6 +1898,8 @@ const ACT = {
   sendall() { sendAll(0); },
   chron() { openModal('chronicle'); },
   relmap() { openModal('relmap'); },
+  async adrest() { const ok = await Ads.show('restGuild'); if (!ok) return toast('The ad was not completed — no reward.'); let n = 0; for (const h of G.heroes) if (h.state !== 'quest' && h.state !== 'leaving' && h.stamina < 100) { h.stamina = 100; n++; floatText(h.pos, '✨', '#9bff9b'); } sfx('goal'); toast(`✨ ${n} heroes are rested and ready.`); renderModal(true); },
+  adstoggle() { Ads.setEnabled(!Ads.enabled); },
   gfxcycle() { gfx = { auto: 'high', high: 'low', low: 'auto' }[gfx]; quality = gfx === 'low' ? 0.6 : 1; try { localStorage.setItem(GFX_KEY, gfx); } catch (e) { /* ignore */ } resize(); },
   codex() { openModal('codex'); },
   legacy() { openModal('legacy'); },
@@ -2466,4 +2505,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__renderer = renderer; window.__scene = scene; window.__api = { applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__renderer = renderer; window.__scene = scene; window.__api = { dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
