@@ -194,3 +194,6 @@ body.watching #tutorial,body.placing #tutorial{display:none}
   #watchLog .lg{padding:1px 5px}
   .hpbar{font-size:9px}.hpbar b{width:32px;height:5px}.dnum{font-size:14px!important}
 }
+
+#inboxPill.new{animation:pulse 1.4s ease-in-out infinite;border-color:#ffd24a}
+@keyframes pulse{50%{transform:scale(1.07);box-shadow:0 0 10px #ffd24a}}

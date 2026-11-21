@@ -16,6 +16,30 @@ const flag = m => { m.castShadow = m.receiveShadow = true; return m; };
 const BONES = ['hips', 'torso', 'head', 'hipL', 'kneeL', 'ankL', 'hipR', 'kneeR', 'ankR', 'shL', 'elL', 'wrL', 'shR', 'elR', 'wrR'];
 const PARENT = { torso: 'hips', head: 'torso', hipL: 'hips', kneeL: 'hipL', ankL: 'kneeL', hipR: 'hips', kneeR: 'hipR', ankR: 'kneeR', shL: 'torso', elL: 'shL', wrL: 'elL', shR: 'torso', elR: 'shR', wrR: 'elR' };
 
+// ------------------------------------------------------------------ fewer draw calls
+// A character is ~35 little boxes. Everything that moves together (one joint) and has a plain lit material is baked into ONE mesh with
+// vertex colours, so a hero costs ~13 draw calls instead of ~35 (and about as many again in the shadow pass).
+const MERGED_MAT = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+function mergeJoints(g, j) {
+  g.updateMatrixWorld(true);
+  const joints = new Set(Object.values(j)), inv = new THREE.Matrix4(), rel = new THREE.Matrix4();
+  for (const jt of Object.values(j)) {
+    const take = [];
+    const walk = o => { for (const c of o.children) { if (joints.has(c)) continue; if (c.isMesh) { const m = c.material; if (m && m.isMeshLambertMaterial && !m.transparent && !(m.emissiveIntensity > 0 && m.emissive && m.emissive.getHex() !== 0)) take.push(c); } else walk(c); } };
+    walk(jt); if (take.length < 2) continue;
+    inv.copy(jt.matrixWorld).invert(); let nv = 0, ni = 0; const geos = take.map(m => { const gm = m.geometry.clone(); rel.multiplyMatrices(inv, m.matrixWorld); gm.applyMatrix4(rel); nv += gm.attributes.position.count; ni += gm.index ? gm.index.count : gm.attributes.position.count; return gm; });
+    const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), col = new Float32Array(nv * 3), idx = new Uint32Array(ni); let vo = 0, io = 0;
+    geos.forEach((gm, k) => {
+      const c = take[k].material.color, n = gm.attributes.position.count; pos.set(gm.attributes.position.array, vo * 3); nor.set(gm.attributes.normal.array, vo * 3);
+      for (let i = 0; i < n; i++) { col[(vo + i) * 3] = c.r; col[(vo + i) * 3 + 1] = c.g; col[(vo + i) * 3 + 2] = c.b; }
+      if (gm.index) for (let i = 0; i < gm.index.count; i++) idx[io++] = gm.index.array[i] + vo; else for (let i = 0; i < n; i++) idx[io++] = vo + i;
+      vo += n; gm.dispose();
+    });
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    const mesh = new THREE.Mesh(geo, MERGED_MAT); mesh.castShadow = mesh.receiveShadow = true; jt.add(mesh);
+    take.forEach(m => { m.parent.remove(m); m.geometry.dispose(); });
+  }
+}
 export function makeRigChar(o = {}, style = 'voxel') {
   const round = style === 'round';
   const skin = o.skin ?? 0xf0c8a0, pants = o.pants ?? 0x5a4636, boots = o.boots ?? 0x3b2a18, shirt = o.shirt ?? 0xd8d0c0, sleeve = o.sleeve ?? shirt, glove = o.glove ?? skin;
@@ -121,6 +145,7 @@ export function makeRigChar(o = {}, style = 'voxel') {
   if (dwarf) root.scale.set(1.22, 1, 1.12);
   g.scale.setScalar(0.85);
   const hipsRest = J.hips[1];
+  mergeJoints(g, j);
   g.userData.rig = { root, hips: j.hips, j, hipsRest };
   const dummy = () => new THREE.Group();   // old code swings legs/arms by hand; with a rig that is a no-op and the clips do the work
   g.userData.legs = [dummy(), dummy()]; g.userData.arms = [dummy(), dummy()];
@@ -187,9 +212,10 @@ export class Animator {
 }
 
 // Picks idle / walk / run from how fast a character actually moved since the last call (heroes, staff, raiders around the base).
-export function autoAnim(m, dt) {
+export function autoAnim(m, dt, visible = true) {
   const a = m.userData.anim; if (!a || dt <= 0) return;
   const u = m.userData, lp = u._lp || (u._lp = m.position.clone());
+  if (!visible) { lp.copy(m.position); return; }   // off screen: nobody sees the pose, so skip the work
   const v = Math.hypot(m.position.x - lp.x, m.position.z - lp.z) / dt; lp.copy(m.position);
   u._v = (u._v ?? v) * 0.8 + v * 0.2;                       // smoothed, so a one-frame stop does not flicker
   const want = u._v > 2.6 ? 'runCalm' : u._v > 0.25 ? 'walkCalm' : 'idleEase';
@@ -223,6 +249,7 @@ export function makeRigGolem() {
   put('torso', st(1.12, 0.72, 0.7, 0, 0.95, 0), vox(0.96, 0.1, 0.62, 0x5d9b45, 0, 1.62, 0), glow(0.3, 0.3, 0.05, 0, 1.25, 0.36, 1.7));   // moss on the shoulders, a glowing core
   put('head', st(0.56, 0.5, 0.52, 0, 1.58, 0.02), glow(0.14, 0.09, 0.04, -0.15, 1.82, 0.28), glow(0.14, 0.09, 0.04, 0.15, 1.82, 0.28), glow(0.4, 0.07, 0.04, 0, 1.64, 0.28, 1.1), vox(0.5, 0.1, 0.46, 0x5d9b45, 0, 2.06, 0));
   g.scale.setScalar(1.5);
+  mergeJoints(g, j);
   g.userData.rig = { root, hips: j.hips, j, hipsRest: J.hips[1] };
   const dummy = () => new THREE.Group(); g.userData.legs = [dummy(), dummy()]; g.userData.arms = [dummy(), dummy()];
   g.userData.anim = new Animator(g.userData.rig);
@@ -232,8 +259,8 @@ export function makeRigGolem() {
 
 // ------------------------------------------------------------------ the Ogre Warchief on the same rig
 // A hulking green brute: small head, huge belly and shoulders, thick arms, a spiked club in the right hand.
-export function makeRigOgre() {
-  const skin = 0x8aa84e, dark = 0x6e8a3e, cloth = 0x6b4a2a, belt = 0x3a2a1a, boots = 0x2a1a0a;
+export function makeRigOgre(o = {}) {
+  const skin = o.skin ?? 0x8aa84e, dark = o.dark ?? 0x6e8a3e, cloth = o.cloth ?? 0x6b4a2a, belt = o.belt ?? 0x3a2a1a, boots = o.boots ?? 0x2a1a0a, eye = o.eye ?? 0xffe45a, clubC = o.clubHead ?? 0x6b4a2a, spikeC = o.spike ?? 0xb8bcc4, tusk = o.tusk ?? 0xf4f0e6;
   const J = { hips: [0, 0.58, 0], torso: [0, 0.7, 0], head: [0, 1.2, 0] };
   for (const [s, sx] of [['L', 1], ['R', -1]]) {
     J['hip' + s] = [sx * 0.24, 0.58, 0]; J['knee' + s] = [sx * 0.24, 0.32, 0]; J['ank' + s] = [sx * 0.24, 0.1, 0];
@@ -253,11 +280,12 @@ export function makeRigOgre() {
   }
   put('hips', vox(0.7, 0.22, 0.46, cloth, 0, 0.5, 0), vox(0.74, 0.06, 0.5, belt, 0, 0.66, 0), vox(0.14, 0.08, 0.05, GOLD, 0, 0.65, 0.26));
   put('torso', vox(0.98, 0.6, 0.62, skin, 0, 0.72, 0), vox(0.8, 0.34, 0.2, dark, 0, 0.72, 0.36), vox(0.9, 0.2, 0.55, dark, 0, 1.12, 0));          // chest, belly, hunched shoulders
-  put('head', vox(0.5, 0.42, 0.46, skin, 0, 1.18, 0.04), vox(0.14, 0.08, 0.04, 0xffe45a, -0.12, 1.4, 0.28, 0xffe45a, 0.8), vox(0.14, 0.08, 0.04, 0xffe45a, 0.12, 1.4, 0.28, 0xffe45a, 0.8),
-    vox(0.5, 0.1, 0.12, dark, 0, 1.5, 0.22), vox(0.4, 0.14, 0.12, boots, 0, 1.2, 0.3), cone(0.05, 0.18, 0xf4f0e6, -0.13, 1.18, 0.34, 4), cone(0.05, 0.18, 0xf4f0e6, 0.13, 1.18, 0.34, 4), vox(0.52, 0.1, 0.5, belt, 0, 1.58, 0.02));
-  const club = new THREE.Group(); club.add(vox(0.09, 0.8, 0.09, 0x7a4f28, 0, -0.2, 0), vox(0.3, 0.42, 0.3, 0x6b4a2a, 0, 0.5, 0), vox(0.1, 0.1, 0.1, 0xb8bcc4, 0.18, 0.62, 0), vox(0.1, 0.1, 0.1, 0xb8bcc4, -0.18, 0.62, 0), vox(0.1, 0.1, 0.1, 0xb8bcc4, 0, 0.62, 0.18), vox(0.1, 0.1, 0.1, 0xb8bcc4, 0, 0.62, -0.18));
+  put('head', vox(0.5, 0.42, 0.46, skin, 0, 1.18, 0.04), vox(0.14, 0.08, 0.04, eye, -0.12, 1.4, 0.28, eye, 0.8), vox(0.14, 0.08, 0.04, eye, 0.12, 1.4, 0.28, eye, 0.8),
+    vox(0.5, 0.1, 0.12, dark, 0, 1.5, 0.22), vox(0.4, 0.14, 0.12, boots, 0, 1.2, 0.3), cone(0.05, 0.18, tusk, -0.13, 1.18, 0.34, 4), cone(0.05, 0.18, tusk, 0.13, 1.18, 0.34, 4), vox(0.52, 0.1, 0.5, belt, 0, 1.58, 0.02));
+  const club = new THREE.Group(); club.add(vox(0.09, 0.8, 0.09, 0x7a4f28, 0, -0.2, 0), vox(0.3, 0.42, 0.3, clubC, 0, 0.5, 0), vox(0.1, 0.1, 0.1, spikeC, 0.18, 0.62, 0), vox(0.1, 0.1, 0.1, spikeC, -0.18, 0.62, 0), vox(0.1, 0.1, 0.1, spikeC, 0, 0.62, 0.18), vox(0.1, 0.1, 0.1, spikeC, 0, 0.62, -0.18));
   const holder = new THREE.Group(); holder.add(club); holder.quaternion.set(0.7931, -0.1585, 0.1425, 0.5706); holder.position.set(-0.003, -0.1, -0.002); j.wrR.add(holder);
-  g.scale.setScalar(1.55);
+  g.scale.setScalar(o.scale ?? 1.55);
+  mergeJoints(g, j);
   g.userData.rig = { root, hips: j.hips, j, hipsRest: J.hips[1] };
   const dummy = () => new THREE.Group(); g.userData.legs = [dummy(), dummy()]; g.userData.arms = [dummy(), dummy()];
   g.userData.anim = new Animator(g.userData.rig);

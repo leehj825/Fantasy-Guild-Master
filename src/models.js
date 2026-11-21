@@ -278,6 +278,12 @@ export const BUILDINGS = {
   smelter: { name: 'Smeltery',                w: 3, d: 2, cost: 350, renown: 3, rank: 1, icon: '🔩', desc: 'Smelts 2 Iron Ore into 1 Ingot. Steel and Mythril weapons need ingots. Next to a Forge: +25% speed for both.' },
   tower:   { name: 'Guard Tower',              w: 2, d: 2, cost: 400, renown: 3, rank: 1, icon: '🗼', desc: 'Archers add +6 defense and fight beside your guards when raiders attack.' },
   market:  { name: 'Market Stall',             w: 3, d: 2, cost: 120, renown: 0, icon: '🛒', desc: 'Buy raw materials. Boosts passive gold slightly.' },
+  road:    { name: 'Cobble Path',             w: 1, d: 1, cost: 6,   renown: 0, icon: '🟫', desc: 'Paving: heroes and villagers walk 25% faster on it. Keep placing to lay a whole road; press ✖ when done.', decor: true, walkable: true, road: true },
+  hill:    { name: 'Grassy Hill',             w: 3, d: 3, cost: 120, renown: 0, icon: '⛰️', desc: 'A raised mound with a view: Guard Towers within 5 tiles gain +3 defense and the heroes like the scenery (+2% mood, up to 3 hills).', decor: true },
+  pond:    { name: 'Pond',                    w: 3, d: 2, cost: 90,  renown: 0, icon: '🪷', desc: 'A little pond with lily pads: +5% happiness upkeep (up to 3 count).', decor: true },
+  flowers: { name: 'Flower Bed',              w: 1, d: 1, cost: 20,  renown: 0, icon: '🌷', desc: 'Flowers you can walk through: +1% happiness upkeep each (10 flowers and trees count).', decor: true, walkable: true },
+  sapling: { name: 'Young Tree',              w: 1, d: 1, cost: 15,  renown: 0, icon: '🌳', desc: 'Plant a tree inside the town: +1% happiness upkeep each (10 flowers and trees count).', decor: true },
+  palisade:{ name: 'Palisade Wall',           w: 3, d: 1, cost: 70,  renown: 0, icon: '🧱', desc: 'A wall of sharpened logs: +2 raid defense per segment (up to 8 segments count).' },
   lumber:  { name: 'Lumber Camp',             w: 3, d: 2, cost: 160, renown: 0, icon: '🪓', desc: 'Woodcutters bring in Pine Wood: +1 wood every 8 s (faster with levels).' },
   monument:{ name: 'Grand Monument',          w: 3, d: 3, cost: 4000, renown: 100, rank: 2, icon: '🏛️', desc: 'A towering monument to the guild: quest gold +5% and +10% happiness upkeep. A showpiece for rich guilds.', decor: true },
   cottage: { name: 'Cottage',                 w: 2, d: 2, cost: 140, renown: 1, rank: 1, icon: '🏠', desc: 'Homes for villagers: +1 population capacity, a family moves in and pays a little tax.' },
@@ -521,6 +527,25 @@ export function factionDecor(kind) {
   return g;
 }
 
+// Draw-call saver for finished buildings: every plain mesh that shares a material is baked into one (a tavern is ~150 boxes). Anything animated by
+// the game (listed in some userData: flames, swirls, lids...), glowing, transparent or instanced is left alone so it still moves and glows.
+export function mergeStatic(root) {
+  root.updateMatrixWorld(true); const keep = new Set();
+  const protect = o => { if (o && o.isObject3D) o.traverse(c => keep.add(c)); };
+  root.traverse(o => { for (const v of Object.values(o.userData || {})) { if (Array.isArray(v)) v.forEach(protect); else protect(v); } });
+  const byMat = new Map(), inv = new THREE.Matrix4().copy(root.matrixWorld).invert(), rel = new THREE.Matrix4();
+  root.traverse(o => { if (!o.isMesh || o.isInstancedMesh || keep.has(o) || !o.material || o.material.isMaterial === false || Array.isArray(o.material)) return; const m = o.material; if (m.transparent || (m.emissive && m.emissive.getHex() !== 0 && m.emissiveIntensity > 0) || !m.isMeshLambertMaterial) return; if (!byMat.has(m)) byMat.set(m, []); byMat.get(m).push(o); });
+  for (const [m, list] of byMat) {
+    if (list.length < 2) continue; let nv = 0, ni = 0;
+    const geos = list.map(o => { const g = o.geometry.clone(); rel.multiplyMatrices(inv, o.matrixWorld); g.applyMatrix4(rel); nv += g.attributes.position.count; ni += g.index ? g.index.count : g.attributes.position.count; return g; });
+    const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), uv = new Float32Array(nv * 2), idx = new Uint32Array(ni); let vo = 0, io = 0;
+    for (const g of geos) { const n = g.attributes.position.count; pos.set(g.attributes.position.array, vo * 3); nor.set(g.attributes.normal.array, vo * 3); if (g.attributes.uv) uv.set(g.attributes.uv.array, vo * 2); if (g.index) for (let i = 0; i < g.index.count; i++) idx[io++] = g.index.array[i] + vo; else for (let i = 0; i < n; i++) idx[io++] = vo + i; vo += n; g.dispose(); }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    const mesh = new THREE.Mesh(geo, m); mesh.castShadow = mesh.receiveShadow = true; root.add(mesh);
+    list.forEach(o => { o.parent.remove(o); o.geometry.dispose(); });
+  }
+  return root;
+}
 export function buildBuilding(type, variant = 0) {
   switch (type) {
     case 'tavern': return tavern();
@@ -539,6 +564,12 @@ export function buildBuilding(type, variant = 0) {
     case 'campfire': return campfire();
     case 'weapons': return grp(at(weaponRack(), 0, 0, 0), at(shieldRack(), 0, 0, 0).translateX(0));
     case 'cart': return grp(at(cartProp(0), -0.7, 0, 0), at(cartProp(1), 0.7, 0, 0.6).rotateY(-0.4));
+    case 'hill': { const g = new THREE.Group(); g.add(cyl(1.45, 1.5, 0.3, 0x58a846, 0, 0, 0, 14), cyl(1.1, 1.35, 0.3, 0x5fb04c, 0, 0.3, 0, 14), cyl(0.7, 0.95, 0.3, 0x68ba54, 0, 0.6, 0, 12), cyl(0.3, 0.5, 0.2, 0x72c45c, 0, 0.9, 0, 10), vox(0.4, 0.3, 0.35, 0x8a8f98, 0.9, 0.05, 0.6), vox(0.3, 0.22, 0.3, 0x7a7f87, -1.0, 0.05, -0.5)); g.add(at(cone(0.3, 0.7, 0x3f8a3a, 0, 0, 0, 7), 0.15, 1.1, 0.1)); return g; }
+    case 'pond': { const g = new THREE.Group(); g.add(cyl(1.5, 1.55, 0.14, 0x8a8f98, 0, 0, 0, 20), cyl(1.38, 1.38, 0.08, 0x3b8fd8, 0, 0.1, 0, 20, 0x1d5fa8, 0.5), sph(0.2, 0x5aa03a, -0.6, 0.12, 0.2, 0, 0, 6), sph(0.16, 0x6bbf4a, 0.5, 0.12, -0.3, 0, 0, 6), sph(0.08, 0xffc0e0, 0.5, 0.2, -0.3, 0, 0, 6)); g.scale.set(1, 1, 0.66); return g; }
+    case 'flowers': { const g = new THREE.Group(); const C = [0xff6a8a, 0xffd24a, 0xffffff, 0xb070ff, 0xff9a4a]; g.add(vox(0.9, 0.05, 0.9, 0x5aa03a, 0, 0, 0)); for (let i = 0; i < 7; i++) g.add(sph(0.07, C[i % 5], -0.32 + (i % 3) * 0.32, 0.05, -0.3 + Math.floor(i / 3) * 0.3, 0, 0, 5)); return g; }
+    case 'sapling': return grp(cyl(0.07, 0.09, 0.5, 0x7a4f28, 0, 0, 0, 6), cone(0.38, 0.8, 0x3f8a3a, 0, 0.35, 0, 7), cone(0.28, 0.6, 0x4aa044, 0, 0.8, 0, 7));
+    case 'road': return vox(1.0, 0.05, 1.0, 0x8f8a80, 0, 0, 0);
+    case 'palisade': { const g = new THREE.Group(); for (let i = 0; i < 7; i++) { const x = -1.35 + i * 0.45; g.add(cyl(0.17, 0.19, 0.95 + (i % 2) * 0.12, 0x7a4f28, x, 0, 0, 7), cone(0.17, 0.3, 0x7a4f28, x, 0.95 + (i % 2) * 0.12, 0, 7)); } g.add(vox(2.9, 0.1, 0.12, 0x5a3a1a, 0, 0.45, 0.16), vox(2.9, 0.1, 0.12, 0x5a3a1a, 0, 0.8, 0.16)); return g; }
     case 'lumber': { const g = new THREE.Group(); g.add(vox(1.3, 0.2, 1.1, 0x6b4a2a, -0.7, 0, -0.1), vox(1.1, 0.7, 0.9, 0x8a5a2b, -0.7, 0.2, -0.1), vox(0.3, 0.5, 0.06, 0x3b2a18, -0.7, 0.2, 0.37)); g.add(roof(1.5, 1.3, 0.55, 0x7a3a1a, 0.9, 'x').translateX(-0.7).translateZ(-0.1)); g.add(logs(0.9, 0.2, 0.3), logs(1.2, -0.3, -0.2), stump(0.8, 0.7), stump(1.3, 0.55)); const ax = vox(0.05, 0.4, 0.05, 0x5a3a1a, 0.5, 0, 0.8); g.add(ax, vox(0.2, 0.12, 0.04, 0xb8bcc4, 0.58, 0.32, 0.8)); return g; }
     case 'monument': { const g = new THREE.Group(); g.add(vox(2.4, 0.3, 2.4, 0x9aa0a8, 0, 0, 0), vox(1.8, 0.3, 1.8, 0xb8bcc4, 0, 0.3, 0), vox(1.2, 0.3, 1.2, 0xc9ccd2, 0, 0.6, 0), vox(0.5, 2.6, 0.5, 0xd0d3da, 0, 0.9, 0), cone(0.34, 0.7, 0xe8c04a, 0, 3.5, 0, 4), sph(0.16, 0xffd24a, 0, 4.1, 0, 0xffd24a, 1.2), vox(0.9, 0.12, 0.12, 0xe8c04a, 0, 2.3, 0.28), vox(0.12, 0.12, 0.9, 0xe8c04a, 0, 2.3, 0.28)); return g; }
     case 'cottage': { const g = new THREE.Group(); g.add(vox(1.7, 0.2, 1.5, 0x8a8f98, 0, 0, 0), vox(1.5, 0.85, 1.3, PLASTER, 0, 0.2, 0), vox(0.34, 0.6, 0.06, 0x6b4a2a, 0, 0.2, 0.67), vox(0.3, 0.3, 0.06, 0x8fd4ff, -0.5, 0.55, 0.67, 0xffd24a, 0.4), vox(0.3, 0.3, 0.06, 0x8fd4ff, 0.5, 0.55, 0.67, 0xffd24a, 0.4), vox(0.26, 0.5, 0.26, 0x8a8f98, 0.5, 1.0, -0.3)); g.add(roof(1.9, 1.7, 0.8, SHINGLE, 1.05, 'x')); return g; }
@@ -630,12 +661,18 @@ export const LOOKS = {
   elfBlond:    { skin: 0xf4d0a8, shirt: 0x5aa03a, sleeve: 0x5aa03a, pants: 0x6b4a2a, boots: 0x5a3a1a, hair: 0xf0d46a, longHair: true, ears: true, bow: true, quiver: true, vest: 0x3f7a2c },
   elfHood:     { skin: 0xf4d0a8, shirt: 0x3f7a2c, sleeve: 0x3f7a2c, pants: 0x5a4636, boots: 0x5a3a1a, hat: 'hood', hatColor: 0x3f7a2c, cape: 0x3f7a2c, bow: true, quiver: true, ears: false },
   elfGreen:    { skin: 0xf4d0a8, shirt: 0x7ab648, sleeve: 0xe9d3a6, pants: 0x6b4a2a, boots: 0x5a3a1a, hair: 0xf0d46a, ears: true, vest: 0x7ab648 },
+  rogueA:      { skin: 0xe6b88a, shirt: 0x2f2f3a, sleeve: 0x2f2f3a, pants: 0x1f1f28, boots: 0x15151a, hat: 'hood', hatColor: 0x26262e, cape: 0x1c1c24, sword: true, belt: 0x5a1d1d, glove: 0x15151a },
+  rogueB:      { skin: 0xf0c8a0, shirt: 0x5a3a2a, sleeve: 0x5a3a2a, vest: 0x2a2a30, pants: 0x2a2a30, boots: 0x15151a, hat: 'cap', hatColor: 0x7a1d1d, hair: 0x2a1a10, sword: true, ears: false },
+  clericA:     { skin: 0xf0c8a0, shirt: 0xf4f0e6, sleeve: 0xf4f0e6, skirt: 0xf4f0e6, vest: 0xe8c04a, hair: 0xc8a060, hat: 'cap', hatColor: 0xf4f0e6, staff: 0xffe27a, pants: 0xd8d0c0, belt: 0xe8c04a },
+  clericB:     { skin: 0xe6b88a, shirt: 0xe9e2d0, sleeve: 0xe9e2d0, skirt: 0xe9e2d0, vest: 0x3b6cc0, hair: 0x4a2c12, longHair: true, staff: 0xaee6ff, pants: 0xd8d0c0, belt: 0xc9962f },
+  alchemistA:  { skin: 0xf0c8a0, shirt: 0x7ab648, sleeve: 0xe9d3a6, apron: 0x5a4636, hat: 'cap', hatColor: 0x2aa9a0, hair: 0x6b4a2a, pack: true, pants: 0x4a3a2a, glove: 0x7a5a3a },
+  alchemistB:  { skin: 0xe6b88a, shirt: 0xb06a3a, sleeve: 0xb06a3a, apron: 0xe9d3a6, hat: 'cap', hatColor: 0x7b3fb5, hair: 0xd8661a, pack: true, pants: 0x3a2a22, glove: 0x5a3a1a },
   villagerA:   { skin: 0xf0c8a0, shirt: 0xf4f0e6, sleeve: 0xf4f0e6, vest: 0x3b6cc0, pants: 0x5a4636, hair: 0x6b4a2a },
   villagerB:   { skin: 0xe6b88a, shirt: 0xf4f0e6, sleeve: 0xf4f0e6, vest: 0xb06a3a, pants: 0x4a3a2a, hair: 0x4a2c12, hat: 'cap', hatColor: 0x8a5a2b },
   guardA:      { skin: 0xf0c8a0, plate: 0x9aa0a8, shirt: 0x9aa0a8, sleeve: 0x7a7f87, pants: 0x4a4d54, hat: 'guard', spear: true, cape: 0xc0392b, shield: { body: 0x9aa0a8, trim: 0xc0392b } },
   guardB:      { skin: 0xe6b88a, plate: 0xb8bcc4, shirt: 0xb8bcc4, sleeve: 0x8a8f98, pants: 0x4a4d54, hat: 'guard', sword: true, shield: { body: 0xb8bcc4, trim: 0xe8c04a } },
 };
-const CLASS_LOOKS = { knight: ['knightA', 'knightB', 'knightC'], ranger: ['elfBlond', 'elfHood', 'elfGreen'], wizard: ['wizardBlue', 'wizardPurple'] };
+const CLASS_LOOKS = { knight: ['knightA', 'knightB', 'knightC'], ranger: ['elfBlond', 'elfHood', 'elfGreen'], wizard: ['wizardBlue', 'wizardPurple'], rogue: ['rogueA', 'rogueB'], cleric: ['clericA', 'clericB'], alchemist: ['alchemistA', 'alchemistB'] };
 // Which builder makes people: the classic box figure, or a rigged one (src/rigchar.js) that plays motion clips. Set once at boot.
 let charMaker = makeChar;
 export const setCharMaker = f => { charMaker = f || makeChar; };

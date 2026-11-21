@@ -29,6 +29,9 @@ const ENEMY = {
   chief:  { name: 'Bandit Chief', make: () => bandit(true), h: 2.3, boss: true },
   wisp:   { name: 'Wisp', make: () => wisp(), h: 1.6 },
   imp:    { name: 'Imp', make: () => imp(), h: 1.3 },
+  frostgiant: { name: 'Frost Giant', make: () => (BIG.frostgiant ? BIG.frostgiant() : ogre({ skin: 0xb8d8f0, cloth: 0x4a6a8a, apron: 0x2a3a5a, scale: 2.4 })), h: 3.8, boss: true },
+  duneking: { name: 'Dune Warlord', make: () => (BIG.duneking ? BIG.duneking() : ogre({ skin: 0xd8b06a, cloth: 0x7a2a1a, apron: 0x5a3a1a, scale: 2.2 })), h: 3.4, boss: true },
+  lich: { name: 'Bone Lich', make: () => (BIG.lich ? BIG.lich() : charEnemy({ skin: 0xe8e4d0, shirt: 0x3a1a5a, sleeve: 0x3a1a5a, skirt: 0x3a1a5a, pants: 0x2a1048, hat: 'wizard', hatColor: 0x2a1048, beard: 0xcfd8c0, beardLen: 0.3, staff: 0x7aff7a }, 2.3)), h: 3.0, boss: true },
   golem:  { name: 'Ancient Golem', make: () => (BIG.golem ? BIG.golem() : golem()), h: 3.4, boss: true },
 };
 const BIG = {}; export const setBigMakers = m => Object.assign(BIG, m);   // main.js sets the rigged golem / ogre when rigged bodies are on
@@ -53,8 +56,8 @@ function wolf() {
   g.userData.attack = () => { };
   return g;
 }
-function ogre() {
-  const g = charEnemy({ skin: 0x8aa84e, shirt: 0x7a5a3a, sleeve: 0x8aa84e, pants: 0x5a4636, boots: 0x2a1a0a, hammer: true, belt: 0x3a2a1a, apron: 0x6b4a2a }, 2.1);
+function ogre(o = {}) {
+  const g = charEnemy({ skin: o.skin ?? 0x8aa84e, shirt: o.cloth ?? 0x7a5a3a, sleeve: o.skin ?? 0x8aa84e, pants: o.cloth ?? 0x5a4636, boots: 0x2a1a0a, hammer: true, belt: 0x3a2a1a, apron: o.apron ?? 0x6b4a2a }, o.scale ?? 2.1);
   g.children[0].add(cone(0.05, 0.16, 0xf4f0e6, -0.1, 0.52, 0.2, 4), cone(0.05, 0.16, 0xf4f0e6, 0.1, 0.52, 0.2, 4));
   return g;
 }
@@ -99,8 +102,15 @@ const ENCOUNTERS = {
   arcane: [(m) => ['wisp', Math.min(4, 1 + m)], (m, p) => ['imp', p > 2 ? 3 : 2], () => ['golem', 1, []]],
 };
 ENCOUNTERS.defense = ENCOUNTERS.combat;
-const ENC_NAMES = { goblin: 'Goblin Raiders', wolf: 'Dire Wolves', ogre: 'Ogre Warchief', bandit: 'Bandit Ambush', chief: 'Bandit Chief', wisp: 'Wisp Swarm', imp: 'Imp Pack', golem: 'Ancient Golem' };
-export const themeFor = q => ({ stonepeak: 'cave', ruins: 'ruins', ashen: 'forest', greenwood: 'forest' })[q.region] || (q.type === 'arcane' ? 'ruins' : (q.type === 'combat' && q.seed % 2 ? 'cave' : 'forest'));
+// regions with a boss of their own: the finale of every quest posted there is that boss; each has a weakness (a class that hurts it)
+export const REGION_BOSS = { frostpeak: 'frostgiant', dunes: 'duneking', hollow: 'lich' };
+export const BOSS = {
+  frostgiant: { weak: ['wizard', 'alchemist'], note: 'fire melts its frozen hide' },
+  duneking: { weak: ['rogue', 'ranger'], note: 'sharp, precise strikes find the gaps in its armour' },
+  lich: { weak: ['cleric'], note: 'holy light burns the undead' },
+};
+const ENC_NAMES = { frostgiant: 'Frost Giant', duneking: 'Dune Warlord', lich: 'Bone Lich', goblin: 'Goblin Raiders', wolf: 'Dire Wolves', ogre: 'Ogre Warchief', bandit: 'Bandit Ambush', chief: 'Bandit Chief', wisp: 'Wisp Swarm', imp: 'Imp Pack', golem: 'Ancient Golem' };
+export const themeFor = q => ({ frostpeak: 'cave', dunes: 'forest', hollow: 'ruins', stonepeak: 'cave', ruins: 'ruins', ashen: 'forest', greenwood: 'forest' })[q.region] || (q.type === 'arcane' ? 'ruins' : (q.type === 'combat' && q.seed % 2 ? 'cave' : 'forest'));
 
 /* ------------------------------------------------------------ script */
 export function genScript(q) {
@@ -110,7 +120,8 @@ export function genScript(q) {
   const S = { dur, n, win, theme: themeFor(q), enemies: [], encs: [], heroes: [], events: [] };
   // enemies
   ENCOUNTERS[q.type].forEach((fn, i) => {
-    const [kind, count, extra] = fn(q.minH, n); const kinds = [kind, ...Array(count - 1).fill(kind), ...(extra || [])];
+    let [kind, count, extra] = fn(q.minH, n); if (i === 2 && REGION_BOSS[q.region]) { kind = REGION_BOSS[q.region]; count = 1; }   // the region's own boss closes the quest
+    const kinds = [kind, ...Array(count - 1).fill(kind), ...(extra || [])];
     const w = win[i], m = kinds.length, idxs = [];
     kinds.forEach((k, j) => {
       const info = ENEMY[k], boss = !!info.boss && i === 2 && j === 0, dies = !(boss && !q.ok);
@@ -368,7 +379,9 @@ const THEME = {
 
 /* ------------------------------------------------------------ the live stage */
 // Which clips each class fights with (see clips.js): blades for knights, the bow for rangers, bolts and fire for wizards
-const ATTACKS = { knight: ['slash1', 'slash3', 'attack1'], ranger: ['shoot'], wizard: ['mgBolt', 'mgFire'] };
+const ATTACKS = { knight: ['slash1', 'slash3', 'attack1'], ranger: ['shoot'], wizard: ['mgBolt', 'mgFire'], rogue: ['attack1', 'attack2', 'kick', 'slash1'], cleric: ['mgHoly', 'mgBolt'], alchemist: ['mgFire', 'mgBolt'] };
+const MELEE = ['knight', 'rogue'];
+const healerIdx = q => { for (const c of ['cleric', 'alchemist', 'wizard']) { const i = q.party.findIndex(p => p.cls === c); if (i >= 0) return i; } return 0; };
 const firstAfter = (arr, t) => { let lo = 0, hi = arr.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (arr[mid].t < t) lo = mid + 1; else hi = mid; } return lo; };
 export class Expedition {
   constructor({ scene, q, lowfx, labelEl, project }) {
@@ -415,9 +428,13 @@ export class Expedition {
     this.foe.forEach(o => { if (!o.gone && o.m.visible && !o.dead) { x += o.m.position.x * 0.8; z += o.m.position.z * 0.8; n += 0.8; } });
     return new THREE.Vector3(x / n + this.origin.x, 0, z / n + this.origin.z);
   }
+  // is a boss blow about to land on hero h (red circle up)? returns the event so a tap can dodge it
+  dodgeable(h, T) {
+    const S = this.S; for (let i = firstAfter(S.events, T - 0.4); i < S.events.length; i++) { const e = S.events[i]; if (e.t > T + 0.8) break; if (e.type !== 'ehit' || e.h !== h || this.dodged.has(e.id)) continue; const E = S.enemies[e.e]; if (E && E.boss && T >= e.t - 0.72 && T <= e.t + 0.28) return e; } return null;
+  }
   // A rigged hero at moment T: march, run in to melee range, strike with the class's clip, flinch, fall, or cast a heal
   driveHero(o, h, T, hp, dead, moving, retreat, px, n, rdt) {
-    const m = o.m, S = this.S, q = this.q, H = S.heroes[h], cls = o.p.cls, melee = cls === 'knight', clips = ATTACKS[cls] || ATTACKS.knight, hits = this.hitsBy[h] || [];
+    const m = o.m, S = this.S, q = this.q, H = S.heroes[h], cls = o.p.cls, melee = MELEE.includes(cls), clips = ATTACKS[cls] || ATTACKS.knight, hits = this.hitsBy[h] || [];
     const fm = q.formation || 'line';      // the formation sets who stands in front
     let x = px - (h % 2) * 0.6 + (fm === 'skirmish' ? 0 : (melee ? 0.8 : -0.4)), z = (h - (n - 1) / 2) * (fm === 'wall' ? 0.95 : 1.25), rotY = Math.PI / 2, name = 'idleEase', t = T + h * 0.9, atk = null, env = 0, fwd = false;
     for (let i = firstAfter(hits, T - 3); i < hits.length; i++) {
@@ -430,14 +447,14 @@ export class Expedition {
         if (v > env) env = v;
       }
     }
-    const eh = this.last(this.ehitsOnHero[h], T), healer = q.party.findIndex(p => p.cls === 'wizard'), hi = healer < 0 ? 0 : healer;
+    const eh = this.last(this.ehitsOnHero[h], T), hi = healerIdx(q);
     let cast = null;
     if (h === hi) { for (const e of q.heals || []) if (T >= e.t && T < e.t + 1.1) cast = ['mgHeal', T - e.t]; for (const e of q.enchants || []) if (T >= e.t && T < e.t + 1.1) cast = ['mgBless', T - e.t]; }
-    for (const c of q.casts || []) if (c.h === h) { const nm = { wall: 'block', volley: 'shoot', nova: 'mgNova' }[c.kind], ci = clipInfo(nm); if (T >= c.t && T < c.t + ci.d) cast = [nm, T - c.t]; }
+    for (const c of q.casts || []) if (c.h === h) { const nm = { wall: 'block', volley: 'shoot', nova: 'mgNova', dodge: 'block', stab: 'attack2', bless: 'mgBless', elixir: 'mgHeal' }[c.kind], ci = clipInfo(nm); if (T >= c.t && T < c.t + ci.d) cast = [nm, T - c.t]; }
     const DASH = 2.4; x += dead ? 0 : DASH * env;
     if (dead) { name = 'die'; t = T - H.D; }
     else if (atk) { name = atk.nm; t = atk.t; }
-    else if (eh && T - eh.t < 0.75) { name = 'impact'; t = T - eh.t; }
+    else if (eh && T - eh.t < 0.75 && !this.dodged.has(eh.id)) { name = 'impact'; t = T - eh.t; }
     else if (cast) { name = cast[0]; t = cast[1]; }
     else if (env > 0.02) { name = 'runCalm'; t = T * 1.4; if (!fwd) rotY = -Math.PI / 2; }      // run to the enemy, then back
     else if (moving) { const v = this.vMarch || RUN_SPEED; name = v >= 2.8 ? 'runCalm' : 'walkCalm'; t = T * (v >= 2.8 ? Math.max(0.8, Math.min(1.5, v / 3.2)) : Math.max(0.7, v / 1.35)) + h * 0.3; if (retreat) rotY = -Math.PI / 2; }
@@ -447,7 +464,7 @@ export class Expedition {
   }
   // Ranged attack visuals around the hit event e (damage lands at e.t + 0.3): a charge glow before release, then a straight flight.
   castFx(e, ho, fo, from, to, T, n) {
-    const cls = ho.p.cls, idx = (this.hitsBy[e.h] || []).indexOf(e), kind = cls === 'ranger' ? 'arrow' : (idx % 2 ? 'fire' : 'bolt');
+    const cls = ho.p.cls, idx = (this.hitsBy[e.h] || []).indexOf(e), kind = cls === 'ranger' ? 'arrow' : cls === 'cleric' ? 'holy' : cls === 'alchemist' ? 'flask' : (idx % 2 ? 'fire' : 'bolt');
     const eh = ENEMY[this.S.enemies[e.e].kind].h, ty = clamp(eh * 0.4, 0.5, 1.4);
     const hand = cls === 'ranger' ? 0.55 : 1.0, sx = from.x + 0.3, sy = hand, sz = from.z + 0.2;
     const f = (T - e.t) / 0.3;                                  // 0 at release, 1 at the target
@@ -457,8 +474,8 @@ export class Expedition {
       a.position.set(x, y, z); a.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(to.x - sx, ty - sy, to.z - sz).normalize());
       return;
     }
-    const b = this.bolts[(n - 1) % this.bolts.length], parts = b.userData.parts, fire = kind === 'fire', now = performance.now() / 1000;
-    const core = fire ? 0xffb030 : 0x9affff, mid = fire ? 0xff5a20 : 0x4aa8ff;
+    const b = this.bolts[(n - 1) % this.bolts.length], parts = b.userData.parts, fire = kind === 'fire' || kind === 'flask', now = performance.now() / 1000;
+    const core = kind === 'holy' ? 0xfff2a0 : kind === 'flask' ? 0x9bff9b : fire ? 0xffb030 : 0x9affff, mid = kind === 'holy' ? 0xffd24a : kind === 'flask' ? 0x2faa4a : fire ? 0xff5a20 : 0x4aa8ff;
     b.visible = true;
     if (f < 0) {        // charging: a small orb grows at the staff
       const c = clamp((f + 1.5) / 1.5, 0, 1); parts.forEach((m, i) => { m.visible = i < 2; });
@@ -483,8 +500,8 @@ export class Expedition {
   // A ring expanding on the ground where a spell lands
   impactRing(e, ho, age, n) {
     if (ho.p.cls === 'ranger') return;
-    const fo = this.foe[e.e], idx = (this.hitsBy[e.h] || []).indexOf(e), fire = idx % 2 === 1, r = this.rings[n % this.rings.length], f = age / 0.4;
-    r.visible = true; r.position.set(fo.m.position.x, 0.06, fo.m.position.z); r.scale.setScalar(0.4 + f * (fire ? 2.4 : 1.8)); r.material.opacity = 0.8 * (1 - f); r.material.color.setHex(fire ? 0xff7a30 : 0x7affff);
+    const fo = this.foe[e.e], idx = (this.hitsBy[e.h] || []).indexOf(e), fire = idx % 2 === 1 || ho.p.cls === 'alchemist', r = this.rings[n % this.rings.length], f = age / 0.4;
+    r.visible = true; r.position.set(fo.m.position.x, 0.06, fo.m.position.z); r.scale.setScalar(0.4 + f * (fire ? 2.4 : 1.8)); r.material.opacity = 0.8 * (1 - f); r.material.color.setHex(ho.p.cls === 'cleric' ? 0xffe27a : ho.p.cls === 'alchemist' ? 0x7aff7a : fire ? 0xff7a30 : 0x7affff);
   }
   // Heal beams, ward bubbles, boss-slam dust and scorch marks. All pure functions of T, so scrubbing and speed-ups stay correct.
   buildFx() {
@@ -492,6 +509,7 @@ export class Expedition {
     this.hfx = this.hero.map(() => ({ col: mk(new THREE.CylinderGeometry(0.3, 0.3, 1.7, 14, 1, true), 0xffd96a, 0.4, true), orb: mk(new THREE.SphereGeometry(0.14, 8, 6), 0xfff2a0, 0.9, true),
       sparks: Array.from({ length: 6 }, () => mk(new THREE.SphereGeometry(0.05, 6, 4), 0xfff2a0, 0.9, true)), bub: mk(new THREE.SphereGeometry(0.7, 14, 10), 0x9ad8ff, 0.25, true), halo: mk(new THREE.RingGeometry(0.45, 0.6, 20), 0x9ad8ff, 0.6, true) }));
     this.hfx.forEach(f => { f.halo.rotation.x = -Math.PI / 2; });
+    this.dodged = new Set(); this.warnActive = false;
     this.warn = Array.from({ length: 4 }, () => { const m = mk(new THREE.RingGeometry(0.35, 0.7, 24), 0xff3a2a, 0.7, true); m.rotation.x = -Math.PI / 2; return m; });
     this.dust = Array.from({ length: 10 }, () => mk(new THREE.SphereGeometry(0.18, 7, 5), 0xb09a78, 0.55, false));
     this.scorch = Array.from({ length: 4 }, () => { const m = mk(new THREE.CircleGeometry(0.9, 16), 0x1a1208, 0.5, false); m.rotation.x = -Math.PI / 2; return m; });
@@ -513,8 +531,8 @@ export class Expedition {
     const q = this.q, S = this.S; this.shake = 0;
     this.hfx.forEach(f => { f.col.visible = f.orb.visible = f.bub.visible = f.halo.visible = false; f.sparks.forEach(m => { m.visible = false; }); });
     this.warn.forEach(m => { m.visible = false; }); this.dust.forEach(m => { m.visible = false; }); this.scorch.forEach(m => { m.visible = false; });
-    const healer = Math.max(0, q.party.findIndex(p => p.cls === 'wizard')), src = this.hero[healer] && this.hero[healer].m.position;
-    const casts = [...(q.heals || []).map(e => ({ t: e.t, ward: false })), ...(q.enchants || []).map(e => ({ t: e.t, ward: true })), ...(q.casts || []).filter(c => c.kind === 'wall').map(c => ({ t: c.t, ward: true }))];
+    const healer = healerIdx(q), src = this.hero[healer] && this.hero[healer].m.position;
+    const casts = [...(q.heals || []).map(e => ({ t: e.t, ward: false })), ...(q.enchants || []).map(e => ({ t: e.t, ward: true })), ...(q.casts || []).filter(c => c.kind === 'wall' || c.kind === 'bless').map(c => ({ t: c.t, ward: true }))];
     for (const c of casts) {
       const age = T - c.t; if (age < 0 || age > 1.8) continue;
       this.hero.forEach((o, h) => {
@@ -529,11 +547,14 @@ export class Expedition {
         f.sparks.forEach((m, i) => { m.visible = true; const ang = a * 5 + i * 1.05, r = 0.32 * (1 - a * 0.4); m.position.set(pos.x + Math.cos(ang) * r, ((a * 1.4 + i * 0.17) % 1.5), pos.z + Math.sin(ang) * r); m.material.opacity = 0.9 * k; });
       });
     }
+    this.warnActive = false;   // set below when a red circle is up
     // class skills: a volley of arrows at every enemy, a nova ring that rolls over the field
     const foes = this.foe.filter(o => !o.gone && o.m.visible && !o.dead);
     for (const c of q.casts || []) {
       const age = T - c.t, caster = this.hero[c.h]; if (age < 0 || age > 1.6 || !caster) continue; const cp = caster.m.position;
       if (c.kind === 'volley' && age >= 0.45 && age <= 0.85) foes.slice(0, 5).forEach((o, i) => { const a = this.arrows[7 - i], f = (age - 0.45) / 0.4, tp = o.m.position; a.visible = true; a.position.set(lerp(cp.x + 0.3, tp.x, f), lerp(0.55, 0.7, f) + Math.sin(f * Math.PI) * 0.05 * i, lerp(cp.z, tp.z, f)); a.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(tp.x - cp.x, 0.15, tp.z - cp.z).normalize()); });
+      if (c.kind === 'dodge' && age < 0.6) { const r = this.rings[1]; r.visible = true; r.position.set(cp.x, 0.08, cp.z); r.scale.setScalar(0.6 + age * 3); r.material.color.setHex(0x9bff9b); r.material.opacity = 0.85 * (1 - age / 0.6); }
+      if (c.kind === 'stab' && age > 0.2 && age < 0.8) foes.slice(0, 3).forEach((o, i) => { const f = this.rings[2 + i], k = (age - 0.2) / 0.6; f.visible = true; f.position.set(o.m.position.x, 0.07, o.m.position.z); f.scale.setScalar(0.4 + k * 1.4); f.material.color.setHex(0xff4a4a); f.material.opacity = 0.85 * (1 - k); });
       if (c.kind === 'nova' && age < 0.9) {
         const r = this.rings[5]; r.visible = true; r.position.set(cp.x, 0.07, cp.z); r.scale.setScalar(0.5 + age * 7); r.material.color.setHex(0xffa040); r.material.opacity = 0.75 * (1 - age / 0.9);
         foes.slice(0, 3).forEach((o, i) => { if (age > 0.35) { const f = this.rings[2 + i], k = (age - 0.35) / 0.55; f.visible = true; f.position.set(o.m.position.x, 0.07, o.m.position.z); f.scale.setScalar(0.5 + k * 2.2); f.material.color.setHex(0xff7a30); f.material.opacity = 0.8 * (1 - k); } });
@@ -545,11 +566,13 @@ export class Expedition {
       const e = S.events[i]; if (e.t > T + 1.2) break; if (e.type !== 'ehit') continue;
       const E = S.enemies[e.e]; if (!E || !E.boss) continue; const ho = this.hero[e.h]; if (!ho) continue;
       const age = T - (e.t + 0.28), p = ho.m.position;
+      if (this.dodged.has(e.id)) continue;
       if (age < 0 && age > -1.0 && wi < this.warn.length) { const w = this.warn[wi++], k = 1 + age; w.visible = true; w.position.set(p.x, 0.06, p.z); w.scale.setScalar(2.2 - 1.2 * k + 0.1 * Math.sin(T * 24)); w.material.opacity = 0.25 + 0.5 * k; }   // red circle: a heavy blow is coming
       if (age >= 0 && age < 0.4) this.shake = Math.max(this.shake, 0.16 * (1 - age / 0.4));
       if (age >= 0 && age < 0.8) for (let j = 0; j < 4 && di < this.dust.length; j++, di++) { const m = this.dust[di], ang = (e.id || i) * 0.7 + j * 1.6, r = 0.3 + age * 1.6; m.visible = true; m.position.set(p.x + Math.cos(ang) * r, 0.15 + age * 0.9, p.z + Math.sin(ang) * r); m.scale.setScalar(0.7 + age * 1.8); m.material.opacity = 0.5 * (1 - age / 0.8); }
       if (age >= 0 && age < 3.0 && sc < this.scorch.length) { const m = this.scorch[sc++]; m.visible = true; m.position.set(p.x, 0.04, p.z); m.scale.setScalar(0.8 + (E.kind === 'golem' ? 0.4 : 0.2)); m.material.opacity = 0.45 * (1 - age / 3.0); }
     }
+    this.warnActive = wi > 0;
   }
   update(T, rdt) {
     const q = this.q, S = q.script; T = clamp(T, 0, S.dur); this.T = T;
@@ -655,7 +678,7 @@ export class Expedition {
       if (e.t > T + 0.5) break;
       if (e.type !== 'hit' && e.type !== 'ehit') continue;
       const ho = this.hero[e.h], fo = this.foe[e.e]; if (!ho || !fo || fo.gone) continue;
-      const ranged = e.type === 'hit' && ho.p.cls !== 'knight';
+      const ranged = e.type === 'hit' && !MELEE.includes(ho.p.cls);
       const from = e.type === 'hit' ? ho.m.position : fo.m.position, to = e.type === 'hit' ? fo.m.position : ho.m.position;
       if (ranged && T >= e.t - 0.45 && T <= e.t + 0.3) this.castFx(e, ho, fo, from, to, T, ++nfx);
       const hit = e.t + (ranged ? 0.3 : 0.28);
