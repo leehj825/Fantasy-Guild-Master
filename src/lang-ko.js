@@ -274,6 +274,13 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^▶ Watch an ad: double the loot \(\+(\d+)g(.*)\)$/, (g, rest) => `▶ 광고 보기: 전리품 두 배 (+${g}골드${rest.replace(/ ore/, ' 광석').replace(/ herbs/, ' 약초').replace(/ wood/, ' 목재')})`],
+    [/^▶ Watch an ad: rescue! Keep half the loot \(\+(\d+)g\) and save a hero$/, g => `▶ 광고 보기: 구출! 전리품 절반(+${g}골드)을 지키고 영웅 한 명을 살립니다`],
+    [/^🎁 Bonus loot: \+(\d+)g(?: \+(\d+) ore)?$/, (g, o) => `🎁 보너스 전리품: +${g}골드${o ? ' +' + o + ' 광석' : ''}`],
+    [/^😴 (\d+) heroes are too tired to go out$/, n => `😴 영웅 ${n}명이 너무 지쳐서 나갈 수 없습니다`],
+    [/^✨ (\d+) heroes are rested and ready\.$/, n => `✨ 영웅 ${n}명이 쉬고 준비를 마쳤습니다.`],
+    [/^🛟 Rescued! (.+) is saved\. Banked: (.+)$/, (n, b) => `🛟 구출! ${f(n)} 영웅을 살렸습니다. 보관: ${b}`],
+    [/^🛟 Wiped out on floor (\d+), but rescued: half the loot was kept\.$/, n => `🛟 ${n}층에서 전멸했지만 구출되어 전리품 절반을 지켰습니다.`],
     [/^🏞 New land revealed: (.+)\.$/, l => `🏞 새 땅이 열렸습니다: ${l.split(', ').map(x => f(x)).join(', ')}.`],
     [/^⚔ A rival guild, (.+), has set up shop nearby!$/, n => `⚔ 경쟁 길드 ${f(n)}이(가) 근처에 문을 열었습니다!`],
     [/^⚔ Contested quest! Beat (.+) to “(.+)”\.$/, (n, q) => `⚔ 경합 퀘스트! ${f(n)}보다 먼저 “${f(q)}”을(를) 끝내세요.`],

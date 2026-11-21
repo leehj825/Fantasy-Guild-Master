@@ -5,6 +5,9 @@ import android.app.Activity;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.LinearLayout;
+import android.webkit.JavascriptInterface;
 import android.webkit.ConsoleMessage;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -12,6 +15,20 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+
+import com.google.android.gms.ads.AdError;
+import com.google.android.gms.ads.AdListener;
+import com.google.android.gms.ads.AdRequest;
+import com.google.android.gms.ads.AdSize;
+import com.google.android.gms.ads.AdView;
+import com.google.android.gms.ads.FullScreenContentCallback;
+import com.google.android.gms.ads.LoadAdError;
+import com.google.android.gms.ads.MobileAds;
+import com.google.android.gms.ads.rewarded.RewardedAd;
+import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback;
+import com.google.android.ump.ConsentInformation;
+import com.google.android.ump.ConsentRequestParameters;
+import com.google.android.ump.UserMessagingPlatform;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -40,14 +57,26 @@ public class MainActivity extends Activity {
         MIME.put("svg", "image/svg+xml");
     }
 
+    // Debug builds use Google's TEST ad units (clicking your own live ads is against AdMob policy); release builds use the real ones.
+    private static final String BANNER_ID = BuildConfig.DEBUG ? "ca-app-pub-3940256099942544/6300978111" : "ca-app-pub-4400173019354346/2942968813";
+    private static final String REWARDED_ID = BuildConfig.DEBUG ? "ca-app-pub-3940256099942544/5224354917" : "ca-app-pub-4400173019354346/3174068951";
+
     private WebView web;
+    private AdView banner;
+    private RewardedAd rewarded;
+    private boolean adsStarted = false;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         web = new WebView(this);
-        setContentView(web);
+        // The page sits above a banner strip: the WebView simply gets shorter when the banner shows, so nothing in the game is covered.
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.addView(web, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        setContentView(root);
+        web.addJavascriptInterface(new AdBridge(), "AndroidAds");
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
 
         WebSettings s = web.getSettings();
@@ -82,6 +111,70 @@ public class MainActivity extends Activity {
             }
         });
         web.loadUrl(BASE + "www/index.html");
+        startConsentThenAds(root);
+    }
+
+    // ---------------------------------------------------------------- ads
+    // Ask for consent where the law requires it (UMP), then start the Mobile Ads SDK, the banner and the rewarded ad.
+    private void startConsentThenAds(final LinearLayout root) {
+        final ConsentInformation info = UserMessagingPlatform.getConsentInformation(this);
+        ConsentRequestParameters params = new ConsentRequestParameters.Builder().build();
+        info.requestConsentInfoUpdate(this, params,
+                () -> UserMessagingPlatform.loadAndShowConsentFormIfRequired(this, formError -> {
+                    if (info.canRequestAds()) startAds(root);
+                }),
+                requestError -> { if (info.canRequestAds()) startAds(root); });
+        if (info.canRequestAds()) startAds(root);   // consent from an earlier session
+    }
+
+    private synchronized void startAds(final LinearLayout root) {
+        if (adsStarted) return;
+        adsStarted = true;
+        MobileAds.initialize(this, status -> { });
+        banner = new AdView(this);
+        banner.setAdUnitId(BANNER_ID);
+        banner.setAdSize(AdSize.BANNER);
+        banner.setVisibility(View.GONE);
+        banner.setAdListener(new AdListener() {
+            @Override public void onAdLoaded() { banner.setVisibility(View.VISIBLE); }
+            @Override public void onAdFailedToLoad(LoadAdError error) { banner.setVisibility(View.GONE); }
+        });
+        root.addView(banner, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        ((LinearLayout.LayoutParams) banner.getLayoutParams()).gravity = android.view.Gravity.CENTER_HORIZONTAL;
+        banner.loadAd(new AdRequest.Builder().build());
+        loadRewarded();
+    }
+
+    private void loadRewarded() {
+        RewardedAd.load(this, REWARDED_ID, new AdRequest.Builder().build(), new RewardedAdLoadCallback() {
+            @Override public void onAdLoaded(RewardedAd ad) { rewarded = ad; }
+            @Override public void onAdFailedToLoad(LoadAdError error) {
+                rewarded = null;
+                web.postDelayed(MainActivity.this::loadRewarded, 60000);   // try again in a minute
+            }
+        });
+    }
+
+    private void answer(final String id, final boolean ok) {
+        web.postDelayed(() -> web.evaluateJavascript("window.__adResult&&window.__adResult('" + id + "'," + ok + ")", null), 300);
+    }
+
+    private void showRewarded(final String id) {
+        final RewardedAd ad = rewarded;
+        if (ad == null) { answer(id, false); return; }
+        rewarded = null;
+        final boolean[] earned = { false };
+        ad.setFullScreenContentCallback(new FullScreenContentCallback() {
+            @Override public void onAdDismissedFullScreenContent() { answer(id, earned[0]); loadRewarded(); }
+            @Override public void onAdFailedToShowFullScreenContent(AdError error) { answer(id, false); loadRewarded(); }
+        });
+        ad.show(this, reward -> earned[0] = true);
+    }
+
+    // What the page can call (see src/ads.js)
+    private class AdBridge {
+        @JavascriptInterface public boolean isReady() { return rewarded != null; }
+        @JavascriptInterface public void show(final String id) { runOnUiThread(() -> showRewarded(id)); }
     }
 
     @Override
@@ -100,7 +193,7 @@ public class MainActivity extends Activity {
     }
 
     // WebView.onPause() does not stop Web Audio, so tell the page to silence itself first
-    @Override protected void onPause() { web.evaluateJavascript("window.__audioHidden&&window.__audioHidden(true)", null); web.onPause(); super.onPause(); }
-    @Override protected void onResume() { super.onResume(); web.onResume(); web.evaluateJavascript("window.__audioHidden&&window.__audioHidden(false)", null); }
-    @Override protected void onDestroy() { web.destroy(); super.onDestroy(); }
+    @Override protected void onPause() { if (banner != null) banner.pause(); web.evaluateJavascript("window.__audioHidden&&window.__audioHidden(true)", null); web.onPause(); super.onPause(); }
+    @Override protected void onResume() { super.onResume(); if (banner != null) banner.resume(); web.onResume(); web.evaluateJavascript("window.__audioHidden&&window.__audioHidden(false)", null); }
+    @Override protected void onDestroy() { if (banner != null) banner.destroy(); web.destroy(); super.onDestroy(); }
 }

@@ -399,5 +399,13 @@ export const KO_PEOPLE = {
   'a ring of old stones': '오래된 돌 고리',
   'a ruined watchtower': '무너진 망루',
   'a warm spring': '따뜻한 온천',
+  'Watch': '보기',
+  'No thanks': '괜찮아요',
+  'The ad was not completed — no reward.': '광고를 끝까지 보지 않아 보상이 없습니다.',
+  '📺 Rewarded ads': '📺 보상형 광고',
+  'Rewarded ads': '보상형 광고',
+  'Optional offers: double a quest\'s loot, rest tired heroes, rescue a wiped dive. Never forced.': '선택형 제안: 퀘스트 전리품 두 배, 지친 영웅 휴식, 전멸한 던전 구출. 절대 강제하지 않습니다.',
+  'Watch a short ad to rest them all to full stamina.': '짧은 광고를 보면 모두 스태미나가 가득 찹니다.',
+  '▶ Rest everyone': '▶ 모두 쉬게 하기',
   'hearty stew': '푸짐한 스튜', 'roast boar': '멧돼지 구이', 'honey bread': '꿀빵', 'mushroom pie': '버섯 파이', 'herbal tea': '약초차',
 };
