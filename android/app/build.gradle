@@ -18,7 +18,24 @@ android {
         buildConfig true
     }
 
+    // Release signing comes from the environment (the release workflow fills these in from repository secrets); nothing secret is committed.
+    signingConfigs {
+        release {
+            def ks = System.getenv('KEYSTORE_PATH')
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv('KEYSTORE_PASSWORD')
+                keyAlias System.getenv('KEY_ALIAS')
+                keyPassword System.getenv('KEY_PASSWORD')
+            }
+        }
+    }
+
     buildTypes {
+        release {
+            minifyEnabled false
+            if (System.getenv('KEYSTORE_PATH')) signingConfig signingConfigs.release
+        }
         debug {
             applicationIdSuffix '.debug'
             versionNameSuffix '-debug'
