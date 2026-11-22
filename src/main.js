@@ -1458,9 +1458,10 @@ const snow = (() => {   // falling petals / leaves / snow that follow the camera
   const pts = new THREE.Points(geo, m); pts.frustumCulled = false; pts.visible = false; scene.add(pts); return pts;
 })();
 function updateSeasonFx(rdt) {
+  if (a11y.motion) { snow.visible = false; }
   const S = SEASONS[seasonIdx()], k = 1 - Math.exp(-1.5 * rdt);
   if (groundMesh) { const c = groundMesh.material.color, e = groundMesh.material.emissive; c.r += (S.tint[0] - c.r) * k; c.g += (S.tint[1] - c.g) * k; c.b += (S.tint[2] - c.b) * k; e.r += (S.emis[0] - e.r) * k; e.g += (S.emis[1] - e.g) * k; e.b += (S.emis[2] - e.b) * k; }
-  snow.visible = !!S.part && !watching; if (!snow.visible) return; snow.material.color.setHex(S.part);
+  snow.visible = !!S.part && !watching && !a11y.motion; if (!snow.visible) return; snow.material.color.setHex(S.part);
   const a = snow.geometry.attributes.position, fall = seasonIdx() === 3 ? 1.6 : 0.9;
   for (let i = 0; i < a.count; i++) { let y = a.getY(i) - rdt * fall * (0.6 + (i % 5) * 0.12), x = a.getX(i) + Math.sin(performance.now() / 900 + i) * rdt * 0.4; if (y < 0) { y = 14; x = (Math.random() - 0.5) * 30; a.setZ(i, (Math.random() - 0.5) * 30); } a.setXYZ(i, x, y, a.getZ(i)); }
   a.needsUpdate = true; snow.position.set(camTarget.x, 0, camTarget.z);
@@ -2026,6 +2027,30 @@ function applyHat(h) {
   if (!h.hat || !HATS[h.hat]) return; const box = new THREE.Box3().setFromObject(h.mesh), top = (box.max.y - h.mesh.position.y) / (h.mesh.scale.y || 1);
   const g = buildHat(h.hat); g.position.y = top - 0.05; h.mesh.add(g); h.hatMesh = g;
 }
+// ---- coach marks: a one-line tip the first time each newer screen opens
+const COACH = {
+  heroes: 'Your heroes in one list. Blue-framed cards have something to do. Tap a card for details, ⚖ to compare two heroes, and use the bulk buttons to save clicks.',
+  hero: 'Use the tabs below to switch between abilities, gear and story. ◀ ▶ walk through your heroes, 🔍 Find flies the camera to this one.',
+  party: 'Fill the slots with the heroes you want, or press Auto-fill. Bonds and a boss’s weak class raise your odds.',
+  auto: 'Pick rules here and the guild will train, reinforce and sell for you, always keeping your gold reserve.',
+  delve: 'A short run of eight rooms. Choose paths, collect relics, and bank shards for permanent upgrades.',
+  posts: 'Pick up to three heroes to defend, add barricades, then sound the alarm. You can also tap raiders in town.',
+  calendar: 'Plan around market days (sell prices up), tournaments and the weather.',
+  inv: 'Equip loot from a hero’s Gear tab. Sell what you do not need.',
+  seeds: 'Type a code or roll one. Everyone using the same code gets the same dungeon.',
+  album: 'Collect every class and both promotions to complete card sets.',
+};
+// ---- gamepad: left stick pans, right stick rotates and zooms; A quests, B close, X heroes, Y build, LB/RB previous/next hero (when a hero is open)
+const padPrev = {};
+function pollGamepad(dt) {
+  const gp = (navigator.getGamepads ? [...navigator.getGamepads()].find(g => g && g.connected) : null); if (!gp) return;
+  const ax = i => { const v = gp.axes[i] || 0; return Math.abs(v) > 0.2 ? v : 0; };
+  if (!modalKind) { const lx = ax(0), ly = ax(1), rx = ax(2), ry = ax(3); if (lx || ly) panBy(-lx * 600 * dt, -ly * 600 * dt); if (rx) rotateBy(-rx * 1.8 * dt, 0); if (ry) zoomBy(1 + ry * 0.9 * dt); }
+  const press = (i, f) => { const on = !!(gp.buttons[i] && gp.buttons[i].pressed); if (on && !padPrev[i]) f(); padPrev[i] = on; };
+  press(0, () => { if (!modalKind) openModal('quests'); }); press(1, () => { if (modalKind) closeModal(); else if (placing) cancelPlacement(); }); press(2, () => { if (!modalKind) openModal('heroes'); }); press(3, () => { if (!modalKind) openModal('build'); });
+  press(4, () => { if (modalKind === 'hero') ACT.hnav({ d: -1 }), renderModal(true); }); press(5, () => { if (modalKind === 'hero') ACT.hnav({ d: 1 }), renderModal(true); });
+  press(9, () => { if (!modalKind) openModal('settings'); }); press(8, () => { if (!modalKind) openModal('inbox'); });
+}
 // ---- hero diary: a few lines per hero about what happened to them
 const diary = (h, text) => { if (!h) return; const d = (h.diary ||= []); d.push({ d: Math.floor(G.time / 60) + 1, t: text }); if (d.length > 8) d.shift(); };
 // ---- 3D companions and disaster visuals
@@ -2163,10 +2188,10 @@ window.__scheduleNotify = () => {
 window.__cancelNotify = () => { try { window.AndroidNotify && window.AndroidNotify.cancelAll(); } catch (e) { /* ignore */ } };
 // ---- accessibility, photo mode and a local error log
 const A11Y_KEY = 'fantasy-guild-master-a11y', ERR_KEY = 'fantasy-guild-master-errors';
-const a11y = (() => { try { return Object.assign({ text: 0, cb: 0 }, JSON.parse(localStorage.getItem(A11Y_KEY) || '{}')); } catch (e) { return { text: 0, cb: 0 }; } })();
+const a11y = (() => { const d = { text: 0, cb: 0, motion: (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) ? 1 : 0, hc: 0 }; try { return Object.assign(d, JSON.parse(localStorage.getItem(A11Y_KEY) || '{}')); } catch (e) { return d; } })();
 function applyA11y() {
   document.documentElement.style.setProperty('--ui-zoom', [1, 1.15, 1.3][a11y.text] || 1);
-  document.body.classList.toggle('bigtext', a11y.text > 0); document.body.classList.toggle('cb', !!a11y.cb);
+  document.body.classList.toggle('bigtext', a11y.text > 0); document.body.classList.toggle('cb', !!a11y.cb); document.body.classList.toggle('reduced', !!a11y.motion); document.body.classList.toggle('hc', !!a11y.hc);
   try { localStorage.setItem(A11Y_KEY, JSON.stringify(a11y)); } catch (e) { /* ignore */ }
 }
 const readErrs = () => { try { return JSON.parse(localStorage.getItem(ERR_KEY) || '[]'); } catch (e) { return []; } };
@@ -2205,6 +2230,7 @@ function startFest(kind) {
   chron(`${F.icon} The guild held the ${F.name}${lavish ? ' with great pomp' : ''}.`); sfx('goal'); showBanner('feston', `${F.icon} ${F.name} is on! Tavern meals pay 50% more.`, []);
 }
 function updateConfetti(rdt) {
+  if (a11y.motion) { confetti.visible = false; return; }
   const on = !!G.flags.fest && !watching; confetti.visible = on; if (!on) return;
   const a = confetti.geometry.attributes.position; for (let i = 0; i < a.count; i++) { let y = a.getY(i) - rdt * (0.7 + (i % 4) * 0.2); if (y < 0) y += 5; a.setY(i, y); a.setX(i, a.getX(i) + Math.sin(performance.now() / 700 + i) * rdt * 0.5); } a.needsUpdate = true;
 }
@@ -2480,7 +2506,7 @@ function modalContent() {
     case 'errlog': { const l = readErrs(); return ['🧾 Error log', `<div class="s">Problems the game noticed on this device (nothing is sent anywhere). If something broke, copy this and share it with the developer.</div><textarea readonly style="width:100%;height:150px;margin:6px 0;font-size:11px">${l.length ? l.join('\n').replace(/</g, '&lt;') : 'No errors recorded.'}</textarea><div style="display:flex;gap:6px"><button class="act" data-act="errcopy">Copy</button><button class="act red" data-act="errclear">Clear</button></div>`]; }
     case 'settings': return ['⚙ Settings & Save', `
       <div class="row"><div class="grow"><div class="t">🔊 Sound</div><div class="s">Procedural sound effects and music (no downloads).</div></div><button class="act ${getPrefs().sfx ? '' : 'red'}" data-act="sfxtoggle">Effects: ${getPrefs().sfx ? 'On' : 'Off'}</button><button class="act ${getPrefs().music ? '' : 'red'}" data-act="musictoggle">Music: ${getPrefs().music ? 'On' : 'Off'}</button></div>
-      <div class="row"><div class="grow"><div class="t">♿ Accessibility</div><div class="s">Text size and a colour-blind-friendly palette.</div></div><div style="display:flex;gap:4px"><button class="act" data-act="textsize">Text size: ${['Normal', 'Large', 'Largest'][a11y.text]}</button><button class="act ${a11y.cb ? '' : 'red'}" data-act="cbmode">Colour-blind mode: ${a11y.cb ? 'On' : 'Off'}</button></div></div>
+      <div class="row"><div class="grow"><div class="t">♿ Accessibility</div><div class="s">Text size and a colour-blind-friendly palette.</div></div><div style="display:flex;gap:4px"><button class="act" data-act="textsize">Text size: ${['Normal', 'Large', 'Largest'][a11y.text]}</button><button class="act ${a11y.cb ? '' : 'red'}" data-act="cbmode">Colour-blind mode: ${a11y.cb ? 'On' : 'Off'}</button><button class="act ${a11y.motion ? '' : 'red'}" data-act="motionmode">Reduced motion: ${a11y.motion ? 'On' : 'Off'}</button><button class="act ${a11y.hc ? '' : 'red'}" data-act="hcmode">High contrast: ${a11y.hc ? 'On' : 'Off'}</button></div></div>
       ${window.AndroidNotify ? `<div class="row"><div class="grow"><div class="t">🔔 Reminders</div><div class="s">A note when a party returns, or when the guild misses you.</div></div><button class="act ${notifyOn() ? '' : 'red'}" data-act="notifytoggle">${notifyOn() ? 'On' : 'Off'}</button></div>` : ''}
       <div class="row"><div class="grow"><div class="t">📈 Performance</div><div class="s">Frame time ${frameEma.toFixed(0)} ms (about ${Math.round(1000 / Math.max(8, frameEma))} fps)${slowT >= 5 ? ' · slow: decorations paused' : ''}. When it stays slow the game pauses pets and disaster effects, and Auto graphics lowers the resolution.</div></div></div>
       ${G.flags.legendDone ? `<div class="row"><div class="grow"><div class="t">👑 Crown favor</div><div class="s">Level ${kingdomLv()}/10 · ${kingdom().fame % KW_PER}/${KW_PER} toward the next. Each level: +2% quest gold. The Crown calls for aid every few minutes.</div></div></div>` : ''}
@@ -2792,7 +2818,7 @@ function renderModal(force) {
   const [title, body] = modalContent();
   const html = title + '||' + body;
   if (!force && html === lastHtml) return;
-  lastHtml = html; $('modalTitle').textContent = tr(title); $('modalBody').innerHTML = trHtml(body); attachRoom();
+  lastHtml = html; $('modalTitle').textContent = tr(title); $('modalBody').innerHTML = trHtml((COACH[modalKind] && !(G.flags.coach || {})[modalKind] ? `<div class="coach">💡 ${COACH[modalKind]} <button class="act" data-act="coachok" style="padding:2px 8px">Got it</button></div>` : '') + body); attachRoom();
 }
 
 const ACT = {
@@ -2825,6 +2851,7 @@ const ACT = {
   role(d) { const h = G.heroes.find(x => x.id === +d.id), R = ROLES[d.k]; if (!h || !R || h.level < 3 || G.gold < roleCost(h)) return; G.gold -= roleCost(h); h.role = d.k; diary(h, `Took up the role of ${R[1].toLowerCase()}.`); toast(`${R[0]} ${h.name} is now a ${R[1].toLowerCase()}.`); sfx('goal'); },
   heroes() { openModal('heroes'); },
   album() { openModal('album'); },
+  coachok() { (G.flags.coach ||= {})[modalKind] = 1; },
   seeds() { openModal('seeds'); },
   seedrand() { G.flags.lastSeed = randomCode(); },
   seedgo() { const el = document.getElementById('seedIn'), c = (el ? el.value : '').trim(); if (!c) return toast('Enter or roll a seed code first.'); G.flags.lastSeed = c.toUpperCase(); dispatchDive('seed', c); closeModal(); },
@@ -2883,6 +2910,8 @@ const ACT = {
   touchscheme() { try { localStorage.setItem(TOUCH_KEY, touchScheme() === 'pan' ? 'orbit' : 'pan'); } catch (e) { /* ignore */ } },
   notifytoggle() { try { localStorage.setItem(NOTIFY_KEY, notifyOn() ? '0' : '1'); } catch (e) { /* ignore */ } },
   textsize() { a11y.text = (a11y.text + 1) % 3; applyA11y(); },
+  motionmode() { a11y.motion = a11y.motion ? 0 : 1; applyA11y(); },
+  hcmode() { a11y.hc = a11y.hc ? 0 : 1; applyA11y(); },
   cbmode() { a11y.cb = a11y.cb ? 0 : 1; applyA11y(); },
   photo() { photoT = performance.now(); setPhoto(true); },
   errlog() { openModal('errlog'); },
@@ -3114,7 +3143,8 @@ addEventListener('keydown', e => {
   if (e.key === '+' || e.key === '=') return zoomBy(0.88);
   if (e.key === '-' || e.key === '_') return zoomBy(1.14);
   if (e.key === 'Home' || e.key === '0') return resetView();
-  const k = watching ? null : { b: 'build', q: 'quests', m: 'map', r: 'recruit', t: 'research', u: 'upgrades' }[e.key.toLowerCase()]; if (k) openModal(k);
+  { const k2 = e.key.toLowerCase(); if (k2 === 'w') return panBy(0, 40); if (k2 === 's') return panBy(0, -40); if (k2 === 'a') return panBy(40, 0); if (k2 === 'd') return panBy(-40, 0); }
+  const k = watching ? null : { b: 'build', q: 'quests', m: 'map', r: 'recruit', t: 'research', u: 'upgrades', h: 'heroes', c: 'calendar', i: 'inv', x: 'delve' }[e.key.toLowerCase()]; if (k) openModal(k);
 });
 // on-screen camera controls
 {
@@ -3448,7 +3478,7 @@ function frame() {
   frameEma += (rdt * 1000 - frameEma) * 0.05; slowT = frameEma > 40 ? Math.min(10, slowT + rdt) : Math.max(0, slowT - rdt * 2);
   if (slowT < 5) { tickPets(rdt); tickDisasterFx(); } else if (petMeshes.size) { petGroup.visible = false; }
   if (slowT < 5 && !petGroup.visible) petGroup.visible = true;
-  updateForkCard(); updateSeasonFx(rdt); updateConfetti(rdt); updateDayNight(); tickChat(dt); tickResidents(dt); residentGroup.children.forEach(m => autoAnim(m, rdt, frustum.containsPoint(m.position)));
+  pollGamepad(rdt); updateForkCard(); updateSeasonFx(rdt); updateConfetti(rdt); updateDayNight(); tickChat(dt); tickResidents(dt); residentGroup.children.forEach(m => autoAnim(m, rdt, frustum.containsPoint(m.position)));
   camera.updateMatrixWorld(); frustumM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); frustum.setFromProjectionMatrix(frustumM);
   const seen = m => frustum.containsPoint(m.position);
   if (charStyle !== 'classic') { heroGroup.children.forEach(m => autoAnim(m, rdt, seen(m))); staffMeshes.forEach(x => autoAnim(x.mesh, rdt, seen(x.mesh))); G.goblins.forEach(x => autoAnim(x.mesh, rdt, seen(x.mesh))); }
@@ -3512,7 +3542,7 @@ function frame() {
       if (w.recallArm > 0) { w.recallArm -= rdt; if (w.recallArm <= 0) updateWatchHUD(); }
       const T = nowT(w);
       w.exp.update(T, rdt);
-      { const sh = w.exp.shake || 0; if (sh > 0 || camShake > 0) { camShake = sh; updateCamera(); } }
+      { const sh = a11y.motion ? 0 : (w.exp.shake || 0); if (sh > 0 || camShake > 0) { camShake = sh; updateCamera(); } }
       if (w.lastScript !== q.script) logReset(w, T);
       const ev = q.script.events; while (ev[w.logIdx] && ev[w.logIdx].t <= T) addLog(ev[w.logIdx++]);
       if (w.follow && !viewFly) { const f = w.exp.focus(T), k = 1 - Math.exp(-4 * rdt); camTarget.x += (f.x - camTarget.x) * k; camTarget.z += (f.z - camTarget.z) * k; updateCamera(); }

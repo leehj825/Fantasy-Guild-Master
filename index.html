@@ -53,7 +53,7 @@
 <div id="banner" class="hidden"></div>
 <div id="adOffer" class="hidden"><span id="adOfferText"></span><button class="act" id="adOfferGo">Watch</button><button class="bx" id="adOfferNo" aria-label="No thanks">✕</button></div>
 <div id="forkCard" class="hidden"></div>
-<div id="toasts"></div>
+<div id="toasts" aria-live="polite" role="status"></div>
 <div id="placeHint" class="hidden">Drag the golden plot (or tap the ground) to move it · rotate with ⟲ ⟳ · then confirm</div>
 <div id="placeBar" class="hidden">
   <div class="pname"><b id="placeName"></b> <span class="tag">💰 <span id="placeCost"></span></span></div>
@@ -71,7 +71,7 @@
   <button data-open="upgrades"><span>⬆️</span>Upgrades</button>
 </div>
 
-<div id="modal" class="hidden">
+<div id="modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
   <div id="modalBox">
     <button id="modalClose">✕</button>
     <h2 id="modalTitle"></h2>
