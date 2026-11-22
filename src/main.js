@@ -833,7 +833,7 @@ function notify(title, body) {
 }
 function resolveQuest(q) {
   const ok = q.ok; sfx(ok ? 'win' : 'lose'); notify(ok ? '🏆 Quest complete' : '☠ Quest failed', q.name);
-  onQuestEnd(q, ok);
+  onQuestEnd(q, ok); maybeQuestEvent(q);
   const hp = new THREE.Vector3(HALL.cx + 2.5, 0, HALL.cz + 5);
   q.state = 'done'; G.quests.splice(G.quests.indexOf(q), 1);
   const alive = [];
@@ -1003,7 +1003,7 @@ function resolveDive(q, mode) {
   if (mode === 'recalled') text = `🏁 Banked & left after floor ${q.cleared} · ${bankPending(q)}`;
   else text = q.rescued ? `🛟 Wiped out on floor ${S.floors.length}, but rescued: half the loot was kept.` : `☠ Wiped out on floor ${S.floors.length}. Lost unbanked loot: ${rewardText(q.pending)}`;
   q.endText = text; G.diveBest = Math.max(G.diveBest, q.cleared);
-  onQuestEnd(q, mode === 'recalled');
+  onQuestEnd(q, mode === 'recalled'); maybeDiveEvent(q);
   q.state = 'done'; G.quests.splice(G.quests.indexOf(q), 1);
   q.heroes.forEach(h => {
     if (!G.heroes.includes(h)) return;
@@ -1191,7 +1191,7 @@ function updateEconomy(dt) {
   // quests
   t.quest -= dt;
   if (t.quest <= 0) { t.quest = 14; if (G.quests.filter(q => q.state === 'open').length < boardSlots()) genQuest(); legendTick(); }
-  townTick(dt); tickPeople(dt);
+  townTick(dt); tickPeople(dt); tickDisaster(dt);
   for (const q of [...G.quests]) if (q.state === 'active') { if (q.dive) diveTick(q, dt); else { q.t -= dt; if (q.t <= 0 || q.dur - q.t >= questEnd(q)) (q.defense ? resolveDefense(q) : resolveQuest(q)); } }
   // events
   t.merchant -= dt; if (t.merchant <= 0) { t.merchant = rnd(150, 220); if (G.renown >= 2 && !G.merchant) startMerchant(); }
@@ -1408,6 +1408,54 @@ function townTick(dt) {
   const j = pick(opts), q = makeQuest({ type: j.type, minH: 1, mods: [], name: j.name, goldMul: 0.5 }); q.town = true; q.who = j.who; q.dur = Math.round(rnd(20, 30)); q.diff *= 0.6; q.rep = 3; q.renown = Math.max(0, q.renown - 1);
   toast(`🏘 ${j.who} has a request: ${j.name}`);
 }
+// ---- generic event queue: expedition choices, dive rooms and disasters all wait in the inbox as small decisions
+const wellN = () => ofType('well').length;
+const EVENTS = {
+  merchant: { icon: '🧳', title: 'A wounded merchant', text: 'On the road home your party found a merchant whose cart was wrecked by bandits.', ch: [
+    { label: 'Help him (−60g, +reputation)', ok: () => G.gold >= 60, fx: () => { G.gold -= 60; repGain(4); toast('🧳 He blesses your guild. +4 reputation.'); } },
+    { label: 'Take his goods (+120g, −reputation)', fx: () => { G.gold += 120; repGain(-4); toast('🧳 You took his goods. +120g, but word spreads.'); } },
+    { label: 'Ride on', fx: () => { } } ] },
+  ruins: { icon: '🏺', title: 'Strange ruins', text: 'A half-buried shrine glints beside the trail. Your heroes are curious.', ch: [
+    { label: 'Search it (60% treasure, 40% curse)', fx: () => { if (Math.random() < 0.6) { const n = 2 + (Math.random() * 3 | 0); G.ore += 8; G.herbs += 8; G.gold += 100; toast('🏺 A hidden cache! +100g and materials.'); } else { G.heroes.forEach(h => { h.happy = Math.max(0, h.happy - 10); }); toast('🏺 A curse! The heroes are shaken.'); } } },
+    { label: 'Leave a small offering (−30g, heroes +mood)', ok: () => G.gold >= 30, fx: () => { G.gold -= 30; G.heroes.forEach(h => { h.happy = Math.min(100, h.happy + 8); }); toast('🏺 A calm feeling follows the party home.'); } },
+    { label: 'Ignore it', fx: () => { } } ] },
+  stray: { icon: '🐕', title: 'A stray follows the party', text: 'A scruffy dog trailed your heroes all the way to the guild hall.', ch: [
+    { label: 'Adopt it (heroes +mood)', fx: () => { G.heroes.forEach(h => { h.happy = Math.min(100, h.happy + 6); }); G.flags.stray = 1; toast('🐕 The guild has a new mascot!'); chron('🐕 A stray dog became the guild mascot.'); } },
+    { label: 'Send it to a villager farm', fx: () => { repGain(2); toast('🐕 A villager is delighted. +2 reputation.'); } } ] },
+  fire: { icon: '🔥', title: 'Fire!', text: 'A spark from the forge caught the thatch. Flames spread between the buildings.', ch: [
+    { label: 'Fight it together (−100g)', ok: () => G.gold >= 100, fx: () => { G.gold -= 100; repGain(2); toast('🔥 The fire is out. The villagers helped.'); } },
+    { label: 'Let it burn out', fx: () => { const k = wellN() ? 0.1 : 0.35; const w = Math.round(G.wood * k), o = Math.round(G.ore * k); G.wood -= w; G.ore -= o; toast(`🔥 Lost ${w} wood and ${o} ore.`); chron('🔥 A fire damaged the guild stores.'); } } ] },
+  flood: { icon: '🌊', title: 'Flood!', text: 'Heavy spring rain floods the lower yards.', ch: [
+    { label: 'Dig drains (−80g)', ok: () => G.gold >= 80, fx: () => { G.gold -= 80; toast('🌊 The drains held.'); } },
+    { label: 'Wait it out', fx: () => { const k = wellN() ? 0.1 : 0.3; const h2 = Math.round(G.herbs * k); G.herbs -= h2; G.heroes.forEach(h => { h.stamina = Math.max(10, h.stamina - 15); }); toast(`🌊 Lost ${h2} herbs; the heroes are weary.`); } } ] },
+  plague: { icon: '🤒', title: 'Sickness spreads', text: 'A fever is going around the village and some heroes are coughing.', ch: [
+    { label: 'Buy medicine (−10 herbs, −60g)', ok: () => G.gold >= 60 && G.herbs >= 10, fx: () => { G.gold -= 60; G.herbs -= 10; repGain(2); toast('🤒 The fever passes quickly.'); } },
+    { label: 'Rest and hope', fx: () => { const k = wellN() ? 6 : 18; G.heroes.forEach(h => { h.stamina = Math.max(5, h.stamina - k); h.happy = Math.max(0, h.happy - k / 2); }); toast('🤒 The heroes recover slowly.'); } } ] },
+  rest: { icon: '🛏', title: 'A quiet room', text: 'On the dive you found a safe, dry chamber with a few cots.', ch: [
+    { label: 'Rest here (heroes recover stamina)', fx: () => { G.heroes.forEach(h => { h.stamina = Math.min(100, h.stamina + 30); }); toast('🛏 Everyone feels rested.'); } },
+    { label: 'Move on', fx: () => { G.gold += 40; toast('🛏 You pressed on. +40g.'); } } ] },
+  shop: { icon: '🛒', title: 'A hidden trader', text: 'A hooded trader has set up shop deep in the dive.', ch: [
+    { label: 'Buy a Mythril shard (−350g)', ok: () => G.gold >= 350, fx: () => { G.gold -= 350; G.rare.mythril += 1; toast('🛒 +1 Mythril.'); } },
+    { label: 'Buy supplies (−120g, +20 ore, +20 herbs)', ok: () => G.gold >= 120, fx: () => { G.gold -= 120; G.ore += 20; G.herbs += 20; toast('🛒 Supplies bought.'); } },
+    { label: 'Decline', fx: () => { } } ] },
+  trap: { icon: '🪤', title: 'A trapped corridor', text: 'Pressure plates line the floor ahead.', ch: [
+    { label: 'Disarm it carefully (needs a rogue)', ok: () => G.heroes.some(h => h.cls === 'rogue'), fx: () => { G.gold += 150; toast('🪤 The rogue disarmed it and found a stash. +150g.'); } },
+    { label: 'Run through (−80g of damage and repairs)', fx: () => { G.gold = Math.max(0, G.gold - 80); toast('🪤 Bruised, but through. −80g.'); } } ] },
+  treasure: { icon: '💎', title: 'A treasure chamber', text: 'A sealed chest, unguarded. Too good to be true?', ch: [
+    { label: 'Open it', fx: () => { if (Math.random() < 0.75) { G.rare.mythril += 1; G.gold += 200; toast('💎 +200g and a Mythril shard!'); } else { G.gold = Math.max(0, G.gold - 100); toast('💎 A mimic! −100g.'); } } },
+    { label: 'Leave it', fx: () => { } } ] },
+};
+const evq = () => (G.flags.evq ||= []);
+function pushEvent(id) { const q = evq(); if (q.length >= 3 || q.includes(id)) return; q.push(id); sfx('chime'); toast(`📬 ${EVENTS[id].icon} ${EVENTS[id].title}`); }
+function chooseEvent(i) { const q = evq(), E = EVENTS[q[0]]; if (!E) return; const c = E.ch[i]; if (!c || (c.ok && !c.ok())) return; c.fx(); chron(`${E.icon} ${E.title}: ${c.label.replace(/\s*\(.*$/, '')}`); q.shift(); closeModal(); if (q.length) setTimeout(() => openModal('event'), 200); }
+let disasterT = 420;
+function tickDisaster(dt) {
+  disasterT -= dt; if (disasterT > 0) return; disasterT = 420 + Math.random() * 360;
+  if (G.buildings.length < 6) return;
+  const sea = seasonIdx(), kind = sea === 0 ? 'flood' : sea === 1 ? 'fire' : 'plague'; if (Math.random() < 0.35) pushEvent(kind);
+}
+function maybeQuestEvent(q) { if (!q.ok || q.town || q.dive || Math.random() > 0.15) return; pushEvent(pick(['merchant', 'ruins', 'stray'])); }
+function maybeDiveEvent(q) { if (q.cleared >= 2 && Math.random() < 0.7) pushEvent(pick(['rest', 'shop', 'trap', 'treasure'])); }
 // ---- festivals: once per season the villagers offer to hold one; it costs gold and pays back in town reputation and mood
 const festCost = lavish => Math.round((lavish ? 300 : 100) * (1 + 0.5 * G.rank));
 const FEST = [{ name: 'Blossom Fair', icon: '🌸' }, { name: 'Midsummer Games', icon: '🏅' }, { name: 'Harvest Feast', icon: '🍂' }, { name: 'Lantern Night', icon: '🏮' }];
@@ -1514,6 +1562,7 @@ function renderWeekly() {
 }
 function inboxItems() {
   const out = [], st = STORIES.find(x => x.id === G.flags.pending); if (G.flags.login && G.flags.login.pending) out.push({ icon: '🎁', title: 'Daily reward', sub: `Day ${G.flags.login.streak} of 7 is waiting.`, act: 'dailyopen' });
+  for (const id of evq()) out.push({ icon: EVENTS[id].icon, title: EVENTS[id].title, sub: 'A decision awaits.', act: 'eventopen' });
   if (st) out.push({ icon: '📖', title: st.title, sub: 'A decision awaits.', act: 'openStory' });
   for (const h of G.heroes) { const ch = storyChapter(h); if (ch && h.level >= ch.lv && h.state !== 'quest') out.push({ icon: '🗣', title: `${h.name}: ${ARCS[h.arc.id].title}`, sub: `Chapter ${h.arc.ch + 1} is ready.`, act: 'hstoryopen', id: h.id }); }
   if (G.flags.festPending !== undefined && G.flags.festPending !== null) out.push({ icon: FEST[seasonIdx()].icon, title: FEST[seasonIdx()].name, sub: 'The villagers are waiting for your answer.', act: 'festinbox' });
@@ -1542,7 +1591,7 @@ const forgeLv = () => ofType('forge').reduce((m, b) => Math.max(m, b.level), 0);
 const maxPlus = () => Math.min(5, forgeLv() + 1);
 const plusCost = h => ({ gold: Math.round(100 * Math.pow(1.7, h.plus || 0)), ore: 4 * ((h.plus || 0) + 1), ing: (h.plus || 0) >= 3 ? (h.plus || 0) - 2 : 0 });
 const trainCost = h => 100 + 50 * h.level;
-const decorBonus = () => Math.min(0.55, (first('memorial') ? 0.03 : 0) + landmarkGroup.children.length * 0.01 + Math.min(3, ofType('hill').length) * 0.02 + squares() * 0.02 + Math.min(3, ofType('pond').length) * 0.05 + 0.01 * Math.min(10, ofType('flowers').length + ofType('sapling').length) + (first('monument') ? 0.1 : 0) + 0.05 * (ofType('fountain').length + ofType('banner').length + ofType('statue').length) + 0.01 * Math.min(10, ofType('lamp').length + ofType('campfire').length));
+const decorBonus = () => Math.min(0.55, (first('memorial') ? 0.03 : 0) + landmarkGroup.children.length * 0.01 + Math.min(3, ofType('hill').length) * 0.02 + squares() * 0.02 + Math.min(3, ofType('pond').length) * 0.05 + 0.01 * Math.min(10, ofType('flowers').length + ofType('sapling').length) + (first('monument') ? 0.1 : 0) + 0.02 * Math.min(3, ofType('well').length) + 0.05 * (ofType('fountain').length + ofType('banner').length + ofType('statue').length) + 0.01 * Math.min(10, ofType('lamp').length + ofType('campfire').length));
 function tickChat(dt) {
   chatT -= dt; if (chatT > 0) return; chatT = 40 + Math.random() * 50;
   const c = G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving' && h.mesh.visible); if (!c.length) return; const h = pick(c);
@@ -1719,6 +1768,10 @@ function modalContent() {
       for (const n of [1, 2, 3]) h += `<div class="row"><div class="grow"><div class="t">Slot ${n}</div><div class="s">${slot(n)}</div></div><button class="act" data-act="slotsave" data-n="${n}">Save here</button><button class="act red" data-act="slotload" data-n="${n}">Load</button></div>`;
       h += `<div class="sec">Export / import</div><textarea id="saveText" rows="4" style="width:100%;box-sizing:border-box;font:11px monospace" placeholder="Press Export, or paste a save here and press Import">${saveBuf}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="act" data-act="exportsave">Export</button><button class="act red" data-act="importsave">Import (replaces your guild)</button></div>`;
       return ['💾 Save slots', h];
+    }
+    case 'event': {
+      const E = EVENTS[evq()[0]]; if (!E) { return ['📬 Event', '<div class="s">Nothing to decide.</div>']; }
+      return [E.icon + ' ' + E.title, `<div class="s" style="line-height:1.5;margin-bottom:8px">${E.text}</div>` + E.ch.map((c, i) => `<div class="row"><div class="grow"><div class="t">${c.label}</div></div><button class="act" data-act="eventchoose" data-i="${i}" ${c.ok && !c.ok() ? 'disabled' : ''}>Choose</button></div>`).join('')];
     }
     case 'shop': {
       let h = '<div class="s">Optional purchases that support the game. Nothing here is needed to play, and none of it makes the game easier to win.</div>';
@@ -1934,6 +1987,8 @@ const ACT = {
   relmap() { openModal('relmap'); },
   dailyopen() { openModal('daily'); },
   shop() { openModal('shop'); },
+  eventopen() { openModal('event'); },
+  eventchoose(d) { chooseEvent(+d.i); },
   async iapbuy(d) { const ok = await IAP.buy(d.id); if (!ok) return toast('The purchase was not completed.'); grantPurchase(d.id); renderModal(true); },
   dailyclaim() { const L = G.flags.login; if (!L || !L.pending) return; const r = dailyReward(L.streak - 1); G.gold += r.gold; G.ore += r.ore || 0; G.herbs += r.herbs || 0; G.wood += r.wood || 0; G.mana += r.mana || 0; G.rare.mythril += r.mythril || 0; L.pending = 0; sfx('goal'); toast(`🎁 Daily reward claimed: +${r.gold}g${r.mythril ? ' +1 Mythril' : ''}`); chron(`🎁 Day ${L.streak} reward`); },
   async adrest() { const ok = await Ads.show('restGuild'); if (!ok) return toast('The ad was not completed — no reward.'); let n = 0; for (const h of G.heroes) if (h.state !== 'quest' && h.state !== 'leaving' && h.stamina < 100) { h.stamina = 100; n++; floatText(h.pos, '✨', '#9bff9b'); } sfx('goal'); toast(`✨ ${n} heroes are rested and ready.`); renderModal(true); },
@@ -2543,4 +2598,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__renderer = renderer; window.__scene = scene; window.__api = { checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__renderer = renderer; window.__scene = scene; window.__api = { pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };

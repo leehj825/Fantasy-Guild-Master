@@ -274,6 +274,8 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^🌊 Lost (\d+) herbs; the heroes are weary\.$/, n => `🌊 약초 ${n}개를 잃었고 영웅들이 지쳤습니다.`],
+    [/^🔥 Lost (\d+) wood and (\d+) ore\.$/, (w, o) => `🔥 목재 ${w}, 광석 ${o}를 잃었습니다.`],
     [/^🎁 Starter pack: \+(\d+)g, \+2 Mythril and materials\. Thank you!$/, g => `🎁 스타터 팩: +${g}골드, 미스릴 +2와 재료. 감사합니다!`],
     [/^Day (\d+) of 7 is waiting\.$/, n => `7일 중 ${n}일째 보상이 기다리고 있습니다.`],
     [/^Day (\d+)$/, n => `${n}일째`],
