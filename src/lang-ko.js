@@ -274,6 +274,15 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^(.+)’s shop$/, n => `${n}의 가게`],
+    [/^(\S+) Weather: (.+)\. (.+)$/, (i, w, d) => `${i} 날씨: ${f(w)}. ${f(d)}`],
+    [/^Weather: (.+)$/, w => `날씨: ${f(w)}`],
+    [/^Day (\d+)$/, n => `${n}일째`],
+    [/^(\S+) (.+) · (\d+) min until the season changes$/, (i, s2, n) => `${i} ${f(s2)} · 계절이 바뀔 때까지 ${n}분`],
+    [/^(Today! )?Every 5th day: sell prices \+15%\. Next: day (\d+)\.$/, (t, n) => `${t ? '오늘입니다! ' : ''}5일마다: 판매가 +15%. 다음: ${n}일째.`],
+    [/^Every 10th day: enter a hero\. Next: day (\d+)\.$/, n => `10일마다: 영웅 한 명을 출전시킵니다. 다음: ${n}일째.`],
+    [/^🏆 (.+) wins the tournament! \+600g, \+2⭐$/, n => `🏆 ${n}이(가) 토너먼트에서 우승했습니다! +600골드, +2⭐`],
+    [/^🏆 (.+) placed well but lost\. \+100g$/, n => `🏆 ${n}이(가) 선전했지만 패했습니다. +100골드`],
     [/^📋 “(.+)” failed: (.+)\. Next time: (.+)\.$/, (n, w, x) => {
       const P = { 'no hero was strong against the boss': '보스에게 강한 영웅이 없었음', 'some heroes were tired': '일부 영웅이 지쳐 있었음', 'some heroes had no gear': '일부 영웅에게 장비가 없었음', 'bad luck — even good odds can fail': '운이 나빴음 — 승산이 높아도 실패할 수 있습니다', 'pick a stronger party or an easier quest': '더 강한 파티를 꾸리거나 쉬운 퀘스트를 고르세요', 'use the boss preparations': '보스 준비를 사용하세요', 'let them rest first': '먼저 쉬게 하세요', 'equip them at the forge': '대장간에서 장비를 갖추게 하세요', 'a cleric lowers casualties': '성직자가 있으면 사상자가 줄어듭니다', 'try again': '다시 도전하세요' };
       const t = s => s.split('; ').map(x => P[x] || x.replace(/^the odds were only (\d+)%$/, '승률이 $1%뿐이었음').replace(/^bring a (.+)$/, (m, c) => `${c.split(' or ').map(v => f(v)).join(' 또는 ')}을(를) 데려가세요`)).join('; ');
