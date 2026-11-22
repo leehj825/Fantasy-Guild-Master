@@ -274,6 +274,11 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^🎒 Loot: (.+) \((.+)\)$/, (n, r2) => `🎒 전리품: ${n} (${f(r2)})`],
+    [/^🎒 Pack full — sold (.+) for (\d+)g\.$/, (n, g) => `🎒 가방이 가득 차 ${n}을(를) ${g}골드에 팔았습니다.`],
+    [/^🎒 Sold common items for (\d+)g\.$/, g => `🎒 일반 아이템을 ${g}골드에 팔았습니다.`],
+    [/^(\d+)\/30 items\. Items drop from expeditions.*$/, n => `${n}/30개. 아이템은 원정에서 나오며(보스는 항상 하나), 영웅의 장비 탭에서 장착하거나 필요 없으면 판매하세요.`],
+    [/^Sell (\d+)g$/, g => `${g}골드에 판매`],
     [/^· (\d+) points free$/, n => `· 남은 포인트 ${n}`],
     [/^🌳 Mastery(?: · (\d+) points free)?$/, n => `🌳 숙련${n ? ' · 남은 포인트 ' + n : ''}`],
     [/^(.+?) · capstone (✔|at rank 3)$/, (a, c) => `${f(a)} · 정점 ${c === '✔' ? '✔' : '랭크 3에서'}`],

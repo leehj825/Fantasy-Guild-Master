@@ -448,6 +448,7 @@ function heroMods(h) {
   if (h.boon) { m.pw *= h.boon.pw || 1; m.succ += h.boon.succ || 0; m.loot += h.boon.loot || 0; m.survive += h.boon.survive || 0; }
   if ((h.loy ?? 60) >= 80) m.pw *= 1.04; else if ((h.loy ?? 60) <= 25) m.pw *= 0.96;
   if (h.cls === 'rogue') m.loot += 0.15;
+  if (h.eq) for (const it of Object.values(h.eq)) if (it) for (const [a, v] of Object.entries(it.aff)) { if (a === 'pw') m.pw *= 1 + v; else m[a] += v; }
   if (h.sk) for (const [k, r] of Object.entries(h.sk)) { const B = BRANCH[k]; if (!B || !r) continue; for (const [a, v] of Object.entries(B.per)) { if (a === 'pw') m.pw *= Math.pow(v, r); else m[a] += v * r; } if (r >= 3) for (const [a, v] of Object.entries(B.cap)) { if (a === 'pw') m.pw *= v; else m[a] += v; } }
   if (h.role && ROLES[h.role]) { const R = ROLES[h.role][3]; m.pw *= R.pw || 1; m.survive += R.survive || 0; m.succ += R.succ || 0; m.decay += R.decay || 0; }
   if (fullKit(h)) { m.pw *= 1.08; m.survive += 0.05; }
@@ -530,7 +531,7 @@ function createHero(d) {
     mesh, pos: mesh.position, bub, state: 'idle', target: null, onArrive: null, timer: 0, onDone: null, cool: 0, phase: Math.random() * 6, vis: true,
   };
   codexAdd('classes', h.cls); if (d.tags) { h.tags = d.tags; h.bio = d.bio; h.likes = d.likes; h.dislikes = d.dislikes; } else Object.assign(h, makeProfile(h.cls));
-  (h.tags || []).forEach(t => codexAdd('tags', t)); h.loy = d.loy ?? 60; h.charm = d.charm || null; h.sk = d.sk || null; h.role = d.role || null; h.wep = d.wep || null; h.diary = d.diary || []; h.marks = d.marks || []; h.title = d.title || null; h.boon = d.boon || null; h.arc = d.arc || { id: pickArc(h), ch: 0 };
+  (h.tags || []).forEach(t => codexAdd('tags', t)); h.loy = d.loy ?? 60; h.charm = d.charm || null; h.eq = d.eq || null; h.sk = d.sk || null; h.role = d.role || null; h.wep = d.wep || null; h.diary = d.diary || []; h.marks = d.marks || []; h.title = d.title || null; h.boon = d.boon || null; h.arc = d.arc || { id: pickArc(h), ch: 0 };
   mesh.userData.hid = h.id; G.heroes.push(h); if (loadedOnce) cardAdd(h); if (h.vip) addStar(h); if (h.promo) addPromoGear(h); if (d.bonds === undefined) assignBonds(h); else if (!h.aff) { h.aff = {}; for (const [id, k] of Object.entries(h.bonds || {})) h.aff[id] = k === 'rival' ? -35 : 35; }
   return h;
 }
@@ -885,7 +886,7 @@ function resolveQuest(q) {
     h.state = 'idle'; h.cool = 0; h.stamina = Math.max(20, h.stamina - 25 * (1 - 0.12 * Math.min(3, retireN('scout')) - (hasPet('hawk') ? 0.08 : 0)));
     h.pos.set(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1)); h.mesh.visible = true; h.target = null;
     if (!ok && q.deaths.includes(h.id)) { memorialize(h, `fell on "${q.name}"`); if (h.vip) G.renown = Math.max(0, G.renown - 1); removeHero(h, h.vip ? `☠ ${h.name} — a legend of the guild — has fallen!` : `${h.name} the ${CLASSES[h.cls].label} fell in battle...`); return; }
-    h.quests = (h.quests || 0) + 1; if (ok && h === q.heroes[0]) { passPts(1); missionTick('quest'); if (q.boss && Math.random() < 0.5) dropBlueprint(ENEMY_NAME[q.boss] || 'a boss'); } diary(h, ok ? `Returned victorious from “${q.name}”.` : `Limped home from “${q.name}”.`);
+    h.quests = (h.quests || 0) + 1; if (ok && h === q.heroes[0]) { passPts(1); missionTick('quest'); if (q.heroes[0] === h) dropLoot(q, ok); if (q.boss && Math.random() < 0.5) dropBlueprint(ENEMY_NAME[q.boss] || 'a boss'); } diary(h, ok ? `Returned victorious from “${q.name}”.` : `Limped home from “${q.name}”.`);
     if (ok) gainXp(h, traitOf(h) === 'scholar' ? 2 : 1);
     if (ok && h.bonds && Object.entries(h.bonds).some(([id, k]) => k === 'apprentice' && q.heroes.some(x => x.id === +id))) gainXp(h, 1);   // a mentor in the party teaches
     h.loy = Math.max(0, Math.min(100, (h.loy ?? 60) + (ok ? 1 : -1)));
@@ -1789,6 +1790,27 @@ const heroNameplate = h => {
   if (!h.tagEl) { h.tagEl = document.createElement('div'); h.tagEl.className = 'hnp'; worldEl.appendChild(h.tagEl); }
   return h.tagEl;
 };
+// ---- loot: armor and trinkets drop from expeditions with a rarity and affixes; each hero wears one of each
+const RARITY = [['Common', '#b8bcc4', 1], ['Rare', '#4aa8ff', 2], ['Epic', '#b070ff', 3], ['Legendary', '#ffb030', 4]];
+const AFFIX = { pw: ['Mighty', v => `+${Math.round(v * 100)}% power`], survive: ['Sturdy', v => `+${Math.round(v * 100)}% survival`], loot: ['Greedy', v => `+${Math.round(v * 100)}% loot`], decay: ['Tireless', v => `stamina drain −${Math.round(-v * 100)}%`], succ: ['Lucky', v => `+${Math.round(v * 100)}% party success`] };
+const BASES = { armor: ['Mail', 'Cloak', 'Plate', 'Robe', 'Vest'], trinket: ['Ring', 'Amulet', 'Charm', 'Talisman', 'Badge'] };
+const inv = () => (G.flags.inv ||= []);
+function rollItem(power) {
+  const r = Math.random(), rar = r < 0.04 + 0.01 * G.rank ? 3 : r < 0.18 + 0.03 * G.rank ? 2 : r < 0.5 ? 1 : 0, slot = Math.random() < 0.5 ? 'armor' : 'trinket', n = 1 + (rar >= 2 ? 1 : 0) + (rar >= 3 ? 1 : 0), keys = Object.keys(AFFIX).sort(() => Math.random() - 0.5).slice(0, n);
+  const sc = (1 + rar * 0.6) * (1 + 0.04 * (G.rank + power)), aff = {};
+  for (const k of keys) aff[k] = k === 'pw' ? +(0.03 * sc).toFixed(3) : k === 'decay' ? -+(0.05 * sc).toFixed(3) : k === 'loot' ? +(0.05 * sc).toFixed(3) : +(0.025 * sc).toFixed(3);
+  return { id: G.nextId++, slot, rar, name: `${RARITY[rar][0] === 'Common' ? '' : RARITY[rar][0] + ' '}${AFFIX[keys[0]][0]} ${pick(BASES[slot])}`.trim(), aff };
+}
+const itemText = it => Object.entries(it.aff).map(([k, v]) => AFFIX[k][1](v)).join(', ');
+const itemTag = it => `<span style="color:${RARITY[it.rar][1]};font-weight:700">${it.slot === 'armor' ? '🛡' : '💍'} ${it.name}</span>`;
+const itemValue = it => 40 * (it.rar + 1) * (it.rar + 1);
+function dropLoot(q, ok) {
+  if (!ok || q.dive || q.defense || q.town) return; const boss = !!q.boss;
+  if (Math.random() > (boss ? 1 : 0.28)) return; const it = rollItem(q.minH || 1); if (inv().length >= 30) { G.gold += itemValue(it); toast(`🎒 Pack full — sold ${it.name} for ${itemValue(it)}g.`); return; }
+  inv().push(it); toast(`🎒 Loot: ${it.name} (${RARITY[it.rar][0]})`); if (it.rar >= 2) sfx('chest');
+}
+function equipItem(h, id) { const i = inv().findIndex(x => x.id === id); if (i < 0) return; const it = inv()[i]; h.eq = h.eq || {}; const old = h.eq[it.slot]; inv().splice(i, 1); if (old) inv().push(old); h.eq[it.slot] = it; sfx('build'); }
+function unequipItem(h, slot) { if (!h.eq || !h.eq[slot] || inv().length >= 30) return; inv().push(h.eq[slot]); h.eq[slot] = null; }
 // ---- hero diary: a few lines per hero about what happened to them
 const diary = (h, text) => { if (!h) return; const d = (h.diary ||= []); d.push({ d: Math.floor(G.time / 60) + 1, t: text }); if (d.length > 8) d.shift(); };
 // ---- 3D companions and disaster visuals
@@ -2270,6 +2292,10 @@ function modalContent() {
       h += `<div class="sec">Export / import</div><textarea id="saveText" rows="4" style="width:100%;box-sizing:border-box;font:11px monospace" placeholder="Press Export, or paste a save here and press Import">${saveBuf}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="act" data-act="exportsave">Export</button><button class="act red" data-act="importsave">Import (replaces your guild)</button></div>`;
       return ['💾 Save slots', h];
     }
+    case 'inv': {
+      const l = inv().slice().sort((a, b) => b.rar - a.rar);
+      return ['🎒 Pack', `<div class="s">${l.length}/30 items. Items drop from expeditions (bosses always drop one). Equip them from a hero's Gear tab, or sell what you don't need.</div><div style="display:flex;gap:6px;margin:6px 0"><button class="act red" data-act="sellcommon">Sell all Common</button></div>` + (l.map(it => `<div class="row"><div class="grow"><div class="t">${itemTag(it)} <span class="tag">${RARITY[it.rar][0]}</span></div><div class="s">${itemText(it)}</div></div><button class="act red" data-act="sellitem" data-i="${it.id}">Sell ${itemValue(it)}g</button></div>`).join('') || '<div class="s">The pack is empty.</div>')];
+    }
     case 'album': {
       const c = G.flags.cards || {}, rew = G.flags.cardRew || {}, forms = [['base', 'Base'], ['a', 'Promotion A'], ['b', 'Promotion B']];
       let h = `<div class="s">Recruit each class and promote it both ways to complete its set. A finished set pays 500g and a Mythril shard; the full album pays much more. Rare visitors: ${Object.keys(G.flags.rareJoined || {}).length}/${Object.keys(VISITORS).length}.</div>`;
@@ -2278,7 +2304,7 @@ function modalContent() {
     }
     case 'heroes': {
       const list = heroList(), todo = todoCount();
-      let h = `<div class="s">${G.heroes.length} heroes · ${todo} need attention <button class="act red" data-act="album" style="float:right">🃏 Album</button></div><div style="display:flex;gap:5px;flex-wrap:wrap;margin:6px 0">` + Object.entries(FILTERS).map(([k, n]) => `<button class="act ${heroFilter === k ? '' : 'red'}" data-act="hfilter" data-k="${k}">${n}</button>`).join('') + `</div><div style="display:flex;gap:5px;flex-wrap:wrap;margin:0 0 6px"><span class="s" style="align-self:center">Sort:</span>` + Object.entries(SORTS).map(([k, n]) => `<button class="act ${heroSort === k ? '' : 'red'}" data-act="hsort" data-k="${k}">${n}</button>`).join('') + `</div>`;
+      let h = `<div class="s">${G.heroes.length} heroes · ${todo} need attention <button class="act red" data-act="inv" style="float:right;margin-left:4px">🎒 Pack (${inv().length})</button><button class="act red" data-act="album" style="float:right">🃏 Album</button></div><div style="display:flex;gap:5px;flex-wrap:wrap;margin:6px 0">` + Object.entries(FILTERS).map(([k, n]) => `<button class="act ${heroFilter === k ? '' : 'red'}" data-act="hfilter" data-k="${k}">${n}</button>`).join('') + `</div><div style="display:flex;gap:5px;flex-wrap:wrap;margin:0 0 6px"><span class="s" style="align-self:center">Sort:</span>` + Object.entries(SORTS).map(([k, n]) => `<button class="act ${heroSort === k ? '' : 'red'}" data-act="hsort" data-k="${k}">${n}</button>`).join('') + `</div>`;
       h += `<div style="display:flex;gap:5px;flex-wrap:wrap;margin:0 0 6px"><button class="act" data-act="bulktrain" ${first('training') ? '' : 'disabled'}>🏋 Train all idle</button><button class="act" data-act="bulkreinforce" ${first('forge') ? '' : 'disabled'}>⚒ Reinforce all</button></div>`;
       h += list.map(x => { const tds = heroTodo(x), cl = x.promo ? promoOf(x).icon : CLASSES[x.cls].icon; return `<div class="row" data-act="hero" data-id="${x.id}" style="cursor:pointer;${tds.length ? 'border-color:#8fd4ff' : ''}"><div style="font-size:30px">${cl}</div><div class="grow"><div class="t">${x.vip ? '⭐ ' : ''}${x.name} <span class="tag">Lv ${x.level}</span> <span class="tag">${heroLabel(x)}</span>${x.wep ? ' ' + LEGWEP[x.wep].icon : ''}${x.charm ? ' ' + CHARMS[x.charm].icon : ''}</div><div class="bar" title="Stamina"><i style="width:${Math.round(x.stamina)}%;background:${x.stamina < 45 ? '#e0503a' : '#5be35b'}"></i></div><div class="bar" title="Happiness"><i style="width:${Math.round(x.happy)}%;background:${x.happy < 30 ? '#e0503a' : '#f0c040'}"></i></div><div class="s">${{ idle: 'Idle', walking: 'Walking', busy: 'Busy', waiting: 'Waiting around', quest: 'On an expedition', leaving: 'Leaving the guild' }[x.state] || x.state}${tds.length ? ' · ' + tds.map(t => t[0] + ' ' + t[1]).join(' · ') : ''}</div></div></div>`; }).join('') || '<div class="s">No heroes match.</div>';
       return ['👥 Heroes', h];
@@ -2417,6 +2443,7 @@ function modalContent() {
         <div class="row"><div class="grow"><div class="t">Gear</div><div class="s">${h.gear ? '✔ ' + gearName(h) + ' gear equipped' : '✘ Needs ' + (usesLab(h.cls) ? 'potions from the Alchemical Lab' : 'a weapon from the Forge')}</div></div>
         <div class="grow"><div class="t">Power</div><div class="s">${heroPower(h, c.quest).toFixed(1)} on ${c.quest} quests</div></div></div>`;
       cur = 'gear';
+      { const eq = h.eq || {}; T[cur] += `<div class="sec">🎒 Equipment</div>` + ['armor', 'trinket'].map(sl => { const it = eq[sl]; return `<div class="row"><div class="grow"><div class="t">${it ? itemTag(it) : (sl === 'armor' ? '🛡 Armor slot: empty' : '💍 Trinket slot: empty')}</div>${it ? `<div class="s">${itemText(it)}</div>` : ''}</div>${it ? `<button class="act red" data-act="unequip" data-id="${h.id}" data-k="${sl}">Remove</button>` : ''}</div>`; }).join('') + inv().filter(it => it).slice().sort((a, b) => b.rar - a.rar).slice(0, 6).map(it => `<div class="row"><div class="grow"><div class="t">${itemTag(it)}</div><div class="s">${itemText(it)}</div></div><button class="act" data-act="equipitem" data-id="${h.id}" data-i="${it.id}">Equip</button></div>`).join(''); }
       { const pc = plusCost(h), pl = h.plus || 0, mp = maxPlus(), canP = first('forge') && pl < mp && G.gold >= pc.gold && G.ore >= pc.ore && G.ingots >= pc.ing, tc = trainCost(h);
         T[cur] += `<div class="row"><div class="grow"><div class="t">⚒ Gear +${pl}/${mp}</div><div class="s">Each step: +5% power. ${first('forge') ? (pl >= mp ? 'Upgrade the Forge for more steps.' : `Next: ${pc.gold}g, ${pc.ore} ore${pc.ing ? ', ' + pc.ing + ' ingots' : ''}`) : 'Needs a Forge.'}</div></div><button class="act" data-act="reinforce" data-id="${h.id}" ${canP ? '' : 'disabled'}>Reinforce</button></div>`;
         T[cur] += `<div class="row"><div class="grow"><div class="t">🏋 Intensive training</div><div class="s">${h.train > 0 ? 'Training… ' + Math.ceil(h.train) + 's left' : first('training') ? `80 s of drills for ${tc}g — heroes in training cannot go on quests.` : 'Needs a Training Grounds.'}</div></div><button class="act" data-act="trainhero" data-id="${h.id}" ${first('training') && !(h.train > 0) && h.state !== 'quest' && G.gold >= tc ? '' : 'disabled'}>Train</button></div>`; }
@@ -2528,6 +2555,11 @@ const ACT = {
   role(d) { const h = G.heroes.find(x => x.id === +d.id), R = ROLES[d.k]; if (!h || !R || h.level < 3 || G.gold < roleCost(h)) return; G.gold -= roleCost(h); h.role = d.k; diary(h, `Took up the role of ${R[1].toLowerCase()}.`); toast(`${R[0]} ${h.name} is now a ${R[1].toLowerCase()}.`); sfx('goal'); },
   heroes() { openModal('heroes'); },
   album() { openModal('album'); },
+  inv() { openModal('inv'); },
+  equipitem(d) { const h = G.heroes.find(x => x.id === +d.id); if (h) equipItem(h, +d.i); },
+  unequip(d) { const h = G.heroes.find(x => x.id === +d.id); if (h) unequipItem(h, d.k); },
+  sellitem(d) { const i = inv().findIndex(x => x.id === +d.i); if (i < 0) return; G.gold += itemValue(inv()[i]); inv().splice(i, 1); sfx('coin'); },
+  sellcommon() { let g = 0; G.flags.inv = inv().filter(it => { if (it.rar === 0) { g += itemValue(it); return false; } return true; }); G.gold += g; toast(`🎒 Sold common items for ${g}g.`); },
   hfilter(d) { heroFilter = d.k; },
   hsort(d) { heroSort = d.k; },
   htab(d) { heroTab = d.k; },
@@ -2884,7 +2916,7 @@ function serialize() {
   return {
     v: 1, savedAt: Date.now(), g,
     buildings: G.buildings.map(b => ({ type: b.type, cx: b.cx, cz: b.cz, rot: b.rot || 0, level: b.level, stock: b.stock, progress: b.progress, spec: b.spec })),
-    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, promo: h.promo, talents: h.talents, bonds: h.bonds, aff: h.aff, vow: h.vow, quests: h.quests, vip: h.vip, tags: h.tags, bio: h.bio, likes: h.likes, dislikes: h.dislikes, loy: h.loy, marks: h.marks, plus: h.plus, train: h.train, arc: h.arc, title: h.title, boon: h.boon, charm: h.charm, sk: h.sk, role: h.role, wep: h.wep, diary: h.diary, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
+    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, promo: h.promo, talents: h.talents, bonds: h.bonds, aff: h.aff, vow: h.vow, quests: h.quests, vip: h.vip, tags: h.tags, bio: h.bio, likes: h.likes, dislikes: h.dislikes, loy: h.loy, marks: h.marks, plus: h.plus, train: h.train, arc: h.arc, title: h.title, boon: h.boon, charm: h.charm, eq: h.eq, sk: h.sk, role: h.role, wep: h.wep, diary: h.diary, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
     quests: G.quests.map(q => { const o = {}; for (const [k, v] of Object.entries(q)) if (k !== 'heroes' && k !== 'script') o[k] = v; o.heroIds = (q.heroes || []).map(h => h.id); return o; }),
     extra: serializeExtra(),
   };
@@ -3224,4 +3256,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__renderer = renderer; window.__scene = scene; window.__api = { maybeFork, smiteGoblin, tickFlash, cardAdd, tickVisitors, districts, fullKit, ROLES, missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__renderer = renderer; window.__scene = scene; window.__api = { rollItem, dropLoot, equipItem, inv, maybeFork, smiteGoblin, tickFlash, cardAdd, tickVisitors, districts, fullKit, ROLES, missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
