@@ -274,6 +274,12 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^🃏 New card: (\S+) (.+)$/, (i, n) => `🃏 새 카드: ${i} ${f(n)}`],
+    [/^🃏 (.+) set complete! \+500g, \+1 💎$/, n => `🃏 ${f(n)} 세트 완성! +500골드, +1 💎`],
+    [/^🃏 The album is complete! \+3 💎, \+1 🐉, \+5⭐$/, () => '🃏 도감을 완성했습니다! +3 💎, +1 🐉, +5⭐'],
+    [/^Recruit each class and promote it both ways to complete its set\..*Rare visitors: (\d+)\/(\d+)\.$/, (a, b) => `직업마다 영입하고 두 전직을 모두 시키면 세트가 완성됩니다. 세트 완성 시 500골드와 미스릴 1개, 도감 완성 시 훨씬 큰 보상을 줍니다. 희귀 방문자: ${a}/${b}.`],
+    [/^(\S+) (.+) joined the guild!$/, (i, n) => `${i} ${n}이(가) 길드에 합류했습니다!`],
+    [/^(\S+) They bless the guild and move on\. \+2 reputation\.$/, i => `${i} 그들은 길드를 축복하고 떠났습니다. 평판 +2.`],
     [/^(.+) Needs 3 of: (.+)\.$/, (p, l) => `${f(p)} 필요: ${l.split(', ').map(x => f(x)).join(', ')} 중 3개.`],
     [/^🎭 Role(?:: (\S+) (.+?))?( · 🎖 Full kit \+8% power)?$/, (i, n, k2) => `🎭 역할${n ? ': ' + i + ' ' + f(n) : ''}${k2 ? ' · 🎖 풀 세트 전투력 +8%' : ''}`],
     [/^(\S+) (.+) is now a (.+)\.$/, (i, h, r2) => `${i} ${h}이(가) ${f(r2.charAt(0).toUpperCase() + r2.slice(1))}이(가) 되었습니다.`],
