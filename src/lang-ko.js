@@ -274,6 +274,21 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^A short roguelike dive: eight rooms.*Shards: (\d+) · Best depth: (\d)\/8 · Runs: (\d+)$/, (a, b, c) => `짧은 로그라이크 탐험: 방 8개와 마지막 보스. 조각으로 영구 강화를 삽니다. 조각: ${a} · 최고 깊이: ${b}/8 · 도전: ${c}회`],
+    [/^Room (\d)\/8 · Run gold (\d+) · Relics: (.+)$/, (n, g, rl) => `방 ${n}/8 · 이번 골드 ${g} · 유물: ${rl === 'none' ? '없음' : rl}`],
+    [/^Health (-?\d+)\/(\d+) · Party power (.+)$/, (a, b, c) => `체력 ${a}/${b} · 파티 전투력 ${c}`],
+    [/^Strength (.+)$/, n => `강도 ${n}`],
+    [/^🕳 Delve (cleared|ended): \+(\d+)g, \+(\d+) shards \(depth (\d)\/8\)$/, (w, g, sh, d) => `🕳 탐험 ${w === 'cleared' ? '성공' : '종료'}: +${g}골드, 조각 +${sh} (깊이 ${d}/8)`],
+    [/^🕳 Delve (cleared|ended) at depth (\d)\.$/, (w, d) => `🕳 탐험 ${w === 'cleared' ? '성공' : '종료'} (깊이 ${d}).`],
+    [/^— Room (\d): (.+)$/, (n, t) => `— 방 ${n}: ${({ 'a fight': '전투', 'an elite foe': '정예 적', 'the Delve boss': '탐험 보스', 'a treasure room': '보물 방', 'a resting spot': '쉼터', 'a wandering trader': '떠돌이 상인', 'a strange shrine': '기이한 제단' })[t] || t}`],
+    [/^ +The party takes (\d+) damage\.$/, n => `  파티가 ${n}의 피해를 입었습니다.`],
+    [/^ +\+(\d+)g$/, n => `  +${n}골드`],
+    [/^ +A hoard! \+(\d+)g$/, n => `  보물 더미! +${n}골드`],
+    [/^ +The party rests \(\+(\d+) health\)\.$/, n => `  파티가 쉽니다 (체력 +${n}).`],
+    [/^ +Bought a healing draught \(−40g, \+35 health\)\.$/, () => '  회복 물약을 샀습니다 (−40골드, 체력 +35).'],
+    [/^ +The shrine blesses you\. \+(\d+)g$/, n => `  제단이 축복합니다. +${n}골드`],
+    [/^ +A curse! −(\d+) health\.$/, n => `  저주! 체력 −${n}.`],
+    [/^ +Took (.+)\.$/, n => `  ${f(n)} 획득.`],
     [/^(.+) and (.+) have fought side by side for a long time\. Tonight they sit by the fire sharing stories\.$/, (a, b) => `${a}와(과) ${b}은(는) 오랫동안 나란히 싸웠습니다. 오늘 밤 둘은 불가에 앉아 이야기를 나눕니다.`],
     [/^(.+) and (.+) keep finding reasons to be near each other\..*$/, (a, b) => `${a}와(과) ${b}은(는) 자꾸 서로의 곁에 있을 핑계를 찾습니다. 주점 사람들은 모르는 척합니다.`],
     [/^(.+) and (.+) have been trading barbs all week\..*$/, (a, b) => `${a}와(과) ${b}은(는) 일주일 내내 말다툼을 합니다. 누군가 훈련장에서 결판을 내자고 합니다.`],

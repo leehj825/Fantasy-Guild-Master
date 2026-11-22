@@ -1959,6 +1959,48 @@ const ENDINGS = {
 function epilogue() {
   const best = Object.entries(ENDINGS).sort((a, b) => b[1].score() - a[1].score())[0][0]; G.flags.ending = best; (G.flags.endingsSeen ||= {})[best] = 1; return best;
 }
+// ---- Delve: a short roguelike run. Pick a path through eight rooms; win fights, gather relics, bank the loot (or lose half if the party falls)
+const DV_RELICS = {
+  iron: ['🛡', 'Ironskin', 'Take 20% less damage.'], blood: ['🩸', 'Bloodlust', '+15% power.'], coin: ['🪙', 'Lucky coin', '+30% gold from rooms.'], medic: ['💚', 'Field medic', 'Heal 8 after every fight.'], sage: ['📿', 'Sage’s bead', '+1 shard from elites and the boss.'], ward: ['✨', 'Ward stone', 'Once per run, survive a deadly blow.'],
+};
+const DV_UP = { hp: ['❤', 'Hardy party', '+10 starting health per level.', 5, 6], gold: ['💰', 'Treasure sense', '+10% gold from delves per level.', 5, 6], relic: ['📿', 'Starting relic', 'Begin each run with a random relic (level 1).', 1, 15] };
+const dvState = () => (G.flags.dv ||= { shards: 0, best: 0, up: {}, run: null, runs: 0 });
+const dvUp = k => dvState().up[k] || 0;
+const dvPower = r => r.party.map(id => G.heroes.find(h => h.id === id)).filter(Boolean).reduce((n, h) => n + heroPower(h, 'combat'), 0) * (r.relics.includes('blood') ? 1.15 : 1);
+function dvOptions(r) {
+  const d = r.depth, boss = d === 7, kinds = boss ? ['boss'] : d === 0 ? ['fight', 'fight'] : [pick(['fight', 'fight', 'elite']), pick(['treasure', 'rest', 'shop', 'event', 'fight'])];
+  return kinds.map(k => ({ k, e: +(4.5 + d * 2.8 + rnd(-0.6, 0.8)).toFixed(1) * (k === 'elite' ? 1.5 : k === 'boss' ? 2.3 : 1) }));
+}
+function dvStart() {
+  const st = dvState(), rd = readyHeroes().sort((a, b) => heroPower(b, 'combat') - heroPower(a, 'combat')).slice(0, 3); if (rd.length < 2) return toast('A delve needs at least 2 geared, rested heroes.');
+  if (st.run) return; rd.forEach(h => { h.stamina = Math.max(15, h.stamina - 35); });
+  const hp = 100 + 10 * dvUp('hp'); st.run = { party: rd.map(h => h.id), names: rd.map(h => h.name), hp, max: hp, depth: 0, relics: dvUp('relic') ? [pick(Object.keys(DV_RELICS))] : [], gold: 0, shards: 0, log: ['The party descends into the Delve…'], ward: false, offer: null };
+  st.run.opts = dvOptions(st.run); st.runs++; sfx('horn');
+}
+function dvAdvance(r) { r.depth++; if (r.depth > dvState().best) dvState().best = r.depth; r.opts = r.depth >= 8 ? null : dvOptions(r); }
+function dvFinish(win) {
+  const st = dvState(), r = st.run; if (!r) return; const mul = 1 + 0.1 * dvUp('gold'), gold = Math.round(r.gold * mul * (win ? 1 : 0.5)), sh = r.shards + (win ? 2 : 0);
+  G.gold += gold; st.shards += sh; if (win) st.best = 8; r.party.forEach(id => { const h = G.heroes.find(x => x.id === id); if (h) { gainXp(h, win ? 3 : 1); diary(h, win ? 'Conquered the Delve.' : 'Fell back from the Delve.'); } });
+  toast(`🕳 Delve ${win ? 'cleared' : 'ended'}: +${gold}g, +${sh} shards (depth ${r.depth}/8)`); chron(`🕳 Delve ${win ? 'cleared' : 'ended'} at depth ${r.depth}.`); passPts(win ? 8 : 3); st.run = null; sfx(win ? 'win' : 'lose');
+}
+function dvChoose(i) {
+  const st = dvState(), r = st.run; if (!r || r.offer) return; const o = r.opts && r.opts[i]; if (!o) return; const L = r.log; L.push(`— Room ${r.depth + 1}: ${({ fight: 'a fight', elite: 'an elite foe', boss: 'the Delve boss', treasure: 'a treasure room', rest: 'a resting spot', shop: 'a wandering trader', event: 'a strange shrine' })[o.k]}`);
+  const gm = r.relics.includes('coin') ? 1.3 : 1, rc = id => r.relics.includes(id);
+  if (o.k === 'fight' || o.k === 'elite' || o.k === 'boss') {
+    const P = dvPower(r), dmg = Math.max(4, Math.min(65, Math.round(o.e / Math.max(1, P) * 32 * rnd(0.75, 1.25) * (rc('iron') ? 0.8 : 1))));
+    r.hp -= dmg; L.push(`  The party takes ${dmg} damage.`);
+    if (r.hp <= 0) { if (rc('ward') && !r.ward) { r.ward = true; r.hp = Math.round(r.max * 0.3); L.push('  ✨ The Ward stone saves the party!'); } else { L.push('  The party falls…'); dvFinish(false); return; } }
+    const g = Math.round((12 + r.depth * 7) * gm * (o.k === 'elite' ? 2 : o.k === 'boss' ? 4 : 1)); r.gold += g; L.push(`  +${g}g`);
+    if (rc('medic')) r.hp = Math.min(r.max, r.hp + 8);
+    if (o.k !== 'fight') { r.shards += 1 + (rc('sage') ? 1 : 0); const pool = Object.keys(DV_RELICS).filter(x => !r.relics.includes(x)); if (pool.length && o.k === 'elite') r.offer = pool.sort(() => Math.random() - 0.5).slice(0, 3); }
+    if (o.k === 'boss') { dvFinish(true); return; }
+  } else if (o.k === 'treasure') { const g = Math.round((30 + r.depth * 12) * gm); r.gold += g; L.push(`  A hoard! +${g}g`); }
+  else if (o.k === 'rest') { const h = Math.round(r.max * 0.3); r.hp = Math.min(r.max, r.hp + h); L.push(`  The party rests (+${h} health).`); }
+  else if (o.k === 'shop') { if (r.gold >= 40) { r.gold -= 40; r.hp = Math.min(r.max, r.hp + 35); L.push('  Bought a healing draught (−40g, +35 health).'); } else L.push('  The trader shrugs: no coin, no draught.'); }
+  else if (o.k === 'event') { if (Math.random() < 0.55) { const g = Math.round((25 + r.depth * 10) * gm); r.gold += g; L.push(`  The shrine blesses you. +${g}g`); } else { const d = 12 + r.depth * 2; r.hp -= d; L.push(`  A curse! −${d} health.`); if (r.hp <= 0) { L.push('  The party falls…'); dvFinish(false); return; } } }
+  if (L.length > 14) r.log = L.slice(-14); if (!r.offer) dvAdvance(r);
+}
+function dvRelic(i) { const r = dvState().run; if (!r || !r.offer) return; r.relics.push(r.offer[i]); r.log.push(`  Took ${DV_RELICS[r.offer[i]][1]}.`); r.offer = null; dvAdvance(r); }
 // ---- hero diary: a few lines per hero about what happened to them
 const diary = (h, text) => { if (!h) return; const d = (h.diary ||= []); d.push({ d: Math.floor(G.time / 60) + 1, t: text }); if (d.length > 8) d.shift(); };
 // ---- 3D companions and disaster visuals
@@ -2462,6 +2504,19 @@ function modalContent() {
       const k = G.flags.ending || epilogue(), E = ENDINGS[k];
       return ['📖 Epilogue', `<div style="font-size:44px;text-align:center">${E.icon}</div><div class="t" style="text-align:center;font-size:18px">${E.name}</div><div style="line-height:1.6;margin:8px 0">${E.text}</div><div class="s">Endings found: ${Object.keys(G.flags.endingsSeen || {}).length}/${Object.keys(ENDINGS).length}. The story continues — keep playing, or start a new legacy to see another ending.</div><button class="act" data-act="close" style="margin-top:10px">Continue</button>`];
     }
+    case 'delve': {
+      const st = dvState(), r = st.run;
+      let h = `<div class="s">A short roguelike dive: eight rooms, a boss at the end. Shards buy permanent upgrades. Shards: <b>${st.shards}</b> · Best depth: ${st.best}/8 · Runs: ${st.runs}</div>`;
+      if (!r) {
+        h += `<button class="act" data-act="dvstart" style="margin:8px 0" ${readyHeroes().length >= 2 ? '' : 'disabled'}>🕳 Begin a delve (3 best ready heroes, −35 stamina)</button><div class="sec">Permanent upgrades</div>` + Object.entries(DV_UP).map(([k, U]) => `<div class="row"><div style="font-size:24px">${U[0]}</div><div class="grow"><div class="t">${U[1]} <span class="tag">${dvUp(k)}/${U[3]}</span></div><div class="s">${U[2]}</div></div><button class="act" data-act="dvup" data-k="${k}" ${dvUp(k) >= U[3] || st.shards < U[4] * (dvUp(k) + 1) ? 'disabled' : ''}>${U[4] * (dvUp(k) + 1)} 💠</button></div>`).join('');
+        return ['🕳 Delve', h];
+      }
+      h += `<div class="row" style="border-color:#b070ff"><div class="grow"><div class="t">${r.names.join(', ')}</div><div class="s">Room ${Math.min(8, r.depth + 1)}/8 · Run gold ${r.gold} · Relics: ${r.relics.map(k => DV_RELICS[k][0]).join(' ') || 'none'}</div><div class="bar"><i style="width:${Math.max(0, r.hp / r.max * 100)}%;background:${r.hp / r.max < 0.35 ? '#e0503a' : '#5be35b'}"></i></div><div class="s">Health ${Math.max(0, r.hp)}/${r.max} · Party power ${dvPower(r).toFixed(1)}</div></div></div>`;
+      if (r.offer) h += `<div class="sec">Choose a relic</div>` + r.offer.map((k, i) => `<div class="row"><div style="font-size:24px">${DV_RELICS[k][0]}</div><div class="grow"><div class="t">${DV_RELICS[k][1]}</div><div class="s">${DV_RELICS[k][2]}</div></div><button class="act" data-act="dvrelic" data-i="${i}">Take</button></div>`).join('');
+      else if (r.opts) h += `<div class="sec">Choose your path</div>` + r.opts.map((o, i) => `<div class="row"><div style="font-size:26px">${({ fight: '⚔', elite: '💀', boss: '👑', treasure: '💎', rest: '🏕', shop: '🧳', event: '❓' })[o.k]}</div><div class="grow"><div class="t">${({ fight: 'Fight', elite: 'Elite foe', boss: 'Delve boss', treasure: 'Treasure room', rest: 'Resting spot', shop: 'Wandering trader', event: 'Strange shrine' })[o.k]}</div><div class="s">${['fight', 'elite', 'boss'].includes(o.k) ? 'Strength ' + o.e.toFixed(1) : 'Unknown'}</div></div><button class="act" data-act="dvgo" data-i="${i}">Go</button></div>`).join('');
+      h += `<div class="sec">Log</div>` + r.log.slice(-8).map(x => `<div class="s">${x}</div>`).join('') + `<button class="act red" data-act="dvretreat" style="margin-top:8px">🏳 Retreat (keep half the gold)</button>`;
+      return ['🕳 Delve', h];
+    }
     case 'inv': {
       const l = inv().slice().sort((a, b) => b.rar - a.rar);
       return ['🎒 Pack', `<div class="s">${l.length}/30 items. Items drop from expeditions (bosses always drop one). Equip them from a hero's Gear tab, or sell what you don't need.</div><div style="display:flex;gap:6px;margin:6px 0"><button class="act red" data-act="sellcommon">Sell all Common</button></div>` + (l.map(it => `<div class="row"><div class="grow"><div class="t">${itemTag(it)} <span class="tag">${RARITY[it.rar][0]}</span></div><div class="s">${itemText(it)}</div></div><button class="act red" data-act="sellitem" data-i="${it.id}">Sell ${itemValue(it)}g</button></div>`).join('') || '<div class="s">The pack is empty.</div>')];
@@ -2678,7 +2733,7 @@ function modalContent() {
       if (['forge', 'alchemy', 'tavern', 'warehouse', 'smelter', 'lumber', 'farm', 'bakery'].includes(b.type)) h += `</div><button class="act" data-act="upBuilding" data-id="${b.id}" ${G.gold < uc || G.wood < 5 * b.level || b.level >= maxLevel() || !hasRare(upReq(b)) ? 'disabled' : ''}>${b.level >= maxLevel() ? (G.rank < 3 ? 'Raise guild rank' : 'Max level') : `Upgrade<br>${uc}g + ${5 * b.level}🪵 ${rareTags(upReq(b))}`}</button></div>`; else h += '</div></div>';
       if (b.type !== 'hall' && !t.walkable) h += `<button class="act red" data-act="moveB" data-id="${b.id}" style="margin:6px 0">🧭 Move building (free)</button>`;
       if (b.type === 'memorial') h += `<div class="sec">In memory</div>` + (G.fallen.length ? [...G.fallen].reverse().slice(0, 12).map(f => `<div class="s">${f.vip ? '⭐ ' : ''}<b>${f.name}</b> — level ${f.level} ${f.cls}; ${f.deed}</div>`).join('') : '<div class="s">No one has fallen yet.</div>');
-      if (b.type === 'portal') h += `<div class="s">Deepest dive so far: floor <b>${G.diveBest}</b></div><button class="act" data-act="open" data-k="quests" style="margin:6px 0">Open the Endless Dive</button>`;
+      if (b.type === 'portal') h += `<button class="act" data-act="delve" style="margin:6px 6px 6px 0">🕳 Delve (roguelike run)</button>` + `<div class="s">Deepest dive so far: floor <b>${G.diveBest}</b></div><button class="act" data-act="open" data-k="quests" style="margin:6px 0">Open the Endless Dive</button>`;
       if (b.type === 'market') { const tr0 = G.flags.trade; h += tr0 ? `<div class="s">🐪 Caravan on the road with ${tr0.amt}g of goods — back in ${Math.max(0, Math.ceil(tr0.end - G.time))} s.</div>` : `<div class="sec">Trade route</div><div class="s">Send a caravan: about 70% to return with 1.4–2× your investment; otherwise bandits take most of it.</div><div style="display:flex;gap:6px;margin:4px 0">${[200, 500, 1000].map(n => `<button class="act" data-act="trade" data-n="${n}" ${G.gold < n ? 'disabled' : ''}>${n}g</button>`).join('')}</div>`; }
       if (b.type === 'hall') h += `<div class="sec">Banner colours</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0">` + Object.entries(THEMES).map(([k, T]) => { const own = (G.flags.themes || ['crimson']).includes(k), cur = (G.flags.theme || 'crimson') === k; return `<button class="act ${cur ? '' : 'red'}" data-act="theme" data-k="${k}" ${!own && G.gold < T[2] ? 'disabled' : ''}>${T[0]}${own ? (cur ? ' ✔' : '') : ' ' + T[2] + 'g'}</button>`; }).join('') + `</div>`;
       if (b.type === 'hall') h += `<button class="act" data-act="open" data-k="quests" style="margin:6px 0">Open Quest Board</button>`;
@@ -2738,6 +2793,12 @@ const ACT = {
   role(d) { const h = G.heroes.find(x => x.id === +d.id), R = ROLES[d.k]; if (!h || !R || h.level < 3 || G.gold < roleCost(h)) return; G.gold -= roleCost(h); h.role = d.k; diary(h, `Took up the role of ${R[1].toLowerCase()}.`); toast(`${R[0]} ${h.name} is now a ${R[1].toLowerCase()}.`); sfx('goal'); },
   heroes() { openModal('heroes'); },
   album() { openModal('album'); },
+  delve() { openModal('delve'); },
+  dvstart() { dvStart(); },
+  dvgo(d) { dvChoose(+d.i); },
+  dvrelic(d) { dvRelic(+d.i); },
+  dvretreat() { dvFinish(false); },
+  dvup(d) { const st = dvState(), U = DV_UP[d.k]; if (!U || dvUp(d.k) >= U[3]) return; const c = U[4] * (dvUp(d.k) + 1); if (st.shards < c) return; st.shards -= c; st.up[d.k] = dvUp(d.k) + 1; sfx('goal'); },
   calendar() { openModal('calendar'); },
   shopbuy(d) { const it = (SHOPS[d.r] || [])[+d.i]; if (!it || G.gold < it.cost) return; G.gold -= it.cost; it.fx(); sfx('coin'); toast(`${it.icon} ${it.name}!`); },
   auto() { openModal('auto'); },
@@ -3449,4 +3510,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__renderer = renderer; window.__scene = scene; window.__api = { epilogue, ENDINGS, tickScenes, tickRivalArc, weather, tickCalendar, dayNo, tierDecor, whyFailed, tickAutoManage, rollItem, dropLoot, equipItem, inv, maybeFork, smiteGoblin, tickFlash, cardAdd, tickVisitors, districts, fullKit, ROLES, missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__renderer = renderer; window.__scene = scene; window.__api = { dvStart, dvChoose, dvRelic, dvState, epilogue, ENDINGS, tickScenes, tickRivalArc, weather, tickCalendar, dayNo, tierDecor, whyFailed, tickAutoManage, rollItem, dropLoot, equipItem, inv, maybeFork, smiteGoblin, tickFlash, cardAdd, tickVisitors, districts, fullKit, ROLES, missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
