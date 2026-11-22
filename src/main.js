@@ -413,6 +413,15 @@ const PROMO = {
   cleric: { name: 'Saint', icon: '✨', pw: 1.2, survive: 0.1, mana: 2, desc: '+20% power, far fewer casualties, +2 Mana.' },
   alchemist: { name: 'Grand Alchemist', icon: '🧪', pw: 1.3, mana: 2, desc: '+30% power, +2 Mana after each success.' },
 };
+const PROMO2 = {
+  knight: { name: 'Berserker', icon: '🪓', pw: 1.45, survive: -0.05, desc: '+45% power, but more casualties.' },
+  ranger: { name: 'Beastmaster', icon: '🐺', pw: 1.2, loot: 0.15, mana: 1, desc: '+20% power, +15% loot, +1 Mana after each success.' },
+  wizard: { name: 'Elementalist', icon: '🌪', pw: 1.5, survive: -0.03, desc: '+50% power, slightly more casualties.' },
+  rogue: { name: 'Trickster', icon: '🎭', pw: 1.1, loot: 0.55, desc: '+10% power, +55% loot.' },
+  cleric: { name: 'Inquisitor', icon: '⚖', pw: 1.4, survive: 0.02, desc: '+40% power.' },
+  alchemist: { name: 'Plague Doctor', icon: '☣', pw: 1.15, mana: 4, survive: 0.08, desc: '+15% power, +4 Mana, fewer casualties.' },
+};
+const promoOf = h => (h.promo === 'b' ? PROMO2 : PROMO)[h.cls];
 const TALENTS = {
   knight: [[['shield', 'Shield Wall', 'Far fewer casualties.', { survive: 0.15 }], ['cleave', 'Cleave', '+15% power on combat quests.', { pwType: { combat: 1.15 } }]], [['ironwill', 'Iron Will', 'Stamina drains 30% slower.', { decay: 0.3 }], ['warlord', 'Warlord', '+15% power everywhere.', { pw: 1.15 }]]],
   ranger: [[['forager', 'Forager', '+25% loot from quests.', { loot: 0.25 }], ['sharp', 'Sharpshooter', '+20% power on gather quests.', { pwType: { gather: 1.2 } }]], [['swift', 'Swift Feet', 'Stamina drains 30% slower.', { decay: 0.3 }], ['eagle', 'Eagle Eye', '+4% party success chance.', { succ: 0.04 }]]],
@@ -430,12 +439,12 @@ function heroMods(h) {
   if (h.cls === 'rogue') m.loot += 0.15;
   if (h.charm && CHARMS[h.charm]) { const C = CHARMS[h.charm]; m.pw *= C.pw || 1; m.decay += C.decay || 0; m.loot += C.loot || 0; m.survive += C.survive || 0; }
   { const tm = tagMods(h.tags); m.pw *= tm.pw; m.survive += tm.survive; m.loot += tm.loot; m.decay += tm.decay; m.succ += tm.succ; m.xp = tm.xp; m.happy = tm.happy * (1 - 0.04 * legacyLvl('hearth')); }
-  if (h.promo) { const P = PROMO[h.cls]; m.pw *= P.pw; m.survive += P.survive || 0; m.loot += P.loot || 0; m.mana += P.mana || 0; }
+  if (h.promo) { const P = promoOf(h); m.pw *= P.pw; m.survive += P.survive || 0; m.loot += P.loot || 0; m.mana += P.mana || 0; }
   for (const id of h.talents || []) { const t = talentDef(h.cls, id); if (!t) continue; const f = t[3]; if (f.pw) m.pw *= f.pw; if (f.pwType) for (const k of Object.keys(f.pwType)) m.pwType[k] = (m.pwType[k] || 1) * f.pwType[k]; m.survive += f.survive || 0; m.loot += f.loot || 0; m.mana += f.mana || 0; m.decay += f.decay || 0; m.succ += f.succ || 0; }
   return m;
 }
 const survBonus = h => (traitOf(h) === 'brave' ? 0.35 : 0) + heroMods(h).survive;
-const heroLabel = h => h.promo ? PROMO[h.cls].name : CLASSES[h.cls].label;
+const heroLabel = h => h.promo ? promoOf(h).name : CLASSES[h.cls].label;
 function gainXp(h, n) {
   h.xp += n * heroMods(h).xp * (1 + 0.06 * legacyLvl('tutor')) * (1 + 0.1 * Math.min(3, retireN('instructor'))) * (hasPet('fox') ? 1.05 : 1);
   while (h.xp >= h.level + 1) { h.xp -= h.level + 1; h.level++; sfx('level'); floatText(h.pos, `⬆ ${h.name} Lv${h.level}`, '#9bff9b'); if (h.level === 3 || h.level === 6) toast(`✨ ${h.name} can choose a new talent! (tap the hero)`); }
@@ -502,7 +511,7 @@ function createHero(d) {
   const bub = document.createElement('div'); bub.className = 'bub hidden'; worldEl.appendChild(bub);
   const h = {
     id: d.id ?? G.nextId++, cls: d.cls, variant: d.variant, name: d.name, level: d.level ?? 1, xp: d.xp ?? 0, stamina: d.stamina ?? rnd(60, 100), happy: d.happy ?? 100, gear: !!d.gear,
-    quests: d.quests || 0, aff: d.aff || null, plus: d.plus || 0, train: d.train || 0, vow: d.vow || null, vip: d.vip || null, gearTier: d.gearTier || 1, promo: !!d.promo, talents: d.talents || [], bonds: d.bonds || {},
+    quests: d.quests || 0, aff: d.aff || null, plus: d.plus || 0, train: d.train || 0, vow: d.vow || null, vip: d.vip || null, gearTier: d.gearTier || 1, promo: d.promo || false, talents: d.talents || [], bonds: d.bonds || {},
     mesh, pos: mesh.position, bub, state: 'idle', target: null, onArrive: null, timer: 0, onDone: null, cool: 0, phase: Math.random() * 6, vis: true,
   };
   codexAdd('classes', h.cls); if (d.tags) { h.tags = d.tags; h.bio = d.bio; h.likes = d.likes; h.dislikes = d.dislikes; } else Object.assign(h, makeProfile(h.cls));
@@ -890,7 +899,7 @@ function resolveQuest(q) {
     }
     G.questsDone++; if (q.mods && q.mods.includes('elite')) G.stats.elite = (G.stats.elite || 0) + 1; if (q.town) G.stats.town = (G.stats.town || 0) + 1; if (q.legend) legendWon(q); else if (q.special) chron(`✔ ${q.name}`);
     if (q.town) { repGain(q.rep || 3); toast(`🏘 ${q.who} thanks you warmly. (+${q.rep || 3} town reputation)`); }
-    if (q.region && REGIONS[q.region]) { const rec = (G.regions[q.region] = G.regions[q.region] || { done: 0 }), before = regionLevel(q.region); rec.done++; if (regionLevel(q.region) > before) toast(`🗺 ${REGIONS[q.region].name} mastery level ${regionLevel(q.region)}! ${REGIONS[q.region].perk}`); }
+    if (q.region && REGIONS[q.region]) { const rec = (G.regions[q.region] = G.regions[q.region] || { done: 0 }), before = regionLevel(q.region); rec.done++; regionTrial(q.region, rec); if (regionLevel(q.region) > before) toast(`🗺 ${REGIONS[q.region].name} mastery level ${regionLevel(q.region)}! ${REGIONS[q.region].perk}`); }
     toast(`✔ ${q.name} complete! +${g}g, +${q.renown}⭐, loot collected.`);
   } else {
     G.renown = Math.max(0, G.renown - 1); if (q.town) repGain(-2);
@@ -1374,8 +1383,9 @@ const SEASONS = [
 const SEASON_LEN = 240, seasonIdx = () => Math.floor((G.flags.sT || 0) / SEASON_LEN) % 4;
 let seasonShown = -1, seasonAcc = 0;
 function tickSeason(dt) {
+  const mm = { frostpeak: 3, stonepeak: 2, dunes: 1, ashen: 2, hollow: 2, ruins: 2, greenwood: -1 }[G.region]; if (mm !== undefined && mm >= 0 && tickSeason.r !== G.region) { tickSeason.r = G.region; setMusicStyle(mm); } else if (mm === -1 && tickSeason.r !== G.region) { tickSeason.r = G.region; setMusicStyle(seasonIdx()); }
   G.flags.sT = (G.flags.sT || 0) + dt; const i = seasonIdx();
-  if (seasonShown !== i) { setMusicStyle(i); if (seasonShown >= 0) { toast(`${SEASONS[i].icon} ${SEASONS[i].name} has come. ${SEASONS[i].desc}`); chron(`${SEASONS[i].icon} ${SEASONS[i].name} began.`); } seasonShown = i; }
+  if (seasonShown !== i) { if (G.region === 'greenwood') setMusicStyle(i); if (seasonShown >= 0) { toast(`${SEASONS[i].icon} ${SEASONS[i].name} has come. ${SEASONS[i].desc}`); chron(`${SEASONS[i].icon} ${SEASONS[i].name} began.`); } seasonShown = i; }
   seasonAcc += dt; if (seasonAcc >= 12) { seasonAcc = 0; if (i === 0 && Math.random() < 0.6) G.herbs++; if (i === 2) { if (Math.random() < 0.4) G.ore++; if (Math.random() < 0.3) G.wood++; } }
 }
 const snow = (() => {   // falling petals / leaves / snow that follow the camera
@@ -1551,6 +1561,15 @@ function tickTrade() {
   else { const g = Math.round(t.amt * 0.3); G.gold += g; toast(`🐪 The caravan was ambushed. Only ${g}g was saved.`); chron('🐪 A trade caravan was ambushed.'); }
   sfx(ok ? 'goal' : 'lose');
   if (ok && t.amt >= 500 && Ads.canShow('caravanDouble')) { const bonus = Math.round(t.amt * 0.5); showAdOffer('caravanDouble', `▶ Watch an ad: a bigger haul (+${bonus}g)`, 12, () => { G.gold += bonus; toast(`🐪 Bonus haul: +${bonus}g!`); }); }
+}
+// ---- region trials: completing 4, 10 and 18 quests in a region unlocks its three trials (rewards and a title for the guild)
+const TRIAL_AT = [4, 10, 18];
+function regionTrial(id, rec) {
+  const step = rec.trial || 0; if (step >= 3 || rec.done < TRIAL_AT[step]) return; rec.trial = step + 1;
+  const R = REGIONS[id], rw = [{ gold: 300 }, { gold: 600, mythril: 1 }, { gold: 1200, mythril: 1, scale: 1, renown: 3 }][step];
+  G.gold += rw.gold; G.rare.mythril += rw.mythril || 0; G.rare.scale += rw.scale || 0; G.renown += rw.renown || 0;
+  toast(`🗺 ${R.name} trial ${step + 1}/3 passed! +${rw.gold}g${rw.mythril ? ' +' + rw.mythril + ' 💎' : ''}${rw.scale ? ' +1 🐉' : ''}`); chron(`🗺 Passed trial ${step + 1} of ${R.name}.`);
+  if (step === 2) { chron(`🏅 The guild became Champion of ${R.name}.`); toast(`🏅 Champion of ${R.name}!`); sfx('goal'); }
 }
 // ---- while you were away: the guild keeps earning a little (half the passive rate, up to 4 hours) and finished expeditions report in
 let pendingAway = null;
@@ -1857,7 +1876,7 @@ function modalContent() {
           <div style="display:flex;flex-direction:column;gap:4px"><button class="act" data-act="dispatch" data-q="${q.id}" ${ok ? '' : 'disabled'}>Auto-send</button>
           <button class="act" data-act="pick" data-q="${q.id}" ${readyHeroes().length ? '' : 'disabled'}>Choose party…</button></div></div>`;
       }).join('') || '<div class="s">No quests posted right now — new ones appear regularly.</div>');
-      h += '<div class="sec">Roster <span class="s">(tap a hero for details)</span></div>' + (G.heroes.map(x => `<div class="s" data-act="hero" data-id="${x.id}" style="cursor:pointer">${x.vip ? '⭐ ' : ''}${x.promo ? PROMO[x.cls].icon : CLASSES[x.cls].icon} ${x.name}${(x.talents || []).length < talentSlots(x) ? ' ✨' : ''} · Lv${x.level} ${heroLabel(x)} · 🔋${Math.round(x.stamina)} · 😊${Math.round(x.happy)} · ${x.gear ? 'geared' : 'needs gear'}${x.state === 'quest' ? ' · on quest' : ''}</div>`).join('') || '<div class="s">No heroes yet. Build a Tavern to attract them!</div>');
+      h += '<div class="sec">Roster <span class="s">(tap a hero for details)</span></div>' + (G.heroes.map(x => `<div class="s" data-act="hero" data-id="${x.id}" style="cursor:pointer">${x.vip ? '⭐ ' : ''}${x.promo ? promoOf(x).icon : CLASSES[x.cls].icon} ${x.name}${(x.talents || []).length < talentSlots(x) ? ' ✨' : ''} · Lv${x.level} ${heroLabel(x)} · 🔋${Math.round(x.stamina)} · 😊${Math.round(x.happy)} · ${x.gear ? 'geared' : 'needs gear'}${x.state === 'quest' ? ' · on quest' : ''}</div>`).join('') || '<div class="s">No heroes yet. Build a Tavern to attract them!</div>');
       return ['📜 Quest Board & Guild Hall', h];
     }
     case 'recruit': {
@@ -2001,9 +2020,9 @@ function modalContent() {
       const bar = (v, col) => `<div class="bar"><i style="width:${Math.max(0, Math.min(100, v))}%;${col ? 'background:' + col : ''}"></i></div>`;
       const stateTxt = { idle: 'Idle', walking: 'Walking', busy: 'Busy', waiting: 'Waiting around', quest: 'On an expedition', leaving: 'Leaving the guild' }[h.state] || h.state;
       let body = `<div class="row"><div style="font-size:34px">${c.icon}</div><div class="grow"><div class="t">${h.vip ? '⭐ ' : ''}${h.name}</div><div class="s">Level ${h.level} ${heroLabel(h)} · ${stateTxt}${h.quests ? ' · ' + h.quests + ' expeditions' : ''}</div></div>${aq ? `<button class="act" data-act="watch" data-q="${aq.id}">👁 Watch</button>` : ''}</div>`;
-      const P = PROMO[h.cls], hm = heroMods(h), pend = (h.talents || []).length < talentSlots(h);
+      const P = promoOf(h) || PROMO[h.cls], hm = heroMods(h), pend = (h.talents || []).length < talentSlots(h);
       if (h.promo) body += `<div class="row" style="border-color:#e8c04a"><div style="font-size:30px">${P.icon}</div><div class="grow"><div class="t">${P.name}</div><div class="s">${P.desc}</div></div></div>`;
-      else body += `<div class="row"><div style="font-size:30px">${P.icon}</div><div class="grow"><div class="t">Promotion: ${P.name}</div><div class="s">${P.desc} Needs level 5 and Guild Rank Hold.</div>${cost(500)}</div><button class="act" data-act="promote" data-id="${h.id}" ${G.rank >= 1 && h.level >= 5 && G.gold >= 500 ? '' : 'disabled'}>Promote</button></div>`;
+      else body += [['a', PROMO[h.cls]], ['b', PROMO2[h.cls]]].map(([k, Q]) => `<div class="row"><div style="font-size:30px">${Q.icon}</div><div class="grow"><div class="t">Promotion: ${Q.name}</div><div class="s">${Q.desc} Needs level 5 and Guild Rank Hold.</div>${cost(500)}</div><button class="act" data-act="promote" data-k="${k}" data-id="${h.id}" ${G.rank >= 1 && h.level >= 5 && G.gold >= 500 ? '' : 'disabled'}>Promote</button></div>`).join('');
       if ((h.talents || []).length) body += `<div class="s">Talents: ${(h.talents || []).map(id => { const t = talentDef(h.cls, id); return t ? `<span class="tag" title="${t[2]}">${t[1]}</span>` : ''; }).join('')}</div>`;
       if (pend) { const tier = TALENTS[h.cls][(h.talents || []).length]; body += `<div class="sec">✨ Choose a talent</div>` + tier.map(t => `<div class="row" style="border-color:#8fd4ff"><div class="grow"><div class="t">${t[1]}</div><div class="s">${t[2]}</div></div><button class="act" data-act="talent" data-id="${h.id}" data-t="${t[0]}">Learn</button></div>`).join(''); }
       const bondNames = Object.entries(h.bonds || {}).map(([id, k]) => [G.heroes.find(x => x.id === +id), k]).filter(([x]) => x);
@@ -2190,7 +2209,7 @@ const ACT = {
   rankup() { rankUp(); },
   grade(d) { const b = G.buildings.find(x => x.id === +d.id), g = +d.g; if (!b || !gradeUnlocked(b, g)) return toast('Not unlocked yet.'); if (b.stock > 0 && (b.grade || 1) !== g) return toast('Use up the current stock before switching grade.'); b.grade = g; b.progress = 0; toast(`${BUILDINGS[b.type].name} now makes ${GRADE[b.type][g]} ${b.type === 'forge' ? 'weapons' : 'potions'}.`); },
   sell(d) { const k = d.k; if (k === 'ingots') { if (G.ingots >= 5) { G.ingots -= 5; G.gold += 5 * 14; } return; } if (G[k] >= 5) { G.gold += sellPrice(k); G[k] -= 5; } },
-  promote(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h || h.promo || G.rank < 1 || h.level < 5 || G.gold < 500) return; G.gold -= 500; h.promo = true; G.stats.promoted++; addPromoGear(h); floatText(h.pos, `${PROMO[h.cls].icon} ${PROMO[h.cls].name}!`, '#ffd24a'); toast(`${PROMO[h.cls].icon} ${h.name} is promoted to ${PROMO[h.cls].name}!`); },
+  promote(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h || h.promo || G.rank < 1 || h.level < 5 || G.gold < 500) return; G.gold -= 500; h.promo = d.k === 'b' ? 'b' : true; G.stats.promoted++; addPromoGear(h); floatText(h.pos, `${promoOf(h).icon} ${promoOf(h).name}!`, '#ffd24a'); toast(`${promoOf(h).icon} ${h.name} is promoted to ${promoOf(h).name}!`); },
   talent(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h || (h.talents || []).length >= talentSlots(h)) return; const tier = TALENTS[h.cls][(h.talents || []).length]; if (!tier.some(t => t[0] === d.t)) return; (h.talents = h.talents || []).push(d.t); toast(`✨ ${h.name} learns ${talentDef(h.cls, d.t)[1]}!`); },
   upBuilding(d) { const b = G.buildings.find(x => x.id === +d.id), c = 150 * b.level + 100; if (b && b.level < maxLevel() && G.gold >= c && G.wood >= 5 * b.level && hasRare(upReq(b))) { G.gold -= c; G.wood -= 5 * b.level; spendRare(upReq(b)); b.level++; b.pop = 0.6; toast(`${BUILDINGS[b.type].name} upgraded to level ${b.level}!`); } },
   open(d) { openModal(d.k); },

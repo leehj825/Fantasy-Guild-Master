@@ -274,6 +274,10 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^🗺 (.+) trial (\d)\/3 passed! \+(\d+)g(.*)$/, (n, st, g, x) => `🗺 ${f(n)} 시련 ${st}/3 통과! +${g}골드${x}`],
+    [/^🏅 Champion of (.+)!$/, n => `🏅 ${f(n)}의 챔피언!`],
+    [/^🏅 The guild became Champion of (.+)\.$/, n => `🏅 길드가 ${f(n)}의 챔피언이 되었습니다.`],
+    [/^🗺 Passed trial (\d) of (.+)\.$/, (st, n) => `🗺 ${f(n)}의 시련 ${st} 통과.`],
     [/^▶ Watch an ad: \+50% daily bonus \(\+(\d+)g\)$/, g => `▶ 광고 보고 일일 보너스 +50% (+${g}골드)`],
     [/^📅 Extra \+(\d+)g!$/, g => `📅 추가 +${g}골드!`],
     [/^⏱ Speed Dive \(best (\d+)\)$/, n => `⏱ 스피드 다이브 (최고 ${n})`],
