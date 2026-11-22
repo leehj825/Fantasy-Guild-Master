@@ -869,7 +869,7 @@ function resolveQuest(q) {
     h.state = 'idle'; h.cool = 0; h.stamina = Math.max(20, h.stamina - 25 * (1 - 0.12 * Math.min(3, retireN('scout')) - (hasPet('hawk') ? 0.08 : 0)));
     h.pos.set(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1)); h.mesh.visible = true; h.target = null;
     if (!ok && q.deaths.includes(h.id)) { memorialize(h, `fell on "${q.name}"`); if (h.vip) G.renown = Math.max(0, G.renown - 1); removeHero(h, h.vip ? `☠ ${h.name} — a legend of the guild — has fallen!` : `${h.name} the ${CLASSES[h.cls].label} fell in battle...`); return; }
-    h.quests = (h.quests || 0) + 1; diary(h, ok ? `Returned victorious from “${q.name}”.` : `Limped home from “${q.name}”.`);
+    h.quests = (h.quests || 0) + 1; if (ok && h === q.heroes[0]) passPts(1); diary(h, ok ? `Returned victorious from “${q.name}”.` : `Limped home from “${q.name}”.`);
     if (ok) gainXp(h, traitOf(h) === 'scholar' ? 2 : 1);
     if (ok && h.bonds && Object.entries(h.bonds).some(([id, k]) => k === 'apprentice' && q.heroes.some(x => x.id === +id))) gainXp(h, 1);   // a mentor in the party teaches
     h.loy = Math.max(0, Math.min(100, (h.loy ?? 60) + (ok ? 1 : -1)));
@@ -1528,7 +1528,7 @@ function challengeDone(q) {
   else if (q.mode === 'daily') {
     const D = C.daily; if (D.key !== key) { C.daily = { key, best: 0, claimed: false }; }
     C.daily.best = Math.max(C.daily.best, n);
-    if (!C.daily.claimed && n >= 3) { C.daily.claimed = true; const g = 80 * n; G.gold += g; if (n >= 10) G.rare.mythril += 1; toast(`📅 Daily Dive bonus: +${g}g${n >= 10 ? ' and a Mythril shard' : ''}!`); chron(`📅 Daily Dive: reached floor ${n}.`); if (Ads.canShow('dailyRetry')) showAdOffer('dailyRetry', `▶ Watch an ad: +50% daily bonus (+${Math.round(g / 2)}g)`, 12, () => { G.gold += Math.round(g / 2); toast(`📅 Extra +${Math.round(g / 2)}g!`); }); }
+    if (!C.daily.claimed && n >= 3) { C.daily.claimed = true; passPts(5); const g = 80 * n; G.gold += g; if (n >= 10) G.rare.mythril += 1; toast(`📅 Daily Dive bonus: +${g}g${n >= 10 ? ' and a Mythril shard' : ''}!`); chron(`📅 Daily Dive: reached floor ${n}.`); if (Ads.canShow('dailyRetry')) showAdOffer('dailyRetry', `▶ Watch an ad: +50% daily bonus (+${Math.round(g / 2)}g)`, 12, () => { G.gold += Math.round(g / 2); toast(`📅 Extra +${Math.round(g / 2)}g!`); }); }
   }
   if (q.mode !== 'daily' && n >= 5) { const g = (q.rush ? 60 : 40) * n; G.gold += g; toast(`🏅 ${q.name} reward: +${g}g (floor ${n}).`); }
 }
@@ -1568,6 +1568,12 @@ function tickTrade() {
   sfx(ok ? 'goal' : 'lose');
   if (ok && t.amt >= 500 && Ads.canShow('caravanDouble')) { const bonus = Math.round(t.amt * 0.5); showAdOffer('caravanDouble', `▶ Watch an ad: a bigger haul (+${bonus}g)`, 12, () => { G.gold += bonus; toast(`🐪 Bonus haul: +${bonus}g!`); }); }
 }
+// ---- monthly pass (free): earn points from daily rewards, quests and challenge dives; 10 tiers reset each month
+const PASS = [{ gold: 150 }, { gold: 200, ore: 10 }, { gold: 250, herbs: 10 }, { gold: 300, mythril: 1 }, { gold: 400, wood: 20 }, { gold: 500, mana: 15 }, { gold: 600, ore: 20, herbs: 15 }, { gold: 700, mythril: 1 }, { gold: 900, scale: 1 }, { gold: 1500, mythril: 2, feather: 1 }];
+const PASS_STEP = 40, monthKey = () => { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1); };
+function pass() { const f = G.flags; if (!f.sp || f.sp.m !== monthKey()) f.sp = { m: monthKey(), pts: 0, claimed: 0 }; return f.sp; }
+const passTier = () => Math.min(10, Math.floor(pass().pts / PASS_STEP));
+function passPts(n) { const sp = pass(), before = passTier(); sp.pts += n; if (passTier() > before) { toast(`🎟 Monthly pass: tier ${passTier()} reached! Claim it in the pass menu.`); sfx('chime'); } }
 // ---- hero diary: a few lines per hero about what happened to them
 const diary = (h, text) => { if (!h) return; const d = (h.diary ||= []); d.push({ d: Math.floor(G.time / 60) + 1, t: text }); if (d.length > 8) d.shift(); };
 // ---- 3D companions and disaster visuals
@@ -1986,9 +1992,12 @@ function modalContent() {
     }
     case 'away': { const A = G.flags.away; if (!A) return ['Welcome back', '<div class="s">Nothing new.</div>'];
       return ['☀ Welcome back!', `<div class="s" style="font-size:14px;line-height:1.6">You were away for about <b>${A.mins} min</b>. The guild kept working: <b>+${A.gold}g</b> from the tavern and market${A.done ? `, and <b>${A.done}</b> expedition${A.done > 1 ? 's' : ''} finished` : ''}.</div>${!A.doubled && A.gold >= 20 && Ads.canShow('awayDouble') ? `<button class="act" data-act="awaydouble" style="margin-top:10px">▶ Watch an ad: double it (+${A.gold}g)</button>` : ''}<button class="act red" data-act="close" style="margin:10px 0 0 6px">Continue</button>`]; }
+    case 'pass': { const sp = pass(), t = passTier();
+      return ['🎟 Monthly pass', `<div class="s">Free. Earn points from daily rewards (+10), quests (+1) and challenge dives (+5). Resets next month. Points: <b>${sp.pts}</b> · tier ${t}/10</div><div class="bar" style="margin:6px 0"><i style="width:${Math.min(100, sp.pts / (PASS_STEP * 10) * 100)}%"></i></div>` + PASS.map((r, i) => `<div class="row"><div class="grow"><div class="t">Tier ${i + 1}</div><div class="s">${rewardText({ gold: r.gold, ore: r.ore || 0, herbs: r.herbs || 0, wood: r.wood || 0, mana: r.mana || 0, mythril: r.mythril || 0, scale: r.scale || 0, feather: r.feather || 0, renown: 0 })}</div></div>${i < sp.claimed ? '<span class="tag">✔ Claimed</span>' : `<button class="act" data-act="passclaim" data-i="${i}" ${i < t && i === sp.claimed ? '' : 'disabled'}>Claim</button>`}</div>`).join('')]; }
     case 'daily': {
       const L = G.flags.login || { streak: 1, pending: 0 };
       let h = `<div class="s">Come back every day for a bigger reward. Missing a day starts the track over.</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0">` + DAILY.map((r, i) => { const rw = dailyReward(i), cur = i === L.streak - 1, done = i < L.streak - (L.pending ? 1 : 0); return `<div class="row" style="flex:1 1 90px;flex-direction:column;align-items:center;text-align:center;${cur ? 'border-color:#ffd24a;background:#ffd24a22' : ''}${done ? ';opacity:.55' : ''}"><div class="t">Day ${i + 1}</div><div class="s">${rw.gold}g${rw.ore ? '<br>+' + rw.ore + ' ore' : ''}${rw.herbs ? '<br>+' + rw.herbs + ' herbs' : ''}${rw.wood ? '<br>+' + rw.wood + ' wood' : ''}${rw.mana ? '<br>+' + rw.mana + ' mana' : ''}${rw.mythril ? '<br>+1 💎' : ''}</div>${done ? '✔' : ''}</div>`; }).join('') + '</div>';
+      h += `<button class="act red" data-act="passopen" style="margin:0 6px 6px 0">🎟 Monthly pass (tier ${passTier()}/10)</button>`;
       h += L.pending ? `<button class="act" data-act="dailyclaim">🎁 Claim day ${L.streak}</button>` : '<div class="s">Today\'s reward is already claimed. See you tomorrow!</div>';
       return ['🎁 Daily reward', h];
     }
@@ -2220,10 +2229,12 @@ const ACT = {
   errcopy() { const t = readErrs().join('\n'); try { navigator.clipboard.writeText(t).then(() => toast('🧾 Copied.'), () => toast('🧾 Could not copy; select the text instead.')); } catch (e) { toast('🧾 Could not copy; select the text instead.'); } },
   errclear() { try { localStorage.removeItem(ERR_KEY); } catch (e) { /* ignore */ } toast('🧾 Cleared.'); },
   async awaydouble() { const A = G.flags.away; if (!A || A.doubled) return; const ok = await Ads.show('awayDouble'); if (!ok) return toast('The ad was not completed — no reward.'); A.doubled = true; G.gold += A.gold; toast(`☀ Doubled: +${A.gold}g!`); },
+  passopen() { openModal('pass'); },
+  passclaim(d) { const sp = pass(), i = +d.i; if (i !== sp.claimed || i >= passTier()) return; const r = PASS[i]; G.gold += r.gold; G.ore += r.ore || 0; G.herbs += r.herbs || 0; G.wood += r.wood || 0; G.mana += r.mana || 0; G.rare.mythril += r.mythril || 0; G.rare.scale += r.scale || 0; G.rare.feather += r.feather || 0; sp.claimed++; sfx('goal'); toast(`🎟 Tier ${i + 1} claimed!`); },
   eventopen() { openModal('event'); },
   eventchoose(d) { chooseEvent(+d.i); },
   async iapbuy(d) { const ok = await IAP.buy(d.id); if (!ok) return toast('The purchase was not completed.'); grantPurchase(d.id); renderModal(true); },
-  dailyclaim() { const L = G.flags.login; if (!L || !L.pending) return; const r = dailyReward(L.streak - 1); G.gold += r.gold; G.ore += r.ore || 0; G.herbs += r.herbs || 0; G.wood += r.wood || 0; G.mana += r.mana || 0; G.rare.mythril += r.mythril || 0; L.pending = 0; sfx('goal'); toast(`🎁 Daily reward claimed: +${r.gold}g${r.mythril ? ' +1 Mythril' : ''}`); chron(`🎁 Day ${L.streak} reward`); },
+  dailyclaim() { const L = G.flags.login; if (!L || !L.pending) return; const r = dailyReward(L.streak - 1); G.gold += r.gold; G.ore += r.ore || 0; G.herbs += r.herbs || 0; G.wood += r.wood || 0; G.mana += r.mana || 0; G.rare.mythril += r.mythril || 0; L.pending = 0; sfx('goal'); toast(`🎁 Daily reward claimed: +${r.gold}g${r.mythril ? ' +1 Mythril' : ''}`); chron(`🎁 Day ${L.streak} reward`); passPts(10); },
   async adrest() { const ok = await Ads.show('restGuild'); if (!ok) return toast('The ad was not completed — no reward.'); let n = 0; for (const h of G.heroes) if (h.state !== 'quest' && h.state !== 'leaving' && h.stamina < 100) { h.stamina = 100; n++; floatText(h.pos, '✨', '#9bff9b'); } sfx('goal'); toast(`✨ ${n} heroes are rested and ready.`); renderModal(true); },
   adstoggle() { Ads.setEnabled(!Ads.enabled); },
   gfxcycle() { gfx = { auto: 'high', high: 'low', low: 'auto' }[gfx]; quality = gfx === 'low' ? 0.6 : 1; try { localStorage.setItem(GFX_KEY, gfx); } catch (e) { /* ignore */ } resize(); },
@@ -2832,4 +2843,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__renderer = renderer; window.__scene = scene; window.__api = { checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__renderer = renderer; window.__scene = scene; window.__api = { passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };

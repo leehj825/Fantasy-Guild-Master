@@ -594,5 +594,7 @@ export const KO_PEOPLE = {
   'Plague Doctor': '역병 의사',
   '+15% power, +4 Mana, fewer casualties.': '전투력 +15%, 마나 +4, 사상자 감소.',
   '📔 Diary': '📔 일기',
+  '🎟 Monthly pass': '🎟 월간 패스',
+  '✔ Claimed': '✔ 수령함',
   'hearty stew': '푸짐한 스튜', 'roast boar': '멧돼지 구이', 'honey bread': '꿀빵', 'mushroom pie': '버섯 파이', 'herbal tea': '약초차',
 };

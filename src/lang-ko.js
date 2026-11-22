@@ -274,6 +274,11 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^🎟 Monthly pass: tier (\d+) reached! Claim it in the pass menu\.$/, n => `🎟 월간 패스: ${n}단계 도달! 패스 메뉴에서 받으세요.`],
+    [/^🎟 Tier (\d+) claimed!$/, n => `🎟 ${n}단계 보상을 받았습니다!`],
+    [/^Tier (\d+)$/, n => `${n}단계`],
+    [/^Free\. Earn points from daily rewards \(\+10\), quests \(\+1\) and challenge dives \(\+5\)\. Resets next month\. Points: (\d+) · tier (\d+)\/10$/, (p, t) => `무료입니다. 일일 보상(+10), 퀘스트(+1), 챌린지 다이브(+5)로 포인트를 모으세요. 다음 달에 초기화됩니다. 포인트: ${p} · ${t}/10단계`],
+    [/^🎟 Monthly pass \(tier (\d+)\/10\)$/, n => `🎟 월간 패스 (${n}/10단계)`],
     [/^Day (\d+): Returned victorious from “(.+)”\.$/, (d, q) => `${d}일째: “${f(q)}”에서 승리하고 돌아왔습니다.`],
     [/^Day (\d+): Limped home from “(.+)”\.$/, (d, q) => `${d}일째: “${f(q)}”에서 지쳐 돌아왔습니다.`],
     [/^Day (\d+): Reached level (\d+)\.$/, (d, l) => `${d}일째: 레벨 ${l}에 도달했습니다.`],
