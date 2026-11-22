@@ -274,6 +274,7 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^(.+\.) · (\d+)g$/, (a, n) => `${f(a)} · ${n}골드`],
     [/^🎒 Loot: (.+) \((.+)\)$/, (n, r2) => `🎒 전리품: ${n} (${f(r2)})`],
     [/^🎒 Pack full — sold (.+) for (\d+)g\.$/, (n, g) => `🎒 가방이 가득 차 ${n}을(를) ${g}골드에 팔았습니다.`],
     [/^🎒 Sold common items for (\d+)g\.$/, g => `🎒 일반 아이템을 ${g}골드에 팔았습니다.`],

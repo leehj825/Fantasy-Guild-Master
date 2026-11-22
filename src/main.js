@@ -424,6 +424,9 @@ const BRANCH = {
 const skPoints = h => Math.max(0, h.level - 1 + (h.promo ? 2 : 0)) - Object.values(h.sk || {}).reduce((a, b) => a + b, 0);
 const roleCost = h => (h.role ? 300 : 0);
 const fullKit = h => !!(h.wep && h.charm && (h.plus || 0) >= 3);
+// boss preparation: before a boss fight you can scout it, fortify the party or sound a war horn (each costs gold and adds to the odds)
+const PREP = { scout: ['🔭', 'Scout the boss', 'Reveals its habits: +4% success.', 80, 0.04], fortify: ['🛡', 'Fortify the camp', 'Rest and bandages: +3% success, fewer casualties.', 120, 0.03], horn: ['📯', 'War horn', 'Rally the party: +5% success.', 100, 0.05] };
+const prepBonus = o => o && o.prep ? o.prep.reduce((n, k) => n + (PREP[k] ? PREP[k][4] : 0), 0) : 0;
 const PROMO2 = {
   knight: { name: 'Berserker', icon: '🪓', pw: 1.45, survive: -0.05, desc: '+45% power, but more casualties.' },
   ranger: { name: 'Beastmaster', icon: '🐺', pw: 1.2, loot: 0.15, mana: 1, desc: '+20% power, +15% loot, +1 Mana after each success.' },
@@ -829,7 +832,7 @@ function modPenalty(q, party, opts = {}) {   // returns [delta, [unmet requireme
 function chanceFor(q, party, o = false) {
   if (typeof o === 'boolean') o = { enchant: o };
   const P = party.reduce((s, h) => s + heroPower(h, q.type), 0);
-  let c = P / (q.diff * 1.25);
+  let c = P / (q.diff * 1.25); if (q.boss && o && o.prep) c += prepBonus(o);
   if (G.research.valor) c += 0.1;
   for (const h of party) { const t = traitOf(h); if (t === 'lucky') c += 0.08; if (t === 'clumsy') c -= 0.10; }
   if (factionOf() && factionOf().type === q.type) c += 0.10;
@@ -847,13 +850,14 @@ function dispatch(qid, enchant, partyOverride, extra = {}) {
   if (enchant && G.mana < 5) return toast('Not enough Mana.');
   let lab = null; if (extra.potion) { lab = ofType('alchemy').find(b => b.stock > 0); if (!lab) return toast('No potions in stock.'); }
   if (enchant) G.mana -= 5; if (lab) lab.stock--;
-  const o = { enchant, approach: extra.approach || 'standard', potion: !!lab, formation: extra.formation || 'line' };
+  const prep = (q.boss && extra.prep || []).filter(k => PREP[k]), pcost = prep.reduce((n, k) => n + PREP[k][3], 0); if (pcost > G.gold) return toast('Not enough gold for the preparations.'); G.gold -= pcost;
+  const o = { enchant, approach: extra.approach || 'standard', potion: !!lab, formation: extra.formation || 'line', prep };
   q.formation = o.formation; q.enchant = enchant; q.approach = o.approach; q.chance = chanceFor(q, party, o); q.heroes = party; q.state = 'active';
   q.dur = Math.round(q.dur * ap.dur); q.t = q.dur; q.approachGold = ap.gold;
   // the outcome is rolled now so the expedition can be watched live without ever contradicting the result
   q.party = party.map(h => heroSnap(h));
   q.seed = (Math.random() * 1e9) | 0; q.ok = Math.random() < q.chance; q.heals = [];
-  q.deaths = party.filter(h => Math.random() > CLASSES[h.cls].survive + 0.15 + (h.cls !== 'cleric' && party.some(x => x.cls === 'cleric') ? 0.08 : 0) + ap.survive + FORMATION[q.formation || 'line'].survive + survBonus(h)).map(h => h.id);
+  q.deaths = party.filter(h => Math.random() > CLASSES[h.cls].survive + 0.15 + (prep.includes('fortify') ? 0.06 : 0) + (h.cls !== 'cleric' && party.some(x => x.cls === 'cleric') ? 0.08 : 0) + ap.survive + FORMATION[q.formation || 'line'].survive + survBonus(h)).map(h => h.id);
   q.script = genScript(q);
   party.forEach(h => { h.state = 'quest'; h.mesh.visible = false; setMood(h, null); h.onDone = null; });
   sfx('horn'); toast(`Party of ${party.length} dispatched: ${q.name}`);
@@ -2386,10 +2390,11 @@ function modalContent() {
       const st = modalArg, q = G.quests.find(x => x.id === st.qid); if (!q || q.state !== 'open') return ['Party', '<div class="s">This quest is no longer available.</div>'];
       const rd = readyHeroes().sort((a, b) => heroPower(b, q.type) - heroPower(a, q.type)), party = st.sel.map(id => G.heroes.find(x => x.id === id)).filter(Boolean), ap = APPROACH[st.approach];
       const lab = ofType('alchemy').reduce((n, b) => n + b.stock, 0), hasPoison = q.mods.includes('poison');
-      const o = { enchant: st.enchant, approach: st.approach, potion: st.potion, formation: st.formation || 'line' }, c = party.length ? Math.round(chanceFor(q, party, o) * 100) : 0, [, notes] = modPenalty(q, party, o);
+      const o = { enchant: st.enchant, approach: st.approach, potion: st.potion, formation: st.formation || 'line', prep: st.prep || [] }, c = party.length ? Math.round(chanceFor(q, party, o) * 100) : 0, [, notes] = modPenalty(q, party, o);
       let h = `<div class="s">${modTags(q)}</div><div class="s" style="margin:4px 0">${q.mods.map(k => MODS[k].icon + ' ' + MODS[k].desc).join('<br>') || 'No special conditions.'}</div>`;
       h += `<div class="sec">Approach</div><div style="display:flex;gap:5px">` + Object.entries(APPROACH).map(([k, a]) => `<button class="act ${st.approach === k ? '' : 'red'}" style="flex:1;${st.approach === k ? 'outline:2px solid #fff8' : ''}" data-act="papp" data-a="${k}">${a.icon} ${a.label}<br><span style="font-weight:400;font-size:10px">${a.desc}</span></button>`).join('') + '</div>';
       h += `<div class="sec">Formation</div><div style="display:flex;gap:5px">` + Object.entries(FORMATION).map(([k, a]) => `<button class="act ${(st.formation || 'line') === k ? '' : 'red'}" style="flex:1;${(st.formation || 'line') === k ? 'outline:2px solid #fff8' : ''}" data-act="pform" data-a="${k}">${a.icon} ${a.label}<br><span style="font-weight:400;font-size:10px">${a.desc}</span></button>`).join('') + '</div>';
+      if (q.boss) h += `<div class="sec">Boss preparation</div><div style="display:flex;gap:5px;flex-wrap:wrap">` + Object.entries(PREP).map(([k, P2]) => `<button class="act ${(st.prep || []).includes(k) ? '' : 'red'}" style="flex:1;min-width:120px;${(st.prep || []).includes(k) ? 'outline:2px solid #fff8' : ''}" data-act="pprep" data-k="${k}" title="${P2[2]}">${P2[0]} ${P2[1]}<br><span style="font-weight:400;font-size:11px">${P2[2]} · ${P2[3]}g</span></button>`).join('') + `</div>`;
       h += `<div style="display:flex;gap:6px;margin-top:6px"><button class="act ${st.enchant ? '' : 'red'}" data-act="pench" ${G.mana < 5 && !st.enchant ? 'disabled' : ''}>✨ Enchant (5 mana) ${st.enchant ? '✔' : ''}</button><button class="act ${st.potion ? '' : 'red'}" data-act="ppot" ${lab < 1 && !st.potion ? 'disabled' : ''}>🧪 Bring a potion (${lab}) ${st.potion ? '✔' : ''}</button></div>`;
       { const B = BOSS[q.boss], slots = []; for (let i = 0; i < q.maxH; i++) { const x = party[i]; slots.push(x ? `<div data-act="psel" data-id="${x.id}" style="cursor:pointer;flex:1;min-width:64px;text-align:center;border:2px solid #ffd24a;border-radius:10px;padding:4px;background:#ffd24a22"><div style="font-size:26px">${x.promo ? promoOf(x).icon : CLASSES[x.cls].icon}</div><div class="s" style="font-weight:700">${x.name}</div><div class="s">Lv ${x.level}${B && B.weak.includes(x.cls) ? ' ✔' : ''}</div></div>` : `<div style="flex:1;min-width:64px;text-align:center;border:2px dashed #888;border-radius:10px;padding:4px;opacity:.6"><div style="font-size:26px">＋</div><div class="s">${i < q.minH ? 'required' : 'optional'}</div></div>`); }
         const bonds = []; for (const a of party) for (const [id, k] of Object.entries(a.bonds || {})) { const b2 = party.find(y => y.id === +id); if (b2 && a.id < b2.id) bonds.push(`${BOND_ICON[k] || '🤝 '}${a.name} & ${b2.name}`); }
@@ -2542,10 +2547,11 @@ const ACT = {
   pclear() { modalArg.sel = []; },
   psel(d) { const st = modalArg, q = G.quests.find(x => x.id === st.qid), id = +d.id; if (!q) return; if (st.sel.includes(id)) st.sel = st.sel.filter(x => x !== id); else if (st.sel.length >= q.maxH) toast(`At most ${q.maxH} heroes on this quest.`); else st.sel.push(id); },
   papp(d) { modalArg.approach = d.a; },
+  pprep(d) { const st = modalArg; st.prep = st.prep || []; st.prep = st.prep.includes(d.k) ? st.prep.filter(x => x !== d.k) : [...st.prep, d.k]; },
   pform(d) { modalArg.formation = d.a; },
   pench() { modalArg.enchant = !modalArg.enchant; },
   ppot() { modalArg.potion = !modalArg.potion; },
-  pgo() { const st = modalArg, party = st.sel.map(id => G.heroes.find(x => x.id === id)).filter(Boolean); dispatch(st.qid, st.enchant, party, { approach: st.approach, potion: st.potion, formation: st.formation || 'line' }); if (!G.quests.find(x => x.id === st.qid && x.state === 'open')) openModal('quests'); },
+  pgo() { const st = modalArg, party = st.sel.map(id => G.heroes.find(x => x.id === id)).filter(Boolean); dispatch(st.qid, st.enchant, party, { approach: st.approach, potion: st.potion, formation: st.formation || 'line', prep: st.prep || [] }); if (!G.quests.find(x => x.id === st.qid && x.state === 'open')) openModal('quests'); },
   openStory() { openModal('story'); },
   storychoice(d) { chooseStory(+d.i); },
   dive(d) { dispatchDive(d && d.m); },

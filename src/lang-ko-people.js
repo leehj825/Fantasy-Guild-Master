@@ -815,5 +815,13 @@ export const KO_PEOPLE = {
   'The pack is empty.': '가방이 비었습니다.',
   '🛡 Armor slot: empty': '🛡 방어구 칸: 비어 있음',
   '💍 Trinket slot: empty': '💍 장신구 칸: 비어 있음',
+  'Boss preparation': '보스 준비',
+  'Scout the boss': '보스 정찰',
+  'Reveals its habits: +4% success.': '습성을 파악합니다: 성공률 +4%.',
+  'Fortify the camp': '야영지 강화',
+  'Rest and bandages: +3% success, fewer casualties.': '휴식과 붕대: 성공률 +3%, 사상자 감소.',
+  'War horn': '전쟁 나팔',
+  'Rally the party: +5% success.': '파티를 독려합니다: 성공률 +5%.',
+  'Not enough gold for the preparations.': '준비에 쓸 골드가 부족합니다.',
   'hearty stew': '푸짐한 스튜', 'roast boar': '멧돼지 구이', 'honey bread': '꿀빵', 'mushroom pie': '버섯 파이', 'herbal tea': '약초차',
 };
