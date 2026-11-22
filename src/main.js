@@ -996,13 +996,15 @@ const newPending = () => ({ gold: 0, ore: 0, wood: 0, herbs: 0, mana: 0, mythril
 const heroSnap = h => ({ id: h.id, name: h.name, cls: h.cls, level: h.level, variant: h.variant || 0, trait: traitOf(h), vip: !!h.vip, power: heroPower(h, 'combat') });
 const diveFloor = q => q.script.floors[diveFloorIndex(q.script, q.elapsed)];
 const diveProg = q => { const f = diveFloor(q); return f ? Math.min(100, Math.max(0, (q.elapsed - f.s) / (f.e - f.s) * 100)) : 0; };
-function dispatchDive(mode) {
+const codeSeed = c => { let h = 5381; for (const ch of String(c).toUpperCase().trim()) h = ((h << 5) + h + ch.charCodeAt(0)) % 999983; return h * 811 + 17; };
+const randomCode = () => pick(['ARCH', 'EMBER', 'RUNE', 'MOSS', 'FROST', 'GLOOM', 'AMBER', 'IRON']) + '-' + (1000 + Math.floor(Math.random() * 9000));
+function dispatchDive(mode, arg) {
   if (!first('portal')) return toast('Build a Waystone Portal first.');
   if (G.quests.some(q => q.dive)) return toast('A party is already inside the dungeon.');
   const WR = mode === 'weekly' ? weekRule() : null;
   const r = readyHeroes().filter(h => !WR || !WR.cls || h.cls === WR.cls).sort((a, b) => heroPower(b, 'combat') - heroPower(a, 'combat')).slice(0, 4);
   if (r.length < 2) return toast('The dive needs at least 2 geared, rested heroes.');
-  const q = { id: G.nextId++, name: { daily: 'Daily Dive', rush: 'Boss Rush', hard: 'Hardcore Dive', speed: 'Speed Dive', weekly: 'Weekly Challenge' }[mode] || 'Endless Dive', mode: mode || null, rush: mode === 'rush' || !!(WR && WR.rush), hard: mode === 'hard' || !!(WR && WR.hard), speed: mode === 'speed', limit: mode === 'speed' || (WR && WR.speed) ? 240 : 0, type: 'dive', dive: true, state: 'active', heroes: r, party: r.map(heroSnap), seed: mode === 'daily' ? dailySeed() : mode === 'weekly' ? dailySeed() * 7 + 3 : (Math.random() * 1e9) | 0, heals: [], enchants: [], relics: [], offer: null, elapsed: 0, cleared: 0, pending: newPending(), dur: 1e9, t: 1e9, chance: 0.5, minH: 2, maxH: 4, diff: 0, loot: {}, enchant: false, gold: 0, renown: 0 };
+  const q = { id: G.nextId++, name: { daily: 'Daily Dive', rush: 'Boss Rush', hard: 'Hardcore Dive', speed: 'Speed Dive', weekly: 'Weekly Challenge', seed: 'Seed Dive' }[mode] || 'Endless Dive', seedCode: mode === 'seed' ? String(arg).toUpperCase().trim() : null, mode: mode || null, rush: mode === 'rush' || !!(WR && WR.rush), hard: mode === 'hard' || !!(WR && WR.hard), speed: mode === 'speed', limit: mode === 'speed' || (WR && WR.speed) ? 240 : 0, type: 'dive', dive: true, state: 'active', heroes: r, party: r.map(heroSnap), seed: mode === 'seed' ? codeSeed(arg) : mode === 'daily' ? dailySeed() : mode === 'weekly' ? dailySeed() * 7 + 3 : (Math.random() * 1e9) | 0, heals: [], enchants: [], relics: [], offer: null, elapsed: 0, cleared: 0, pending: newPending(), dur: 1e9, t: 1e9, chance: 0.5, minH: 2, maxH: 4, diff: 0, loot: {}, enchant: false, gold: 0, renown: 0 };
   q.script = newDiveScript(q); ensureFloors(q, 0); G.quests.push(q);
   r.forEach(h => { h.state = 'quest'; h.mesh.visible = false; setMood(h, null); h.onDone = null; });
   sfx('horn'); toast(`🌀 ${r.length} heroes step through the portal… Recall to bank your loot!`); renderModal(true);
@@ -1641,13 +1643,14 @@ function challengeDone(q) {
   if (q.mode === 'rush') { C.rush = Math.max(C.rush, n); }
   else if (q.mode === 'hard') { C.hard = Math.max(C.hard, n); }
   else if (q.mode === 'speed') { C.speed = Math.max(C.speed || 0, n); }
+  else if (q.mode === 'seed') { const S2 = (G.flags.seeds ||= {}); S2[q.seedCode] = Math.max(S2[q.seedCode] || 0, n); G.flags.lastSeed = q.seedCode; }
   else if (q.mode === 'weekly') { const w = weekState(); w.best = Math.max(w.best, n); if (!w.claimed && n >= 5) { w.claimed = true; w.done++; const g = 150 * n; G.gold += g; if (n >= 10) G.rare.mythril += 2; passPts(10); toast(`📅 Weekly challenge cleared! +${g}g${n >= 10 ? ' and 2 Mythril' : ''}`); chron(`📅 Weekly challenge: floor ${n}.`); } }
   else if (q.mode === 'daily') {
     const D = C.daily; if (D.key !== key) { C.daily = { key, best: 0, claimed: false }; }
     C.daily.best = Math.max(C.daily.best, n);
     if (!C.daily.claimed && n >= 3) { C.daily.claimed = true; passPts(5); const g = 80 * n; G.gold += g; if (n >= 10) G.rare.mythril += 1; toast(`📅 Daily Dive bonus: +${g}g${n >= 10 ? ' and a Mythril shard' : ''}!`); chron(`📅 Daily Dive: reached floor ${n}.`); if (Ads.canShow('dailyRetry')) showAdOffer('dailyRetry', `▶ Watch an ad: +50% daily bonus (+${Math.round(g / 2)}g)`, 12, () => { G.gold += Math.round(g / 2); toast(`📅 Extra +${Math.round(g / 2)}g!`); }); }
   }
-  if (q.mode !== 'daily' && q.mode !== 'weekly' && n >= 5) { const g = (q.rush ? 60 : 40) * n; G.gold += g; toast(`🏅 ${q.name} reward: +${g}g (floor ${n}).`); }
+  if (q.mode !== 'daily' && q.mode !== 'weekly' && q.mode !== 'seed' && n >= 5) { const g = (q.rush ? 60 : 40) * n; G.gold += g; toast(`🏅 ${q.name} reward: +${g}g (floor ${n}).`); }
 }
 // limited-time calendar events (real dates): a small bonus while they last
 const CAL = [
@@ -2421,7 +2424,7 @@ function modalContent() {
         const dq = G.quests.find(q => q.dive);
         h += `<div class="sec">Waystone Portal</div><div class="row" style="border-color:#b070ff"><div style="font-size:30px">🌀</div><div class="grow"><div class="t">Endless Dive</div><div class="s">Send 2–4 geared heroes through the portal. Floors get harder forever: <b>recall to bank your loot</b> or fight on for rare materials (💎 🐉 🪶). Loot is banked automatically every 5 floors; a wipe-out loses what is unbanked. Best: floor ${G.diveBest}.</div></div><button class="act" data-act="dive" ${dq || rd.length < 2 ? 'disabled' : ''}>${dq ? 'In progress' : (rd.length < 2 ? 'Need 2 ready' : 'Dive!')}</button></div>`;
         { const C = G.flags.chal || { daily: {}, rush: 0, hard: 0 }, dd = C.daily.key === dayKey() ? C.daily : { best: 0, claimed: false }, off = dq || rd.length < 2 ? 'disabled' : '', ce = calEvent();
-          h += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0"><button class="act red" data-act="dive" data-m="daily" ${off}>📅 Daily Dive (best ${dd.best}${dd.claimed ? ' ✔' : ''})</button><button class="act red" data-act="dive" data-m="rush" ${off}>👹 Boss Rush (best ${C.rush})</button><button class="act red" data-act="dive" data-m="hard" ${off}>💀 Hardcore (best ${C.hard})</button><button class="act red" data-act="dive" data-m="speed" ${off}>⏱ Speed Dive (best ${C.speed || 0})</button><button class="act red" data-act="dive" data-m="weekly" ${off}>📅 Weekly: ${weekRule().icon} ${weekRule().name} (best ${weekState().best}${weekState().claimed ? ' ✔' : ''})</button></div><div class="s">Daily: the same dungeon for everyone today; first run to floor 3+ earns a bonus. Boss Rush: a boss every floor, double pay. Hardcore: no rescue, +50% gold. Speed Dive: you are recalled after 4 minutes; get as deep as you can.</div>`;
+          h += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0"><button class="act red" data-act="dive" data-m="daily" ${off}>📅 Daily Dive (best ${dd.best}${dd.claimed ? ' ✔' : ''})</button><button class="act red" data-act="dive" data-m="rush" ${off}>👹 Boss Rush (best ${C.rush})</button><button class="act red" data-act="dive" data-m="hard" ${off}>💀 Hardcore (best ${C.hard})</button><button class="act red" data-act="seeds">🌱 Seed dive</button><button class="act red" data-act="dive" data-m="speed" ${off}>⏱ Speed Dive (best ${C.speed || 0})</button><button class="act red" data-act="dive" data-m="weekly" ${off}>📅 Weekly: ${weekRule().icon} ${weekRule().name} (best ${weekState().best}${weekState().claimed ? ' ✔' : ''})</button></div><div class="s">Daily: the same dungeon for everyone today; first run to floor 3+ earns a bonus. Boss Rush: a boss every floor, double pay. Hardcore: no rescue, +50% gold. Speed Dive: you are recalled after 4 minutes; get as deep as you can.</div>`;
           if (ce) h += `<div class="s" style="color:#ffd24a">${ce.icon} ${ce.name}: ${ce.desc}</div>`; }
       }
       h += '<div class="sec">Active Expeditions</div>' + (act.map(q => q.dive
@@ -2518,6 +2521,10 @@ function modalContent() {
       else if (r.opts) h += `<div class="sec">Choose your path</div>` + r.opts.map((o, i) => `<div class="row"><div style="font-size:26px">${({ fight: '⚔', elite: '💀', boss: '👑', treasure: '💎', rest: '🏕', shop: '🧳', event: '❓' })[o.k]}</div><div class="grow"><div class="t">${({ fight: 'Fight', elite: 'Elite foe', boss: 'Delve boss', treasure: 'Treasure room', rest: 'Resting spot', shop: 'Wandering trader', event: 'Strange shrine' })[o.k]}</div><div class="s">${['fight', 'elite', 'boss'].includes(o.k) ? 'Strength ' + o.e.toFixed(1) : 'Unknown'}</div></div><button class="act" data-act="dvgo" data-i="${i}">Go</button></div>`).join('');
       h += `<div class="sec">Log</div>` + r.log.slice(-8).map(x => `<div class="s">${x}</div>`).join('') + `<button class="act red" data-act="dvretreat" style="margin-top:8px">🏳 Retreat (keep half the gold)</button>`;
       return ['🕳 Delve', h];
+    }
+    case 'seeds': {
+      const S2 = G.flags.seeds || {}, last = G.flags.lastSeed || '', list = Object.entries(S2).sort((a, b) => b[1] - a[1]).slice(0, 8);
+      return ['🌱 Seed dives', `<div class="s">Every code makes the same dungeon for everybody. Share a code with friends and compare how deep each of you gets — no account needed.</div><div style="display:flex;gap:6px;margin:8px 0"><input id="seedIn" maxlength="14" placeholder="e.g. EMBER-4821" value="${last.replace(/"/g, '')}" style="flex:1;padding:8px;border-radius:8px;border:2px solid #b8873f;background:#2a1a0c;color:#fff;font-size:16px;text-transform:uppercase"><button class="act red" data-act="seedrand">🎲</button></div><button class="act" data-act="seedgo" ${readyHeroes().length >= 2 && first('portal') && !G.quests.some(q => q.dive) ? '' : 'disabled'}>▶ Start this seed</button>` + (list.length ? `<div class="sec">Your records</div>` + list.map(([c, n]) => `<div class="row"><div class="grow"><div class="t">${c}</div><div class="s">Best floor ${n}</div></div><button class="act red" data-act="seedshare" data-c="${c}">📋 Copy</button></div>`).join('') : '')];
     }
     case 'inv': {
       const l = inv().slice().sort((a, b) => b.rar - a.rar);
@@ -2796,6 +2803,10 @@ const ACT = {
   role(d) { const h = G.heroes.find(x => x.id === +d.id), R = ROLES[d.k]; if (!h || !R || h.level < 3 || G.gold < roleCost(h)) return; G.gold -= roleCost(h); h.role = d.k; diary(h, `Took up the role of ${R[1].toLowerCase()}.`); toast(`${R[0]} ${h.name} is now a ${R[1].toLowerCase()}.`); sfx('goal'); },
   heroes() { openModal('heroes'); },
   album() { openModal('album'); },
+  seeds() { openModal('seeds'); },
+  seedrand() { G.flags.lastSeed = randomCode(); },
+  seedgo() { const el = document.getElementById('seedIn'), c = (el ? el.value : '').trim(); if (!c) return toast('Enter or roll a seed code first.'); G.flags.lastSeed = c.toUpperCase(); dispatchDive('seed', c); closeModal(); },
+  seedshare(d) { const t = `Fantasy Guild Master seed ${d.c}: floor ${(G.flags.seeds || {})[d.c] || 0}. Can you beat it?`; try { navigator.clipboard.writeText(t).then(() => toast('📋 Copied.'), () => toast(t)); } catch (e) { toast(t); } },
   handtoggle(d) { const a = (LEGACY.next ||= []); LEGACY.next = a.includes(d.k) ? a.filter(x => x !== d.k) : [...a, d.k]; saveLegacy(); },
   delve() { openModal('delve'); },
   dvstart() { dvStart(); },

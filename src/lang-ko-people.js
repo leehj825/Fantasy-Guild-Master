@@ -983,5 +983,13 @@ export const KO_PEOPLE = {
   'Heroes die more often and dives have no rescue.': '영웅이 더 자주 죽고 다이브 구조가 없습니다.',
   '· each adds +25% Legacy Points': '· 각각 유산 포인트 +25%',
   'Challenges for the next guild': '다음 길드를 위한 도전 과제',
+  '🌱 Seed dives': '🌱 시드 다이브',
+  'Every code makes the same dungeon for everybody. Share a code with friends and compare how deep each of you gets — no account needed.': '같은 코드는 모두에게 같은 던전을 만듭니다. 친구와 코드를 공유해 누가 더 깊이 내려가는지 겨뤄 보세요 — 계정이 필요 없습니다.',
+  '▶ Start this seed': '▶ 이 시드로 시작',
+  'Your records': '내 기록',
+  '🌱 Seed dive': '🌱 시드 다이브',
+  'Enter or roll a seed code first.': '먼저 시드 코드를 입력하거나 주사위로 만드세요.',
+  '📋 Copy': '📋 복사',
+  'Seed Dive': '시드 다이브',
   'hearty stew': '푸짐한 스튜', 'roast boar': '멧돼지 구이', 'honey bread': '꿀빵', 'mushroom pie': '버섯 파이', 'herbal tea': '약초차',
 };
