@@ -274,6 +274,14 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^📜 Blueprint found: (\S+) (.+)! Craft it at the Forge\.$/, (i, n) => `📜 설계도 발견: ${i} ${f(n)}! 대장간에서 제작하세요.`],
+    [/^📜 Found the blueprint of (.+) \((.+)\)\.$/, (n, s2) => `📜 ${f(n)}의 설계도를 찾았습니다 (${f(s2)}).`],
+    [/^(\S+) The smiths forged (.+)!$/, (i, n) => `${i} 대장장이들이 ${f(n)}을(를) 제작했습니다!`],
+    [/^(\S+) (.+) was forged\.$/, (i, n) => `${i} ${f(n)}이(가) 제작되었습니다.`],
+    [/^(\S+) (.+) wields (.+)\.$/, (i, h, n) => `${i} ${h}이(가) ${f(n)}을(를) 장착했습니다.`],
+    [/^⚔ Legendary weapon(?:: (.+))?$/, n => n ? `⚔ 전설 무기: ${f(n)}` : '⚔ 전설 무기'],
+    [/^dive floor (\d+)$/, n => `다이브 ${n}층`],
+    [/^(.+) \(now with (.+)\)$/, (d, h) => `${f(d)} (현재 ${h} 보유)`],
     [/^Frame time (\d+) ms \(about (\d+) fps\)( · slow: decorations paused)?\. When it stays slow the game pauses pets and disaster effects, and Auto graphics lowers the resolution\.$/, (m, f, sl) => `프레임 시간 ${m}ms (약 ${f}fps)${sl ? ' · 느림: 장식 효과 일시 정지' : ''}. 계속 느리면 반려동물과 재난 효과를 멈추고, 자동 그래픽은 해상도를 낮춥니다.`],
     [/^🎟 Monthly pass: tier (\d+) reached! Claim it in the pass menu\.$/, n => `🎟 월간 패스: ${n}단계 도달! 패스 메뉴에서 받으세요.`],
     [/^🎟 Tier (\d+) claimed!$/, n => `🎟 ${n}단계 보상을 받았습니다!`],

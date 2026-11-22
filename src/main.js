@@ -437,6 +437,7 @@ function heroMods(h) {
   if (h.boon) { m.pw *= h.boon.pw || 1; m.succ += h.boon.succ || 0; m.loot += h.boon.loot || 0; m.survive += h.boon.survive || 0; }
   if ((h.loy ?? 60) >= 80) m.pw *= 1.04; else if ((h.loy ?? 60) <= 25) m.pw *= 0.96;
   if (h.cls === 'rogue') m.loot += 0.15;
+  { const L = h.wep && LEGWEP[h.wep]; if (L) { m.pw *= L.pw || 1; m.survive += L.survive || 0; m.loot += L.loot || 0; m.mana += L.mana || 0; m.decay += L.decay || 0; if (L.pwType) for (const [t, v] of Object.entries(L.pwType)) m.pwType[t] = (m.pwType[t] || 1) * v; } }
   if (h.charm && CHARMS[h.charm]) { const C = CHARMS[h.charm]; m.pw *= C.pw || 1; m.decay += C.decay || 0; m.loot += C.loot || 0; m.survive += C.survive || 0; }
   { const tm = tagMods(h.tags); m.pw *= tm.pw; m.survive += tm.survive; m.loot += tm.loot; m.decay += tm.decay; m.succ += tm.succ; m.xp = tm.xp; m.happy = tm.happy * (1 - 0.04 * legacyLvl('hearth')); }
   if (h.promo) { const P = promoOf(h); m.pw *= P.pw; m.survive += P.survive || 0; m.loot += P.loot || 0; m.mana += P.mana || 0; }
@@ -515,7 +516,7 @@ function createHero(d) {
     mesh, pos: mesh.position, bub, state: 'idle', target: null, onArrive: null, timer: 0, onDone: null, cool: 0, phase: Math.random() * 6, vis: true,
   };
   codexAdd('classes', h.cls); if (d.tags) { h.tags = d.tags; h.bio = d.bio; h.likes = d.likes; h.dislikes = d.dislikes; } else Object.assign(h, makeProfile(h.cls));
-  (h.tags || []).forEach(t => codexAdd('tags', t)); h.loy = d.loy ?? 60; h.charm = d.charm || null; h.diary = d.diary || []; h.marks = d.marks || []; h.title = d.title || null; h.boon = d.boon || null; h.arc = d.arc || { id: pickArc(h), ch: 0 };
+  (h.tags || []).forEach(t => codexAdd('tags', t)); h.loy = d.loy ?? 60; h.charm = d.charm || null; h.wep = d.wep || null; h.diary = d.diary || []; h.marks = d.marks || []; h.title = d.title || null; h.boon = d.boon || null; h.arc = d.arc || { id: pickArc(h), ch: 0 };
   mesh.userData.hid = h.id; G.heroes.push(h); if (h.vip) addStar(h); if (h.promo) addPromoGear(h); if (d.bonds === undefined) assignBonds(h); else if (!h.aff) { h.aff = {}; for (const [id, k] of Object.entries(h.bonds || {})) h.aff[id] = k === 'rival' ? -35 : 35; }
   return h;
 }
@@ -869,7 +870,7 @@ function resolveQuest(q) {
     h.state = 'idle'; h.cool = 0; h.stamina = Math.max(20, h.stamina - 25 * (1 - 0.12 * Math.min(3, retireN('scout')) - (hasPet('hawk') ? 0.08 : 0)));
     h.pos.set(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1)); h.mesh.visible = true; h.target = null;
     if (!ok && q.deaths.includes(h.id)) { memorialize(h, `fell on "${q.name}"`); if (h.vip) G.renown = Math.max(0, G.renown - 1); removeHero(h, h.vip ? `☠ ${h.name} — a legend of the guild — has fallen!` : `${h.name} the ${CLASSES[h.cls].label} fell in battle...`); return; }
-    h.quests = (h.quests || 0) + 1; if (ok && h === q.heroes[0]) passPts(1); diary(h, ok ? `Returned victorious from “${q.name}”.` : `Limped home from “${q.name}”.`);
+    h.quests = (h.quests || 0) + 1; if (ok && h === q.heroes[0]) { passPts(1); if (q.boss && Math.random() < 0.5) dropBlueprint(ENEMY_NAME[q.boss] || 'a boss'); } diary(h, ok ? `Returned victorious from “${q.name}”.` : `Limped home from “${q.name}”.`);
     if (ok) gainXp(h, traitOf(h) === 'scholar' ? 2 : 1);
     if (ok && h.bonds && Object.entries(h.bonds).some(([id, k]) => k === 'apprentice' && q.heroes.some(x => x.id === +id))) gainXp(h, 1);   // a mentor in the party teaches
     h.loy = Math.max(0, Math.min(100, (h.loy ?? 60) + (ok ? 1 : -1)));
@@ -1002,7 +1003,7 @@ function diveTick(q, dt) {
     const f = S.floors[q.cleared]; for (const k of Object.keys(q.pending)) q.pending[k] += f.reward[k] || 0;
     q.cleared++; if (!q.mode) G.diveBest = Math.max(G.diveBest, q.cleared);
     if (diveCheckpoint(f.k)) {
-      toast(`🏁 Checkpoint — floor ${f.k + 1}! Banked: ${bankPending(q)}`);
+      toast(`🏁 Checkpoint — floor ${f.k + 1}! Banked: ${bankPending(q)}`); if (Math.random() < 0.45) pushEvent(pick(ROOM_KINDS)); if ((f.k + 1) % 10 === 0 && Math.random() < 0.7) dropBlueprint(`dive floor ${f.k + 1}`);
       if (q.offer) pickRelic(q, 0, true);   // an unchosen offer is taken automatically
       q.offer = relicOffer(q, f.k);
       if (q.offer.length) { sfx('chime'); toast('🎁 A relic awaits — choose one!'); if (!modalKind) openModal('relic'); }
@@ -1485,7 +1486,7 @@ function tickDisaster(dt) {
   const sea = seasonIdx(), kind = sea === 0 ? 'flood' : sea === 1 ? 'fire' : 'plague'; if (Math.random() < 0.35) pushEvent(kind);
 }
 function maybeQuestEvent(q) { if (!q.ok || q.town || q.dive || Math.random() > 0.15) return; pushEvent(pick(['merchant', 'ruins', 'stray'])); }
-function maybeDiveEvent(q) { if (q.cleared >= 2 && Math.random() < 0.7) pushEvent(pick(['rest', 'shop', 'trap', 'treasure'])); }
+function maybeDiveEvent(q) { if (q.cleared >= 2 && Math.random() < 0.3) pushEvent(pick(['rest', 'shop', 'trap', 'treasure'])); }
 // ---- retirement and family: veterans can retire into the guild as instructor, quartermaster or scout; sweethearts may have a child who grows into a new hero
 const RETIRE = { instructor: ['🎓', 'Instructor', 'Every hero gains a little extra experience from quests.'], quartermaster: ['📦', 'Quartermaster', '+4% quest gold.'], scout: ['🔭', 'Scout', 'Heroes lose less stamina on expeditions.'] };
 const retired = () => (G.flags.retired ||= []), kids = () => (G.flags.kids ||= []);
@@ -1624,6 +1625,59 @@ function tickDisasterFx() {
     else { f.position.y += Math.sin(t + f.userData.p) * 0.003; f.position.x += Math.cos(t * 0.5 + f.userData.p) * 0.004; }
   }
 }
+// ---- legendary weapons: blueprints drop from bosses and deep floors; the Forge crafts them; each hero can carry one
+const LEGWEP = {
+  flame: { icon: '🔥', name: 'Flamebrand', cls: 'knight', desc: '+18% power, +8% survival.', pw: 1.18, survive: 0.08, gold: 600, ingots: 6, mythril: 1 },
+  frost: { icon: '❄', name: 'Frostbane', cls: 'knight', desc: '+14% power on combat quests, stamina drains 15% slower.', pwType: { combat: 1.14 }, decay: -0.15, gold: 600, ingots: 6, mythril: 1 },
+  wind: { icon: '🏹', name: 'Windcaller Bow', cls: 'ranger', desc: '+15% power, +20% loot.', pw: 1.15, loot: 0.2, gold: 600, ingots: 5, mythril: 1 },
+  arcane: { icon: '🔮', name: 'Archmage Staff', cls: 'wizard', desc: '+20% power, +2 Mana after success.', pw: 1.2, mana: 2, gold: 700, ingots: 4, mythril: 2 },
+  holy: { icon: '✨', name: 'Dawn Mace', cls: 'cleric', desc: '+12% power, +10% survival.', pw: 1.12, survive: 0.1, gold: 600, ingots: 5, mythril: 1 },
+  shadow: { icon: '🌑', name: 'Nightfang Dagger', cls: 'rogue', desc: '+10% power, +35% loot.', pw: 1.1, loot: 0.35, gold: 600, ingots: 4, mythril: 1 },
+  elixir: { icon: '⚗', name: 'Philosopher’s Flask', cls: 'alchemist', desc: '+15% power, +3 Mana after success.', pw: 1.15, mana: 3, gold: 700, ingots: 4, mythril: 2 },
+};
+const bps = () => (G.flags.bp ||= {}), armory = () => (G.flags.arm ||= {});
+function dropBlueprint(src) {
+  const have = bps(), pool = Object.keys(LEGWEP).filter(k => !have[k]); if (!pool.length) return;
+  const k = pick(pool); have[k] = 1; toast(`📜 Blueprint found: ${LEGWEP[k].icon} ${LEGWEP[k].name}! Craft it at the Forge.`); chron(`📜 Found the blueprint of ${LEGWEP[k].name} (${src}).`); sfx('chime');
+}
+function craftLegend(k) {
+  const L = LEGWEP[k]; if (!L || !bps()[k] || armory()[k] || !first('forge') || G.gold < L.gold || G.ingots < L.ingots || G.rare.mythril < L.mythril) return;
+  G.gold -= L.gold; G.ingots -= L.ingots; G.rare.mythril -= L.mythril; armory()[k] = 'free'; sfx('goal'); toast(`${L.icon} The smiths forged ${L.name}!`); chron(`${L.icon} ${L.name} was forged.`);
+}
+function equipLegend(h, k) {
+  if (!armory()[k] || LEGWEP[k].cls !== h.cls) return; for (const x of G.heroes) if (x.wep === k) x.wep = null; h.wep = k; armory()[k] = h.name; toast(`${LEGWEP[k].icon} ${h.name} wields ${LEGWEP[k].name}.`);
+}
+// ---- dive rooms in 3D: a small diorama (its own tiny renderer, created when a room event opens and disposed when it closes)
+const ROOM_KINDS = ['rest', 'shop', 'trap', 'treasure'];
+let roomView = null;
+function buildRoom(kind) {
+  const g = new THREE.Group(), V = (...a) => g.add(vox(...a));
+  V(6, 0.3, 6, 0x4a4a55, 0, -0.3, 0); V(6, 3, 0.3, 0x5a5a66, 0, 0, -3); V(0.3, 3, 6, 0x5a5a66, -3, 0, 0); V(0.3, 3, 6, 0x5a5a66, 3, 0, 0);
+  for (const x of [-2.5, 2.5]) { V(0.12, 0.5, 0.12, 0x6b4a2b, x, 1.6, -2.8); V(0.2, 0.2, 0.2, 0xffb040, x, 2.1, -2.8, 0xff9020, 1); const l = new THREE.PointLight(0xffa050, 2.2, 8); l.position.set(x, 2.2, -2.4); g.add(l); }
+  if (kind === 'rest') { for (let i = 0; i < 3; i++) { V(1.6, 0.25, 0.8, 0x6b4a2b, -1.2 + i * 1.2 - 0.6, 0, -1.6 + (i % 2) * 0.2); V(1.5, 0.12, 0.7, 0xc9b79a, -1.2 + i * 1.2 - 0.6, 0.25, -1.6 + (i % 2) * 0.2); V(0.4, 0.14, 0.5, 0xf4efe6, -1.8 + i * 1.2 - 0.6, 0.37, -1.6 + (i % 2) * 0.2); }
+    g.add(new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.7, 6), new THREE.MeshBasicMaterial({ color: 0xff9a2a }))); g.children[g.children.length - 1].position.set(0, 0.35, 0.8); const l = new THREE.PointLight(0xff8a30, 2.5, 6); l.position.set(0, 0.8, 0.8); g.add(l); for (let i = 0; i < 6; i++) V(0.18, 0.12, 0.18, 0x888890, Math.cos(i) * 0.55, 0, 0.8 + Math.sin(i) * 0.55); }
+  if (kind === 'shop') { V(2.8, 0.9, 1, 0x7a4f28, 0, 0, -1.5); V(3.2, 0.12, 1.4, 0xb04a3a, 0, 1.9, -1.5); V(0.1, 1.9, 0.1, 0x6b4a2b, -1.5, 0, -0.9); V(0.1, 1.9, 0.1, 0x6b4a2b, 1.5, 0, -0.9);
+    for (let i = 0; i < 5; i++) V(0.25, 0.3, 0.25, [0xd04a4a, 0x4a8ad0, 0x4ad08a, 0xd0b04a, 0x9a4ad0][i], -1.1 + i * 0.55, 0.9, -1.5);
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.4, 7), new THREE.MeshLambertMaterial({ color: 0x4a3a6a })); cone.position.set(0.2, 0.7, -0.5); g.add(cone); const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 6), new THREE.MeshLambertMaterial({ color: 0x2a2038 })); head.position.set(0.2, 1.5, -0.5); g.add(head);
+    V(0.7, 0.6, 0.7, 0x8a5a2b, -2, 0, 1.2); V(0.6, 0.5, 0.6, 0x9a6a3b, -1.9, 0.6, 1.1); }
+  if (kind === 'trap') { for (let x = -1; x <= 1; x++) for (let z = -1; z <= 1; z++) { V(0.9, 0.06, 0.9, (x + z) % 2 ? 0x6a6a74 : 0x55555f, x, 0, z + 0.2); if (x === 0 && z !== 0 || x === 1 && z === 1) for (let k = 0; k < 4; k++) { const sp = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.6, 4), new THREE.MeshLambertMaterial({ color: 0xc8ccd4 })); sp.position.set(x - 0.25 + (k % 2) * 0.5, 0.3, z + 0.2 - 0.25 + Math.floor(k / 2) * 0.5); g.add(sp); } }
+    V(0.5, 0.12, 0.3, 0xe8e2d0, 1.9, 0, -1.8); V(0.16, 0.5, 0.16, 0xe8e2d0, 1.9, 0, -1.3); const sk = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), new THREE.MeshLambertMaterial({ color: 0xe8e2d0 })); sk.position.set(1.9, 0.32, -1.9); g.add(sk); }
+  if (kind === 'treasure') { V(1.4, 0.7, 0.9, 0x8a5a2b, 0, 0, -1.2); V(1.5, 0.3, 1.0, 0xe8c04a, 0, 0.7, -1.2, 0xffc040, 0.8); V(0.2, 0.3, 0.1, 0xffe080, 0, 0.5, -0.72, 0xffd060, 1);
+    for (let i = 0; i < 14; i++) V(0.2, 0.06, 0.2, 0xffd24a, Math.cos(i * 1.7) * (0.9 + (i % 3) * 0.35), 0, -0.6 + Math.sin(i * 1.7) * 0.8, 0xffb020, 0.6);
+    const l = new THREE.PointLight(0xffd070, 3, 6); l.position.set(0, 1.4, -0.8); g.add(l); }
+  return g;
+}
+function startRoom(kind) {
+  stopRoom(); const cv = document.createElement('canvas'); cv.width = 520; cv.height = 240; cv.style.cssText = 'width:100%;height:150px;border-radius:8px;display:block;margin-bottom:8px;background:#14141a';
+  let r; try { r = new THREE.WebGLRenderer({ canvas: cv, antialias: false, powerPreference: 'low-power' }); } catch (e) { return; }
+  r.setPixelRatio(1); r.setSize(520, 240, false);
+  const sc = new THREE.Scene(); sc.background = new THREE.Color(0x14141a); sc.add(new THREE.AmbientLight(0x8890a8, 1.3)); const room = buildRoom(kind); sc.add(room);
+  const cam = new THREE.PerspectiveCamera(48, 520 / 240, 0.1, 40); roomView = { r, sc, cam, cv, t0: performance.now(), raf: 0 };
+  const loop = () => { if (!roomView) return; const t = (performance.now() - roomView.t0) / 1000; cam.position.set(Math.sin(t * 0.25) * 2.2, 3.1, 6.2); cam.lookAt(0, 0.9, -0.4); r.render(sc, cam); roomView.raf = requestAnimationFrame(loop); };
+  loop();
+}
+function stopRoom() { if (!roomView) return; cancelAnimationFrame(roomView.raf); try { roomView.r.dispose(); roomView.r.forceContextLoss(); } catch (e) { /* ignore */ } roomView = null; }
+function attachRoom() { const h = document.getElementById('roomHold'); if (!h) { if (roomView && modalKind !== 'event') stopRoom(); return; } const id = h.dataset.kind; if (!roomView || roomView.kind !== id) { startRoom(id); if (roomView) roomView.kind = id; } if (roomView) h.appendChild(roomView.cv); }
 // ---- region trials: completing 4, 10 and 18 quests in a region unlocks its three trials (rewards and a title for the guild)
 const TRIAL_AT = [4, 10, 18];
 function regionTrial(id, rec) {
@@ -1886,7 +1940,7 @@ function updateHUD() {
 let modalKind = null, modalArg = null, lastHtml = '';
 const modal = $('modal');
 function openModal(kind, arg) { if (kind === 'upgrades') G.flags.tutRank = 1; modalKind = kind; modalArg = arg; modal.classList.remove('hidden'); renderModal(true); }
-function closeModal() { modalKind = null; modal.classList.add('hidden'); lastHtml = ''; }
+function closeModal() { stopRoom(); modalKind = null; modal.classList.add('hidden'); lastHtml = ''; }
 $('modalClose').onclick = closeModal;
 modal.addEventListener('pointerdown', e => { if (e.target === modal) closeModal(); });
 const cost = n => `<span class="tag">💰 ${n}</span>`;
@@ -1998,7 +2052,7 @@ function modalContent() {
     }
     case 'event': {
       const E = EVENTS[evq()[0]]; if (!E) { return ['📬 Event', '<div class="s">Nothing to decide.</div>']; }
-      return [E.icon + ' ' + E.title, `<div class="s" style="line-height:1.5;margin-bottom:8px">${E.text}</div>` + E.ch.map((c, i) => `<div class="row"><div class="grow"><div class="t">${c.label}</div></div><button class="act" data-act="eventchoose" data-i="${i}" ${c.ok && !c.ok() ? 'disabled' : ''}>Choose</button></div>`).join('')];
+      return [E.icon + ' ' + E.title, (ROOM_KINDS.includes(evq()[0]) ? `<div id="roomHold" data-kind="${evq()[0]}"></div>` : '') + `<div class="s" style="line-height:1.5;margin-bottom:8px">${E.text}</div>` + E.ch.map((c, i) => `<div class="row"><div class="grow"><div class="t">${c.label}</div></div><button class="act" data-act="eventchoose" data-i="${i}" ${c.ok && !c.ok() ? 'disabled' : ''}>Choose</button></div>`).join('')];
     }
     case 'shop': {
       let h = '<div class="s">An optional one-time purchase that supports the game. Nothing here is needed to play.</div>';
@@ -2124,6 +2178,7 @@ function modalContent() {
         body += `<div class="row"><div class="grow"><div class="t">⚒ Gear +${pl}/${mp}</div><div class="s">Each step: +5% power. ${first('forge') ? (pl >= mp ? 'Upgrade the Forge for more steps.' : `Next: ${pc.gold}g, ${pc.ore} ore${pc.ing ? ', ' + pc.ing + ' ingots' : ''}`) : 'Needs a Forge.'}</div></div><button class="act" data-act="reinforce" data-id="${h.id}" ${canP ? '' : 'disabled'}>Reinforce</button></div>`;
         body += `<div class="row"><div class="grow"><div class="t">🏋 Intensive training</div><div class="s">${h.train > 0 ? 'Training… ' + Math.ceil(h.train) + 's left' : first('training') ? `80 s of drills for ${tc}g — heroes in training cannot go on quests.` : 'Needs a Training Grounds.'}</div></div><button class="act" data-act="trainhero" data-id="${h.id}" ${first('training') && !(h.train > 0) && h.state !== 'quest' && G.gold >= tc ? '' : 'disabled'}>Train</button></div>`; }
       if ((h.diary || []).length) body += `<div class="sec">📔 Diary</div>` + [...h.diary].reverse().slice(0, 6).map(e => `<div class="s">Day ${e.d}: ${e.t}</div>`).join('');
+      { const own = Object.keys(LEGWEP).filter(k => armory()[k] && LEGWEP[k].cls === h.cls); if (h.wep || own.length) body += `<div class="sec">⚔ Legendary weapon${h.wep ? ': ' + LEGWEP[h.wep].icon + ' ' + LEGWEP[h.wep].name : ''}</div>` + own.filter(k => k !== h.wep).map(k => `<div class="row"><div style="font-size:22px">${LEGWEP[k].icon}</div><div class="grow"><div class="t">${LEGWEP[k].name}</div><div class="s">${LEGWEP[k].desc}${armory()[k] !== 'free' ? ' (now with ' + armory()[k] + ')' : ''}</div></div><button class="act" data-act="equiplegend" data-id="${h.id}" data-k="${k}">Equip</button></div>`).join(''); }
       if (first('forge')) body += `<div class="sec">🔮 Charm${h.charm ? ': ' + CHARMS[h.charm].icon + ' ' + CHARMS[h.charm].name : ''}</div>` + Object.entries(CHARMS).filter(([k]) => k !== h.charm).map(([k, C]) => `<div class="row"><div style="font-size:22px">${C.icon}</div><div class="grow"><div class="t">${C.name}</div><div class="s">${C.desc}</div></div><button class="act" data-act="charm" data-id="${h.id}" data-k="${k}" ${G.gold < C.gold || G.ore < C.ore ? 'disabled' : ''}>${C.gold}g + ${C.ore}⛏️</button></div>`).join('');
       if (retireOk(h)) body += `<div class="sec">🏡 Retire (a veteran can stay as a resident)</div>` + Object.entries(RETIRE).map(([k, R]) => `<div class="row"><div style="font-size:24px">${R[0]}</div><div class="grow"><div class="t">${R[1]}</div><div class="s">${R[2]}</div></div><button class="act red" data-act="retire" data-id="${h.id}" data-k="${k}">Retire</button></div>`).join('');
       return [(h.vip ? '⭐ ' : '') + h.name, body];
@@ -2145,6 +2200,7 @@ function modalContent() {
     case 'building': {
       const b = G.buildings.find(x => x.id === modalArg); if (!b) return ['', ''];
       const t = BUILDINGS[b.type]; let h = `<div class="s">${t.desc}</div><div class="row"><div class="grow"><div class="t">Level ${b.level}</div>`;
+      if (b.type === 'forge') h += `<div class="sec">📜 Legendary weapons <span class="s">· blueprints drop from bosses and every 10th dive floor</span></div>` + Object.entries(LEGWEP).map(([k, L]) => `<div class="row"><div style="font-size:24px">${bps()[k] ? L.icon : '❔'}</div><div class="grow"><div class="t">${bps()[k] ? L.name : 'Unknown blueprint'} <span class="tag">${CLASSES[L.cls].label}</span></div><div class="s">${bps()[k] ? L.desc : 'Defeat bosses or dive deeper to find it.'}</div>${bps()[k] && !armory()[k] ? `<div class="s">${L.gold}g · ${L.ingots} 🔩 · ${L.mythril} 💎</div>` : ''}</div>${armory()[k] ? `<span class="tag">✔ ${armory()[k] === 'free' ? 'Forged' : armory()[k]}</span>` : bps()[k] ? `<button class="act" data-act="craftlegend" data-k="${k}" ${G.gold < L.gold || G.ingots < L.ingots || G.rare.mythril < L.mythril ? 'disabled' : ''}>Forge</button>` : ''}</div>`).join('');
       if (b.type === 'forge') h += `<div class="s">Weapons in stock: <b>${b.stock}/${stockCap(b)}</b> · Iron Ore: ${G.ore}</div><div class="bar"><i style="width:${b.progress * 100}%"></i></div>`;
       if (b.type === 'alchemy') h += `<div class="s">Potions in stock: <b>${b.stock}/${stockCap(b)}</b> · Herbs: ${G.herbs}</div><div class="bar"><i style="width:${b.progress * 100}%"></i></div>`;
       if (b.type === 'forge' || b.type === 'alchemy') { const g = b.grade || 1; h += `<div class="s" style="margin-top:6px">Crafting grade (switch when stock is empty):</div><div style="display:flex;gap:5px;margin:3px 0">` + [1, 2, 3].map(x => `<button class="act ${g === x ? '' : 'red'}" style="${g === x ? 'outline:2px solid #fff8' : ''}" data-act="grade" data-id="${b.id}" data-g="${x}" ${gradeUnlocked(b, x) ? '' : 'disabled'}>${GRADE[b.type][x]}<br><span style="font-weight:400;font-size:11px">${costText(gradeCost(b.type, x))}</span></button>`).join('') + '</div>'; }
@@ -2192,7 +2248,7 @@ function renderModal(force) {
   const [title, body] = modalContent();
   const html = title + '||' + body;
   if (!force && html === lastHtml) return;
-  lastHtml = html; $('modalTitle').textContent = tr(title); $('modalBody').innerHTML = trHtml(body);
+  lastHtml = html; $('modalTitle').textContent = tr(title); $('modalBody').innerHTML = trHtml(body); attachRoom();
 }
 
 const ACT = {
@@ -2248,6 +2304,8 @@ const ACT = {
   async awaydouble() { const A = G.flags.away; if (!A || A.doubled) return; const ok = await Ads.show('awayDouble'); if (!ok) return toast('The ad was not completed — no reward.'); A.doubled = true; G.gold += A.gold; toast(`☀ Doubled: +${A.gold}g!`); },
   passopen() { openModal('pass'); },
   passclaim(d) { const sp = pass(), i = +d.i; if (i !== sp.claimed || i >= passTier()) return; const r = PASS[i]; G.gold += r.gold; G.ore += r.ore || 0; G.herbs += r.herbs || 0; G.wood += r.wood || 0; G.mana += r.mana || 0; G.rare.mythril += r.mythril || 0; G.rare.scale += r.scale || 0; G.rare.feather += r.feather || 0; sp.claimed++; sfx('goal'); toast(`🎟 Tier ${i + 1} claimed!`); },
+  craftlegend(d) { craftLegend(d.k); },
+  equiplegend(d) { const h = G.heroes.find(x => x.id === +d.id); if (h) equipLegend(h, d.k); },
   eventopen() { openModal('event'); },
   eventchoose(d) { chooseEvent(+d.i); },
   async iapbuy(d) { const ok = await IAP.buy(d.id); if (!ok) return toast('The purchase was not completed.'); grantPurchase(d.id); renderModal(true); },
@@ -2554,7 +2612,7 @@ function serialize() {
   return {
     v: 1, savedAt: Date.now(), g,
     buildings: G.buildings.map(b => ({ type: b.type, cx: b.cx, cz: b.cz, rot: b.rot || 0, level: b.level, stock: b.stock, progress: b.progress, spec: b.spec })),
-    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, promo: h.promo, talents: h.talents, bonds: h.bonds, aff: h.aff, vow: h.vow, quests: h.quests, vip: h.vip, tags: h.tags, bio: h.bio, likes: h.likes, dislikes: h.dislikes, loy: h.loy, marks: h.marks, plus: h.plus, train: h.train, arc: h.arc, title: h.title, boon: h.boon, charm: h.charm, diary: h.diary, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
+    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, promo: h.promo, talents: h.talents, bonds: h.bonds, aff: h.aff, vow: h.vow, quests: h.quests, vip: h.vip, tags: h.tags, bio: h.bio, likes: h.likes, dislikes: h.dislikes, loy: h.loy, marks: h.marks, plus: h.plus, train: h.train, arc: h.arc, title: h.title, boon: h.boon, charm: h.charm, wep: h.wep, diary: h.diary, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
     quests: G.quests.map(q => { const o = {}; for (const [k, v] of Object.entries(q)) if (k !== 'heroes' && k !== 'script') o[k] = v; o.heroIds = (q.heroes || []).map(h => h.id); return o; }),
     extra: serializeExtra(),
   };
@@ -2863,4 +2921,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__renderer = renderer; window.__scene = scene; window.__api = { perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__renderer = renderer; window.__scene = scene; window.__api = { dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
