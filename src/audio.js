@@ -62,6 +62,11 @@ const SFX = {
   chime: () => { tone(1047, 0.4, 'sine', 0.13); tone(1568, 0.5, 'sine', 0.09, 0.12); },
   raid: () => { tone(98, 0.9, 'sawtooth', 0.18, 0, sfxBus, 82); tone(147, 0.9, 'sawtooth', 0.11, 0.1); },
   goal: () => [784, 988, 1175].forEach((f, i) => tone(f, 0.22, 'triangle', 0.14, i * 0.08)),
+  trap: () => { noise(0.12, 0.3, 2500); tone(900, 0.08, 'square', 0.1); tone(200, 0.25, 'sawtooth', 0.14, 0.08, sfxBus, 70); },
+  craft: () => { for (let i = 0; i < 3; i++) { noise(0.06, 0.3, 4000, i * 0.14); tone(1400 + i * 120, 0.12, 'triangle', 0.1, i * 0.14); } [784, 988, 1319].forEach((f, i) => tone(f, 0.3, 'sine', 0.11, 0.5 + i * 0.08)); },
+  bond: () => { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.35, 'sine', 0.12, i * 0.05)); noise(0.3, 0.12, 6000, 0.1); },
+  fire: () => { noise(0.5, 0.2, 1800); noise(0.4, 0.14, 900, 0.15); },
+  splash: () => { noise(0.5, 0.25, 1200); tone(300, 0.3, 'sine', 0.08, 0, sfxBus, 120); },
   chest: () => { noise(0.1, 0.2, 1200); [880, 1109, 1319, 1760].forEach((f, i) => tone(f, 0.25, 'sine', 0.11, 0.1 + i * 0.06)); },
 };
 export function sfx(name) {
@@ -72,7 +77,26 @@ export function sfx(name) {
 // quiet ambient music: a slow pad plus random pentatonic notes; darker and busier in battle
 const SC = { base: [0, 2, 4, 7, 9], battle: [0, 3, 5, 7, 10] };
 const SEASON_SC = [[0, 2, 4, 7, 9], [0, 2, 4, 7, 9, 11], [0, 3, 5, 7, 10], [0, 3, 7, 10, 12]], SEASON_ROOT = [174.6, 196, 164.8, 146.8], SEASON_NOTE = [0.35, 0.45, 0.3, 0.18];
+// ambient layer: seasonal and weather textures under the music (wind, rain, birds, crickets, crackle); follows the music switch
+let ambTimer = null, ambBus = null, ambKind = null;
+export function setAmbient(kind) { ambKind = kind; }   // 'rain', 'fire', 'flood' or null (then the season decides)
+function startAmbient() {
+  if (ambTimer) return; ambBus = ctx.createGain(); ambBus.gain.value = 0.55; ambBus.connect(musicBus); let n = 0;
+  ambTimer = setInterval(() => {
+    if (!ctx || ctx.state !== 'running' || !prefs.music || battleNow()) return; n++;
+    const k = ambKind || ['birds', 'insects', 'wind', 'snow'][style];
+    if (k === 'rain') { if (n % 2 === 0) noise(0.6, 0.12, 7000, 0, ambBus); }
+    else if (k === 'fire') { if (Math.random() < 0.7) noise(0.08 + Math.random() * 0.1, 0.18, 3000, 0, ambBus); }
+    else if (k === 'flood') { if (n % 3 === 0) noise(0.9, 0.12, 900, 0, ambBus); }
+    else if (k === 'birds') { if (Math.random() < 0.18) { const f = 2200 + Math.random() * 1400; tone(f, 0.07, 'sine', 0.06, 0, ambBus, f * 1.25); tone(f * 1.1, 0.07, 'sine', 0.05, 0.09, ambBus, f * 1.4); } }
+    else if (k === 'insects') { if (Math.random() < 0.5) for (let i = 0; i < 3; i++) tone(4200, 0.025, 'square', 0.015, i * 0.045, ambBus); }
+    else if (k === 'wind') { if (n % 4 === 0) noise(1.4, 0.07, 500 + Math.random() * 500, 0, ambBus); if (Math.random() < 0.08) tone(1900 + Math.random() * 500, 0.1, 'sine', 0.04, 0, ambBus); }
+    else if (k === 'snow') { if (n % 4 === 0) noise(1.8, 0.06, 380, 0, ambBus); }
+  }, 400);
+}
+const battleNow = () => mood === 'battle';
 function startMusic() {
+  startAmbient();
   if (musicTimer) return; let step = 0;
   musicTimer = setInterval(() => {
     if (!ctx || ctx.state !== 'running' || !prefs.music) return;

@@ -5,7 +5,7 @@ import { createTutorial } from './tutorial.js';
 import { Ads } from './ads.js';
 import { IAP, PRODUCTS } from './iap.js';
 import { TAGS, makeProfile, tagMods, SEASON_NAMES, RESIDENTS, residentHome, ARCS, pickArc } from './people.js';
-import { sfx, unlock, setPref, getPrefs, setMusicMood, setMusicStyle, audioState } from './audio.js';
+import { sfx, unlock, setPref, getPrefs, setMusicMood, setMusicStyle, setAmbient, audioState } from './audio.js';
 import { tr, trHtml, initLang, setLang, getLang, onLangChange, translateStatic, LANGS } from './i18n.js';
 import { Expedition, REGION_BOSS, BOSS, questEnd, setBigMakers, genScript, STAGE_X, heroHp, phaseText, newDiveScript, ensureFloors, rebuildDive, diveFloorIndex, diveCheckpoint, rewardText, RELICS, relicMods, relicOffer } from './expedition.js';
 
@@ -1522,7 +1522,7 @@ const EVENTS = {
 };
 const evq = () => (G.flags.evq ||= []);
 function pushEvent(id) { const q = evq(); if (q.length >= 3 || q.includes(id)) return; q.push(id); sfx('chime'); toast(`📬 ${EVENTS[id].icon} ${EVENTS[id].title}`); }
-function chooseEvent(i) { const q = evq(), E = EVENTS[q[0]]; if (!E) return; const c = E.ch[i]; if (!c || (c.ok && !c.ok())) return; c.fx(); if (ROOM_KINDS.includes(evq()[0])) G.flags.rooms = (G.flags.rooms || 0) + 1; chron(`${E.icon} ${E.title}: ${c.label.replace(/\s*\(.*$/, '')}`); q.shift(); closeModal(); if (q.length) setTimeout(() => openModal('event'), 200); }
+function chooseEvent(i) { const q = evq(), E = EVENTS[q[0]]; if (!E) return; const c = E.ch[i]; if (!c || (c.ok && !c.ok())) return; { const sn = { treasure: 'chest', trap: 'trap', fire: 'fire', flood: 'splash', shop: 'coin', rest: 'chime', heir: 'goal' }[q[0]]; if (sn) sfx(sn); } c.fx(); if (ROOM_KINDS.includes(evq()[0])) G.flags.rooms = (G.flags.rooms || 0) + 1; chron(`${E.icon} ${E.title}: ${c.label.replace(/\s*\(.*$/, '')}`); q.shift(); closeModal(); if (q.length) setTimeout(() => openModal('event'), 200); }
 // ---- after the legend: the Crown's favor grows with each call to arms; every level gives a permanent bonus
 const KW_PER = 100, kingdom = () => (G.flags.kw ||= { fame: 0, t: 300 });
 const kingdomLv = () => Math.min(10, Math.floor(kingdom().fame / KW_PER));
@@ -1687,7 +1687,7 @@ function syncDisasterFx() {
   else { for (let i = 0; i < 24; i++) { const f = new THREE.Mesh(new THREE.SphereGeometry(0.35, 6, 5), new THREE.MeshBasicMaterial({ color: 0x8acb5a, transparent: true, opacity: 0.22, depthWrite: false })); f.position.set(HALL.cx + 2.5 + rnd(-9, 9), 0.6 + Math.random() * 1.5, HALL.cz + 5 + rnd(-6, 6)); f.userData.p = Math.random() * 6; disasterFx.group.add(f); disasterFx.parts.push(f); } }
 }
 function tickDisasterFx() {
-  syncDisasterFx(); if (!disasterFx.kind) return; const t = performance.now() / 1000;
+  syncDisasterFx(); setAmbient(disasterFx.kind === 'fire' ? 'fire' : disasterFx.kind === 'flood' ? 'flood' : null); if (!disasterFx.kind) return; const t = performance.now() / 1000;
   for (const f of disasterFx.parts) {
     if (disasterFx.kind === 'fire') { f.scale.y = 0.8 + Math.sin(t * 9 + f.userData.p) * 0.3; f.position.y += Math.sin(t * 5 + f.userData.p) * 0.003; }
     else if (disasterFx.kind === 'flood') { f.position.y = 0.12 + Math.sin(t * 1.2) * 0.03; }
@@ -1712,7 +1712,7 @@ function dropBlueprint(src) {
 }
 function craftLegend(k) {
   const L = LEGWEP[k]; if (!L || !bps()[k] || armory()[k] || !first('forge') || G.gold < legCost(L) || G.ingots < L.ingots || G.rare.mythril < L.mythril) return;
-  G.gold -= legCost(L); G.ingots -= L.ingots; G.rare.mythril -= L.mythril; armory()[k] = 'free'; sfx('goal'); toast(`${L.icon} The smiths forged ${L.name}!`); chron(`${L.icon} ${L.name} was forged.`);
+  G.gold -= legCost(L); G.ingots -= L.ingots; G.rare.mythril -= L.mythril; armory()[k] = 'free'; sfx('craft'); toast(`${L.icon} The smiths forged ${L.name}!`); chron(`${L.icon} ${L.name} was forged.`);
 }
 function equipLegend(h, k) {
   if (!armory()[k] || LEGWEP[k].cls !== h.cls) return; for (const x of G.heroes) if (x.wep === k) x.wep = null; h.wep = k; armory()[k] = h.name; toast(`${LEGWEP[k].icon} ${h.name} wields ${LEGWEP[k].name}.`);
@@ -2826,7 +2826,7 @@ function watchSkill(cls) {
   const w = watching, q = w?.q, sk = SKILLS[cls]; if (!q || !sk) return;
   if (!skillReady(q, cls)) return toast('That skill is not ready.');
   const T = nowT(w), S = q.script, bp = cls === 'bond' ? bondPair(q) : null, h = bp ? bp[0] : q.party.findIndex((p, i) => p.cls === cls && !(S.heroes[i].dies && T >= S.heroes[i].D));
-  if (bp) { for (const id of [q.party[bp[0]].id, q.party[bp[1]].id]) { const x = G.heroes.find(y => y.id === id); if (x) { x.happy = Math.min(100, x.happy + 10); } } const a = G.heroes.find(y => y.id === q.party[bp[0]].id), b2 = G.heroes.find(y => y.id === q.party[bp[1]].id); if (a && b2) addAff(a, b2, 3, true); }
+  if (bp) { sfx('bond'); for (const id of [q.party[bp[0]].id, q.party[bp[1]].id]) { const x = G.heroes.find(y => y.id === id); if (x) { x.happy = Math.min(100, x.happy + 10); } } const a = G.heroes.find(y => y.id === q.party[bp[0]].id), b2 = G.heroes.find(y => y.id === q.party[bp[1]].id); if (a && b2) addAff(a, b2, 3, true); }
   (q.casts ||= []).push({ t: T, kind: sk.kind, h });
   if (q.dive) (q.skillsUsed ||= {})[cls] = diveFloorIndex(S, T); else (q.skillT ||= {})[cls] = T;
   if (q.dive) {
