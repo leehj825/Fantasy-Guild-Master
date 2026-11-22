@@ -209,3 +209,9 @@ body.cb [style*="#5be35b"], body.cb [style*="rgb(91, 227, 91)"] { background: #3
 body.cb [style*="#e0503a"], body.cb [style*="rgb(224, 80, 58)"] { background: #ff9d2e !important; }
 body.cb .act:disabled { text-decoration: line-through; }
 body.photo #topbar, body.photo #objectives, body.photo #toolbar, body.photo #camctl, body.photo #toasts, body.photo #banner, body.photo #adOffer, body.photo #tutorial, body.photo #modal, body.photo .bub { display: none !important; }
+
+.hnp{position:absolute;left:0;top:0;font-size:11px;font-weight:700;background:#000a;color:#fff;border-radius:9px;padding:0 6px;line-height:16px;white-space:nowrap;pointer-events:none}
+.hnp.hot{background:#e8c04a;color:#222;box-shadow:0 0 8px #ffd24a}
+body.photo .hnp{display:none!important}
+#toolbar{gap:5px}#toolbar button{padding:6px 8px 5px}
+#toolbar button{position:relative}#toolbar button[data-n]:not([data-n='0'])::after{content:attr(data-n);position:absolute;top:-6px;right:-4px;background:#e0503a;color:#fff;border-radius:10px;min-width:18px;height:18px;line-height:18px;font-size:11px;text-align:center}

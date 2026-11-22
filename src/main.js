@@ -537,7 +537,7 @@ function spawnHero(cls, atHall = false) {
   return createHero({ cls, variant: Math.floor(Math.random() * 3), name: pick(NAMES), x: p.x, z: p.z, level: 1 + Math.floor(legacyLvl('recruits') / 2) });
 }
 function removeHero(h, why) {
-  heroGroup.remove(h.mesh); h.bub.remove();
+  heroGroup.remove(h.mesh); h.bub.remove(); if (h.tagEl) h.tagEl.remove();
   G.heroes.splice(G.heroes.indexOf(h), 1);
   if (why) toast(why);
 }
@@ -1644,6 +1644,31 @@ const PASS_STEP = 40, monthKey = () => { const d = new Date(); return d.getFullY
 function pass() { const f = G.flags; if (!f.sp || f.sp.m !== monthKey()) f.sp = { m: monthKey(), pts: 0, claimed: 0 }; return f.sp; }
 const passTier = () => Math.min(10, Math.floor(pass().pts / PASS_STEP));
 function passPts(n) { const sp = pass(), before = passTier(); sp.pts += n + (n >= 5 ? legacyLvl('patron') : 0); if (passTier() > before) { toast(`🎟 Monthly pass: tier ${passTier()} reached! Claim it in the pass menu.`); sfx('chime'); } }
+// ---- hero management: a Heroes screen (sort, filter, to-do badges, bulk actions) and nameplates in the town
+let heroSort = 'level', heroFilter = 'all';
+const SORTS = { level: 'Level', tired: 'Tired first', cls: 'Class', todo: 'To-do' }, FILTERS = { all: 'All', todo: 'To-do', tired: 'Tired', gearless: 'No gear', quest: 'On quest' };
+function heroTodo(h) {
+  const t = [];
+  if ((h.talents || []).length < talentSlots(h)) t.push(['✨', 'New talent']);
+  if (!h.promo && G.rank >= 1 && h.level >= 5 && G.gold >= 500) t.push(['⭐', 'Can be promoted']);
+  { const ch = storyChapter(h); if (ch && h.level >= ch.lv && h.state !== 'quest') t.push(['🗣', 'Story ready']); }
+  if (!h.gear) t.push(['🛡', 'Needs gear']);
+  if (first('forge') && (h.plus || 0) < maxPlus()) { const c = plusCost(h); if (G.gold >= c.gold && G.ore >= c.ore && G.ingots >= c.ing) t.push(['⚒', 'Gear can be reinforced']); }
+  if (h.stamina < 45 && h.state !== 'quest') t.push(['😴', 'Tired']);
+  if ((h.diary || []).length === 0 && false) t.push(['', '']);
+  return t;
+}
+const heroList = () => {
+  let l = G.heroes.slice();
+  if (heroFilter === 'todo') l = l.filter(h => heroTodo(h).length); else if (heroFilter === 'tired') l = l.filter(h => h.stamina < 45); else if (heroFilter === 'gearless') l = l.filter(h => !h.gear); else if (heroFilter === 'quest') l = l.filter(h => h.state === 'quest');
+  const k = { level: (a, b) => b.level - a.level || b.xp - a.xp, tired: (a, b) => a.stamina - b.stamina, cls: (a, b) => a.cls.localeCompare(b.cls) || b.level - a.level, todo: (a, b) => heroTodo(b).length - heroTodo(a).length || b.level - a.level }[heroSort];
+  return l.sort(k);
+};
+const todoCount = () => G.heroes.reduce((n, h) => n + (heroTodo(h).length ? 1 : 0), 0);
+const heroNameplate = h => {
+  if (!h.tagEl) { h.tagEl = document.createElement('div'); h.tagEl.className = 'hnp'; worldEl.appendChild(h.tagEl); }
+  return h.tagEl;
+};
 // ---- hero diary: a few lines per hero about what happened to them
 const diary = (h, text) => { if (!h) return; const d = (h.diary ||= []); d.push({ d: Math.floor(G.time / 60) + 1, t: text }); if (d.length > 8) d.shift(); };
 // ---- 3D companions and disaster visuals
@@ -1981,6 +2006,7 @@ const buyPrice = k => Math.ceil(BASE_PRICE[k] * G.market[k] * 5), sellPrice = k 
 const trend = k => G.market[k] > 1.15 ? '<span style="color:#ff9a9a">▲</span>' : G.market[k] < 0.87 ? '<span style="color:#9bff9b">▼</span>' : '▬';
 let hudCache = '';
 function updateHUD() {
+  { const n = todoCount(), b = $('heroesBtn'); if (b && b.dataset.n !== String(n)) b.dataset.n = n; }
   $('hGold').textContent = Math.floor(G.gold).toLocaleString();
   $('hRenown').textContent = G.renown;
   $('hMana').textContent = G.mana;
@@ -2009,6 +2035,7 @@ function updateHUD() {
  * ------------------------------------------------------------------ */
 let modalKind = null, modalArg = null, lastHtml = '';
 const modal = $('modal');
+let heroTab = 'abil';
 function openModal(kind, arg) { if (kind === 'upgrades') G.flags.tutRank = 1; modalKind = kind; modalArg = arg; modal.classList.remove('hidden'); renderModal(true); }
 function closeModal() { stopRoom(); modalKind = null; modal.classList.add('hidden'); lastHtml = ''; }
 $('modalClose').onclick = closeModal;
@@ -2122,6 +2149,13 @@ function modalContent() {
       h += `<div class="sec">Export / import</div><textarea id="saveText" rows="4" style="width:100%;box-sizing:border-box;font:11px monospace" placeholder="Press Export, or paste a save here and press Import">${saveBuf}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="act" data-act="exportsave">Export</button><button class="act red" data-act="importsave">Import (replaces your guild)</button></div>`;
       return ['💾 Save slots', h];
     }
+    case 'heroes': {
+      const list = heroList(), todo = todoCount();
+      let h = `<div class="s">${G.heroes.length} heroes · ${todo} need attention</div><div style="display:flex;gap:5px;flex-wrap:wrap;margin:6px 0">` + Object.entries(FILTERS).map(([k, n]) => `<button class="act ${heroFilter === k ? '' : 'red'}" data-act="hfilter" data-k="${k}">${n}</button>`).join('') + `</div><div style="display:flex;gap:5px;flex-wrap:wrap;margin:0 0 6px"><span class="s" style="align-self:center">Sort:</span>` + Object.entries(SORTS).map(([k, n]) => `<button class="act ${heroSort === k ? '' : 'red'}" data-act="hsort" data-k="${k}">${n}</button>`).join('') + `</div>`;
+      h += `<div style="display:flex;gap:5px;flex-wrap:wrap;margin:0 0 6px"><button class="act" data-act="bulktrain" ${first('training') ? '' : 'disabled'}>🏋 Train all idle</button><button class="act" data-act="bulkreinforce" ${first('forge') ? '' : 'disabled'}>⚒ Reinforce all</button></div>`;
+      h += list.map(x => { const tds = heroTodo(x), cl = x.promo ? promoOf(x).icon : CLASSES[x.cls].icon; return `<div class="row" data-act="hero" data-id="${x.id}" style="cursor:pointer;${tds.length ? 'border-color:#8fd4ff' : ''}"><div style="font-size:30px">${cl}</div><div class="grow"><div class="t">${x.vip ? '⭐ ' : ''}${x.name} <span class="tag">Lv ${x.level}</span> <span class="tag">${heroLabel(x)}</span>${x.wep ? ' ' + LEGWEP[x.wep].icon : ''}${x.charm ? ' ' + CHARMS[x.charm].icon : ''}</div><div class="bar" title="Stamina"><i style="width:${Math.round(x.stamina)}%;background:${x.stamina < 45 ? '#e0503a' : '#5be35b'}"></i></div><div class="bar" title="Happiness"><i style="width:${Math.round(x.happy)}%;background:${x.happy < 30 ? '#e0503a' : '#f0c040'}"></i></div><div class="s">${{ idle: 'Idle', walking: 'Walking', busy: 'Busy', waiting: 'Waiting around', quest: 'On an expedition', leaving: 'Leaving the guild' }[x.state] || x.state}${tds.length ? ' · ' + tds.map(t => t[0] + ' ' + t[1]).join(' · ') : ''}</div></div></div>`; }).join('') || '<div class="s">No heroes match.</div>';
+      return ['👥 Heroes', h];
+    }
     case 'event': {
       const E = EVENTS[evq()[0]]; if (!E) { return ['📬 Event', '<div class="s">Nothing to decide.</div>']; }
       return [E.icon + ' ' + E.title, (ROOM_KINDS.includes(evq()[0]) ? `<div id="roomHold" data-kind="${evq()[0]}"></div>` : '') + `<div class="s" style="line-height:1.5;margin-bottom:8px">${E.text}</div>` + E.ch.map((c, i) => `<div class="row"><div class="grow"><div class="t">${c.label}</div></div><button class="act" data-act="eventchoose" data-i="${i}" ${c.ok && !c.ok() ? 'disabled' : ''}>Choose</button></div>`).join('')];
@@ -2225,35 +2259,44 @@ function modalContent() {
       const c = CLASSES[h.cls], tr = h.vip ? TRAITS[h.vip.trait] : null, aq = G.quests.find(q => q.state === 'active' && q.heroes.includes(h));
       const bar = (v, col) => `<div class="bar"><i style="width:${Math.max(0, Math.min(100, v))}%;${col ? 'background:' + col : ''}"></i></div>`;
       const stateTxt = { idle: 'Idle', walking: 'Walking', busy: 'Busy', waiting: 'Waiting around', quest: 'On an expedition', leaving: 'Leaving the guild' }[h.state] || h.state;
-      let body = `<div class="row"><div style="font-size:34px">${c.icon}</div><div class="grow"><div class="t">${h.vip ? '⭐ ' : ''}${h.name}</div><div class="s">Level ${h.level} ${heroLabel(h)} · ${stateTxt}${h.quests ? ' · ' + h.quests + ' expeditions' : ''}</div></div>${aq ? `<button class="act" data-act="watch" data-q="${aq.id}">👁 Watch</button>` : ''}</div>`;
+      const T = { head: '', abil: '', gear: '', story: '' }; let cur = 'head'; T.head = `<div class="row"><div style="font-size:34px">${c.icon}</div><div class="grow"><div class="t">${h.vip ? '⭐ ' : ''}${h.name}</div><div class="s">Level ${h.level} ${heroLabel(h)} · ${stateTxt}${h.quests ? ' · ' + h.quests + ' expeditions' : ''}</div></div>${aq ? `<button class="act" data-act="watch" data-q="${aq.id}">👁 Watch</button>` : ''}</div>`;
       const P = promoOf(h) || PROMO[h.cls], hm = heroMods(h), pend = (h.talents || []).length < talentSlots(h);
-      if (h.promo) body += `<div class="row" style="border-color:#e8c04a"><div style="font-size:30px">${P.icon}</div><div class="grow"><div class="t">${P.name}</div><div class="s">${P.desc}</div></div></div>`;
-      else body += [['a', PROMO[h.cls]], ['b', PROMO2[h.cls]]].map(([k, Q]) => `<div class="row"><div style="font-size:30px">${Q.icon}</div><div class="grow"><div class="t">Promotion: ${Q.name}</div><div class="s">${Q.desc} Needs level 5 and Guild Rank Hold.</div>${cost(500)}</div><button class="act" data-act="promote" data-k="${k}" data-id="${h.id}" ${G.rank >= 1 && h.level >= 5 && G.gold >= 500 ? '' : 'disabled'}>Promote</button></div>`).join('');
-      if ((h.talents || []).length) body += `<div class="s">Talents: ${(h.talents || []).map(id => { const t = talentDef(h.cls, id); return t ? `<span class="tag" title="${t[2]}">${t[1]}</span>` : ''; }).join('')}</div>`;
-      if (pend) { const tier = TALENTS[h.cls][(h.talents || []).length]; body += `<div class="sec">✨ Choose a talent</div>` + tier.map(t => `<div class="row" style="border-color:#8fd4ff"><div class="grow"><div class="t">${t[1]}</div><div class="s">${t[2]}</div></div><button class="act" data-act="talent" data-id="${h.id}" data-t="${t[0]}">Learn</button></div>`).join(''); }
+      cur = 'abil';
+      if (h.promo) T[cur] += `<div class="row" style="border-color:#e8c04a"><div style="font-size:30px">${P.icon}</div><div class="grow"><div class="t">${P.name}</div><div class="s">${P.desc}</div></div></div>`;
+      else T[cur] += [['a', PROMO[h.cls]], ['b', PROMO2[h.cls]]].map(([k, Q]) => `<div class="row"><div style="font-size:30px">${Q.icon}</div><div class="grow"><div class="t">Promotion: ${Q.name}</div><div class="s">${Q.desc} Needs level 5 and Guild Rank Hold.</div>${cost(500)}</div><button class="act" data-act="promote" data-k="${k}" data-id="${h.id}" ${G.rank >= 1 && h.level >= 5 && G.gold >= 500 ? '' : 'disabled'}>Promote</button></div>`).join('');
+      if ((h.talents || []).length) T[cur] += `<div class="s">Talents: ${(h.talents || []).map(id => { const t = talentDef(h.cls, id); return t ? `<span class="tag" title="${t[2]}">${t[1]}</span>` : ''; }).join('')}</div>`;
+      if (pend) { const tier = TALENTS[h.cls][(h.talents || []).length]; T[cur] += `<div class="sec">✨ Choose a talent</div>` + tier.map(t => `<div class="row" style="border-color:#8fd4ff"><div class="grow"><div class="t">${t[1]}</div><div class="s">${t[2]}</div></div><button class="act" data-act="talent" data-id="${h.id}" data-t="${t[0]}">Learn</button></div>`).join(''); }
+      cur = 'story';
       const bondNames = Object.entries(h.bonds || {}).map(([id, k]) => [G.heroes.find(x => x.id === +id), k]).filter(([x]) => x);
-      if (bondNames.length) body += `<div class="s" style="margin-top:6px">${bondNames.map(([x, k]) => (BOND_ICON[k] || '🤝 ') + x.name).join(' · ')} <span style="opacity:.7">(same party: friends +4%, sweethearts +6%, mentor +5%, rivals −5%)</span></div>`;
-      if (G.heroes.length > 1) body += `<button class="act" data-act="relmap" style="margin:6px 0">🕸 Relations map</button>`;
-      if (h.vow) body += `<div class="s" style="color:#ffb0b0">🗡 Has sworn to honour ${h.vow}.</div>`;
-      if (tr) body += `<div class="row" style="border-color:#ffd24a"><div style="font-size:30px">${tr.icon}</div><div class="grow"><div class="t">VIP trait: ${tr.label}</div><div class="s">${tr.desc}</div></div></div>`;
-      if (h.tags) { const L = h.likes || {}, D = h.dislikes || {}; body += `<div class="row"><div class="grow"><div class="t">Personality</div><div class="s">${h.tags.map(t => `<span class="tag" title="${TAGS[t].desc}">${TAGS[t].icon} ${TAGS[t].label}</span>`).join(' ')}</div><div class="s" style="margin-top:4px">${h.bio[0]}</div><div class="s" style="margin-top:4px">❤ Likes: ${L.type} quests · ${L.bld && BUILDINGS[L.bld] ? BUILDINGS[L.bld].name : ''} · ${SEASON_NAMES[L.season]} · ${L.food}</div><div class="s">💢 Dislikes: ${D.type} quests · ${SEASON_NAMES[D.season]}</div></div></div>`; }
+      if (bondNames.length) T[cur] += `<div class="s" style="margin-top:6px">${bondNames.map(([x, k]) => (BOND_ICON[k] || '🤝 ') + x.name).join(' · ')} <span style="opacity:.7">(same party: friends +4%, sweethearts +6%, mentor +5%, rivals −5%)</span></div>`;
+      if (G.heroes.length > 1) T[cur] += `<button class="act" data-act="relmap" style="margin:6px 0">🕸 Relations map</button>`;
+      if (h.vow) T[cur] += `<div class="s" style="color:#ffb0b0">🗡 Has sworn to honour ${h.vow}.</div>`;
+      if (tr) T[cur] += `<div class="row" style="border-color:#ffd24a"><div style="font-size:30px">${tr.icon}</div><div class="grow"><div class="t">VIP trait: ${tr.label}</div><div class="s">${tr.desc}</div></div></div>`;
+      if (h.tags) { const L = h.likes || {}, D = h.dislikes || {}; T[cur] += `<div class="row"><div class="grow"><div class="t">Personality</div><div class="s">${h.tags.map(t => `<span class="tag" title="${TAGS[t].desc}">${TAGS[t].icon} ${TAGS[t].label}</span>`).join(' ')}</div><div class="s" style="margin-top:4px">${h.bio[0]}</div><div class="s" style="margin-top:4px">❤ Likes: ${L.type} quests · ${L.bld && BUILDINGS[L.bld] ? BUILDINGS[L.bld].name : ''} · ${SEASON_NAMES[L.season]} · ${L.food}</div><div class="s">💢 Dislikes: ${D.type} quests · ${SEASON_NAMES[D.season]}</div></div></div>`; }
       { const ch = storyChapter(h), A = ARCS[h.arc && h.arc.id], ready = ch && h.level >= ch.lv;
-        body += `<div class="s" style="margin-top:6px">Loyalty ${Math.round(h.loy ?? 60)}${(h.loy ?? 60) >= 80 ? ' · devoted (+4% power)' : (h.loy ?? 60) <= 25 ? ' · restless (−4% power)' : ''}</div>${bar(h.loy ?? 60, '#ff9ac8')}`;
-        if (A) body += `<div class="row" style="border-color:#c9a0ff"><div style="font-size:26px">📖</div><div class="grow"><div class="t">${A.title}${h.title ? ' · ' + h.title : ''}</div><div class="s">Chapter ${Math.min(h.arc.ch + 1, A.ch.length)}/${A.ch.length}${!ch ? ' · complete' : ready ? ' · ready' : ' · unlocks at level ' + ch.lv}</div></div>${ready && !h.vip ? '' : ''}${ready ? `<button class="act" data-act="hstoryopen" data-id="${h.id}">Read</button>` : ''}</div>`;
-        if ((h.marks || []).length) body += `<div class="s" style="margin-top:4px">📜 Choices so far: ${h.marks.join(' · ')}</div>`; }
-      body += `<div class="s" style="margin-top:6px">Experience ${h.xp}/${h.level + 1}</div>${bar(h.xp / (h.level + 1) * 100, '#8fd4ff')}
+        T[cur] += `<div class="s" style="margin-top:6px">Loyalty ${Math.round(h.loy ?? 60)}${(h.loy ?? 60) >= 80 ? ' · devoted (+4% power)' : (h.loy ?? 60) <= 25 ? ' · restless (−4% power)' : ''}</div>${bar(h.loy ?? 60, '#ff9ac8')}`;
+        if (A) T[cur] += `<div class="row" style="border-color:#c9a0ff"><div style="font-size:26px">📖</div><div class="grow"><div class="t">${A.title}${h.title ? ' · ' + h.title : ''}</div><div class="s">Chapter ${Math.min(h.arc.ch + 1, A.ch.length)}/${A.ch.length}${!ch ? ' · complete' : ready ? ' · ready' : ' · unlocks at level ' + ch.lv}</div></div>${ready && !h.vip ? '' : ''}${ready ? `<button class="act" data-act="hstoryopen" data-id="${h.id}">Read</button>` : ''}</div>`;
+        if ((h.marks || []).length) T[cur] += `<div class="s" style="margin-top:4px">📜 Choices so far: ${h.marks.join(' · ')}</div>`; }
+      cur = 'abil';
+      T[cur] += `<div class="s" style="margin-top:6px">Experience ${h.xp}/${h.level + 1}</div>${bar(h.xp / (h.level + 1) * 100, '#8fd4ff')}
         <div class="s" style="margin-top:6px">Stamina ${Math.round(h.stamina)}</div>${bar(h.stamina, h.stamina < 45 ? '#e0503a' : '#5be35b')}
         <div class="s" style="margin-top:6px">Happiness ${Math.round(h.happy)}</div>${bar(h.happy, h.happy < 30 ? '#e0503a' : '#f0c040')}
         <div class="row"><div class="grow"><div class="t">Gear</div><div class="s">${h.gear ? '✔ ' + gearName(h) + ' gear equipped' : '✘ Needs ' + (usesLab(h.cls) ? 'potions from the Alchemical Lab' : 'a weapon from the Forge')}</div></div>
         <div class="grow"><div class="t">Power</div><div class="s">${heroPower(h, c.quest).toFixed(1)} on ${c.quest} quests</div></div></div>`;
+      cur = 'gear';
       { const pc = plusCost(h), pl = h.plus || 0, mp = maxPlus(), canP = first('forge') && pl < mp && G.gold >= pc.gold && G.ore >= pc.ore && G.ingots >= pc.ing, tc = trainCost(h);
-        body += `<div class="row"><div class="grow"><div class="t">⚒ Gear +${pl}/${mp}</div><div class="s">Each step: +5% power. ${first('forge') ? (pl >= mp ? 'Upgrade the Forge for more steps.' : `Next: ${pc.gold}g, ${pc.ore} ore${pc.ing ? ', ' + pc.ing + ' ingots' : ''}`) : 'Needs a Forge.'}</div></div><button class="act" data-act="reinforce" data-id="${h.id}" ${canP ? '' : 'disabled'}>Reinforce</button></div>`;
-        body += `<div class="row"><div class="grow"><div class="t">🏋 Intensive training</div><div class="s">${h.train > 0 ? 'Training… ' + Math.ceil(h.train) + 's left' : first('training') ? `80 s of drills for ${tc}g — heroes in training cannot go on quests.` : 'Needs a Training Grounds.'}</div></div><button class="act" data-act="trainhero" data-id="${h.id}" ${first('training') && !(h.train > 0) && h.state !== 'quest' && G.gold >= tc ? '' : 'disabled'}>Train</button></div>`; }
-      if ((h.diary || []).length) body += `<div class="sec">📔 Diary</div>` + [...h.diary].reverse().slice(0, 6).map(e => `<div class="s">Day ${e.d}: ${e.t}</div>`).join('');
-      { const own = Object.keys(LEGWEP).filter(k => armory()[k] && LEGWEP[k].cls === h.cls); if (h.wep || own.length) body += `<div class="sec">⚔ Legendary weapon${h.wep ? ': ' + LEGWEP[h.wep].icon + ' ' + LEGWEP[h.wep].name : ''}</div>` + own.filter(k => k !== h.wep).map(k => `<div class="row"><div style="font-size:22px">${LEGWEP[k].icon}</div><div class="grow"><div class="t">${LEGWEP[k].name}</div><div class="s">${LEGWEP[k].desc}${armory()[k] !== 'free' ? ' (now with ' + armory()[k] + ')' : ''}</div></div><button class="act" data-act="equiplegend" data-id="${h.id}" data-k="${k}">Equip</button></div>`).join(''); }
-      if (first('forge')) body += `<div class="sec">🔮 Charm${h.charm ? ': ' + CHARMS[h.charm].icon + ' ' + CHARMS[h.charm].name : ''}</div>` + Object.entries(CHARMS).filter(([k]) => k !== h.charm).map(([k, C]) => `<div class="row"><div style="font-size:22px">${C.icon}</div><div class="grow"><div class="t">${C.name}</div><div class="s">${C.desc}</div></div><button class="act" data-act="charm" data-id="${h.id}" data-k="${k}" ${G.gold < C.gold || G.ore < C.ore ? 'disabled' : ''}>${C.gold}g + ${C.ore}⛏️</button></div>`).join('');
-      if (retireOk(h)) body += `<div class="sec">🏡 Retire (a veteran can stay as a resident)</div>` + Object.entries(RETIRE).map(([k, R]) => `<div class="row"><div style="font-size:24px">${R[0]}</div><div class="grow"><div class="t">${R[1]}</div><div class="s">${R[2]}</div></div><button class="act red" data-act="retire" data-id="${h.id}" data-k="${k}">Retire</button></div>`).join('');
-      return [(h.vip ? '⭐ ' : '') + h.name, body];
+        T[cur] += `<div class="row"><div class="grow"><div class="t">⚒ Gear +${pl}/${mp}</div><div class="s">Each step: +5% power. ${first('forge') ? (pl >= mp ? 'Upgrade the Forge for more steps.' : `Next: ${pc.gold}g, ${pc.ore} ore${pc.ing ? ', ' + pc.ing + ' ingots' : ''}`) : 'Needs a Forge.'}</div></div><button class="act" data-act="reinforce" data-id="${h.id}" ${canP ? '' : 'disabled'}>Reinforce</button></div>`;
+        T[cur] += `<div class="row"><div class="grow"><div class="t">🏋 Intensive training</div><div class="s">${h.train > 0 ? 'Training… ' + Math.ceil(h.train) + 's left' : first('training') ? `80 s of drills for ${tc}g — heroes in training cannot go on quests.` : 'Needs a Training Grounds.'}</div></div><button class="act" data-act="trainhero" data-id="${h.id}" ${first('training') && !(h.train > 0) && h.state !== 'quest' && G.gold >= tc ? '' : 'disabled'}>Train</button></div>`; }
+      cur = 'story';
+      if ((h.diary || []).length) T[cur] += `<div class="sec">📔 Diary</div>` + [...h.diary].reverse().slice(0, 6).map(e => `<div class="s">Day ${e.d}: ${e.t}</div>`).join('');
+      cur = 'gear';
+      { const own = Object.keys(LEGWEP).filter(k => armory()[k] && LEGWEP[k].cls === h.cls); if (h.wep || own.length) T[cur] += `<div class="sec">⚔ Legendary weapon${h.wep ? ': ' + LEGWEP[h.wep].icon + ' ' + LEGWEP[h.wep].name : ''}</div>` + own.filter(k => k !== h.wep).map(k => `<div class="row"><div style="font-size:22px">${LEGWEP[k].icon}</div><div class="grow"><div class="t">${LEGWEP[k].name}</div><div class="s">${LEGWEP[k].desc}${armory()[k] !== 'free' ? ' (now with ' + armory()[k] + ')' : ''}</div></div><button class="act" data-act="equiplegend" data-id="${h.id}" data-k="${k}">Equip</button></div>`).join(''); }
+      if (first('forge')) T[cur] += `<div class="sec">🔮 Charm${h.charm ? ': ' + CHARMS[h.charm].icon + ' ' + CHARMS[h.charm].name : ''}</div>` + Object.entries(CHARMS).filter(([k]) => k !== h.charm).map(([k, C]) => `<div class="row"><div style="font-size:22px">${C.icon}</div><div class="grow"><div class="t">${C.name}</div><div class="s">${C.desc}</div></div><button class="act" data-act="charm" data-id="${h.id}" data-k="${k}" ${G.gold < C.gold || G.ore < C.ore ? 'disabled' : ''}>${C.gold}g + ${C.ore}⛏️</button></div>`).join('');
+      cur = 'story';
+      if (retireOk(h)) T[cur] += `<div class="sec">🏡 Retire (a veteran can stay as a resident)</div>` + Object.entries(RETIRE).map(([k, R]) => `<div class="row"><div style="font-size:24px">${R[0]}</div><div class="grow"><div class="t">${R[1]}</div><div class="s">${R[2]}</div></div><button class="act red" data-act="retire" data-id="${h.id}" data-k="${k}">Retire</button></div>`).join('');
+      const idx = G.heroes.indexOf(h), nav = G.heroes.length > 1 ? `<div style="display:flex;gap:6px;margin:4px 0"><button class="act red" data-act="heroes">👥 All</button><button class="act red" data-act="hnav" data-d="-1">◀</button><button class="act red" data-act="hnav" data-d="1">▶</button><button class="act red" data-act="hfind" data-id="${h.id}">🔍 Find</button><span class="s" style="align-self:center">${idx + 1}/${G.heroes.length}</span></div>` : `<button class="act red" data-act="hfind" data-id="${h.id}">🔍 Find</button>`;
+      const tabs = `<div style="display:flex;gap:6px;margin:8px 0">` + [['abil', '⭐ Abilities'], ['gear', '⚒ Gear'], ['story', '📖 Story']].map(([k, n]) => `<button class="act ${heroTab === k ? '' : 'red'}" data-act="htab" data-k="${k}">${n}</button>`).join('') + `</div>`;
+      return [(h.vip ? '⭐ ' : '') + h.name, nav + T.head + tabs + T[heroTab]];
     }
     case 'upgrades': {
       const c1 = 300 * (G.outpost + 1), c2 = 250 * (G.boardLvl + 1), c3 = 200 * (G.walls + 1);
@@ -2344,6 +2387,14 @@ const ACT = {
   storychoice(d) { chooseStory(+d.i); },
   dive(d) { dispatchDive(d && d.m); },
   hero(d) { openModal('hero', +d.id); },
+  heroes() { openModal('heroes'); },
+  hfilter(d) { heroFilter = d.k; },
+  hsort(d) { heroSort = d.k; },
+  htab(d) { heroTab = d.k; },
+  hnav(d) { const l = heroList().length ? G.heroes : G.heroes, i = l.findIndex(x => x.id === modalArg); if (i < 0) return; modalArg = l[(i + +d.d + l.length) % l.length].id; },
+  hfind(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h) return; closeModal(); camTarget.set(h.pos.x, 0, h.pos.z); viewS = Math.min(viewS, VIEW0.zoom * 0.8); updateCamera(); toast(`🔍 ${h.name}`); h.flash = 3; },
+  bulktrain() { let n = 0; for (const h of G.heroes) { if (h.state === 'quest' || h.train > 0 || !first('training')) continue; const c = trainCost(h); if (G.gold < c) break; G.gold -= c; h.train = 80; n++; } toast(n ? `🏋 ${n} heroes began training.` : 'Nothing to train (or not enough gold).'); },
+  bulkreinforce() { let n = 0; for (const h of G.heroes) { if (!first('forge') || (h.plus || 0) >= maxPlus()) continue; const c = plusCost(h); if (G.gold < c.gold || G.ore < c.ore || G.ingots < c.ing) continue; G.gold -= c.gold; G.ore -= c.ore; G.ingots -= c.ing; h.plus = (h.plus || 0) + 1; n++; } toast(n ? `⚒ Reinforced the gear of ${n} heroes.` : 'Nothing to reinforce (or not enough materials).'); },
   save() { saveGame(false); renderModal(true); },
   tutorial() { tutorial.restart(); closeModal(); },
   newgame() { if (modalArg !== 'confirm') { modalArg = 'confirm'; return; } try { localStorage.removeItem(SAVE_KEY); } catch (e) { } window.__noSave = true; location.reload(); },
@@ -2949,6 +3000,14 @@ function frame() {
     f.el.style.transform = `translate(${x}px,${y - f.t * 34}px) translate(-50%,-50%)`; f.el.style.opacity = Math.max(0, 1 - f.t / 1.8);
     if (f.t > 1.8) { f.el.remove(); floaters.splice(i, 1); }
   }
+  { const near = viewS < VIEW0.zoom * 0.85;
+    for (const h of G.heroes) {
+      const el = heroNameplate(h);
+      if (h.state === 'quest' || !h.mesh.visible || watching) { el.style.display = 'none'; continue; }
+      const [x, y] = toScreen(h.pos, 1.9); if (x < -40 || y < -40 || x > innerWidth + 40 || y > innerHeight + 40) { el.style.display = 'none'; continue; }
+      el.style.display = ''; const td = heroTodo(h).length ? ' ❗' : '', cl = h.promo ? promoOf(h).icon : CLASSES[h.cls].icon, txt = `${cl}${h.level}${td}${near || h.flash > 0 ? ' ' + h.name : ''}`;
+      if (el.textContent !== txt) el.textContent = txt; if (h.flash > 0) { h.flash -= rdt; el.classList.add('hot'); } else el.classList.remove('hot');
+      el.style.transform = `translate(${x}px,${y}px) translate(-50%,-100%)`; } }
   for (const h of G.heroes) {
     if (h.bub.classList.contains('hidden') || h.state === 'quest') { if (h.state === 'quest') h.bub.classList.add('hidden'); continue; }
     const [x, y] = toScreen(h.pos, 1.55); h.bub.style.transform = `translate(${x}px,${y}px) translate(-50%,-100%)`;
@@ -3009,4 +3068,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__renderer = renderer; window.__scene = scene; window.__api = { weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__renderer = renderer; window.__scene = scene; window.__api = { heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };

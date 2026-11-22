@@ -274,6 +274,9 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^(\d+) heroes · (\d+) need attention$/, (a, b) => `영웅 ${a}명 · ${b}명 확인 필요`],
+    [/^🏋 (\d+) heroes began training\.$/, n => `🏋 영웅 ${n}명이 훈련을 시작했습니다.`],
+    [/^⚒ Reinforced the gear of (\d+) heroes\.$/, n => `⚒ 영웅 ${n}명의 장비를 강화했습니다.`],
     [/^🕵 (.+) left for the rival guild\.$/, n => `🕵 ${n}이(가) 라이벌 길드로 떠났습니다.`],
     [/^🕵 (.+) joined the rival guild\.$/, n => `🕵 ${n}이(가) 라이벌 길드에 합류했습니다.`],
     [/^Day (\d+): Turned down the rival guild’s offer\.$/, d => `${d}일째: 라이벌 길드의 제안을 거절했습니다.`],
