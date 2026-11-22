@@ -2,6 +2,12 @@ package io.github.leehj825.fantasyguildmaster;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AlarmManager;
+import android.app.PendingIntent;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
@@ -99,6 +105,11 @@ public class MainActivity extends Activity {
         rootView = root;
         web.addJavascriptInterface(new AdBridge(), "AndroidAds");
         web.addJavascriptInterface(new BillingBridge(), "AndroidBilling");
+        web.addJavascriptInterface(new NotifyBridge(), "AndroidNotify");
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED && !getSharedPreferences("iap", MODE_PRIVATE).getBoolean("asked_notify", false)) {
+            getSharedPreferences("iap", MODE_PRIVATE).edit().putBoolean("asked_notify", true).apply();
+            requestPermissions(new String[] { "android.permission.POST_NOTIFICATIONS" }, 1);
+        }
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
 
         WebSettings s = web.getSettings();
@@ -274,6 +285,22 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void buy(final String id) { runOnUiThread(() -> MainActivity.this.buy(id)); }
     }
 
+    // ---------------------------------------------------------------- reminders
+    private PendingIntent alarmIntent(int id, String title, String text, int flags) {
+        Intent i = new Intent(this, NotifyReceiver.class).putExtra("id", id).putExtra("title", title).putExtra("text", text);
+        return PendingIntent.getBroadcast(this, id, i, PendingIntent.FLAG_IMMUTABLE | flags);
+    }
+    private class NotifyBridge {
+        @JavascriptInterface public void schedule(int id, int seconds, String title, String text) {
+            AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+            if (am != null) am.setAndAllowWhileIdle(AlarmManager.RTC, System.currentTimeMillis() + seconds * 1000L, alarmIntent(id, title, text, PendingIntent.FLAG_UPDATE_CURRENT));
+        }
+        @JavascriptInterface public void cancelAll() {
+            AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+            if (am != null) for (int id = 1; id <= 3; id++) am.cancel(alarmIntent(id, "", "", PendingIntent.FLAG_UPDATE_CURRENT));
+        }
+    }
+
     // What the page can call (see src/ads.js)
     private class AdBridge {
         @JavascriptInterface public boolean isReady() { return rewarded != null; }
@@ -296,7 +323,7 @@ public class MainActivity extends Activity {
     }
 
     // WebView.onPause() does not stop Web Audio, so tell the page to silence itself first
-    @Override protected void onPause() { if (banner != null) banner.pause(); web.evaluateJavascript("window.__audioHidden&&window.__audioHidden(true)", null); web.onPause(); super.onPause(); }
-    @Override protected void onResume() { super.onResume(); if (banner != null) banner.resume(); web.onResume(); web.evaluateJavascript("window.__audioHidden&&window.__audioHidden(false)", null); }
+    @Override protected void onPause() { web.evaluateJavascript("window.__scheduleNotify&&window.__scheduleNotify()", null); if (banner != null) banner.pause(); web.evaluateJavascript("window.__audioHidden&&window.__audioHidden(true)", null); web.onPause(); super.onPause(); }
+    @Override protected void onResume() { super.onResume(); web.evaluateJavascript("window.__cancelNotify&&window.__cancelNotify()", null); if (banner != null) banner.resume(); web.onResume(); web.evaluateJavascript("window.__audioHidden&&window.__audioHidden(false)", null); }
     @Override protected void onDestroy() { if (banner != null) banner.destroy(); web.destroy(); super.onDestroy(); }
 }

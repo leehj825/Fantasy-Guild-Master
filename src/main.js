@@ -1641,6 +1641,19 @@ function checkAway() {
   if (gold < 10 && !done) return; G.gold += gold; G.flags.away = { gold, mins: Math.round(secs / 60), done, doubled: false };
   setTimeout(() => openModal('away'), 1800);
 }
+// ---- reminders (Android app only): when the app goes to the background, schedule one note for the first expedition to finish, one for full rested heroes, and one gentle nudge
+const NOTIFY_KEY = 'fantasy-guild-master-notify';
+const notifyOn = () => { try { return localStorage.getItem(NOTIFY_KEY) !== '0'; } catch (e) { return true; } };
+window.__scheduleNotify = () => {
+  const N = window.AndroidNotify; if (!N || !notifyOn()) return;
+  try {
+    N.cancelAll(); const act = G.quests.filter(q => q.state === 'active' && !q.dive && q.t > 5);
+    if (act.length) N.schedule(1, Math.round(Math.min(...act.map(q => q.t))) + 5, tr('Guild news'), tr('An expedition party has returned!'));
+    const idle = G.heroes.filter(h => h.state !== 'quest' && h.stamina < 70).length; if (idle >= 2) N.schedule(2, 600, tr('Guild news'), tr('Your heroes are rested and ready for work.'));
+    N.schedule(3, 6 * 3600, tr('Guild news'), tr('Your guild misses you! Come and collect your daily reward.'));
+  } catch (e) { logError('notify: ' + e.message); }
+};
+window.__cancelNotify = () => { try { window.AndroidNotify && window.AndroidNotify.cancelAll(); } catch (e) { /* ignore */ } };
 // ---- accessibility, photo mode and a local error log
 const A11Y_KEY = 'fantasy-guild-master-a11y', ERR_KEY = 'fantasy-guild-master-errors';
 const a11y = (() => { try { return Object.assign({ text: 0, cb: 0 }, JSON.parse(localStorage.getItem(A11Y_KEY) || '{}')); } catch (e) { return { text: 0, cb: 0 }; } })();
@@ -1955,6 +1968,7 @@ function modalContent() {
     case 'settings': return ['⚙ Settings & Save', `
       <div class="row"><div class="grow"><div class="t">🔊 Sound</div><div class="s">Procedural sound effects and music (no downloads).</div></div><button class="act ${getPrefs().sfx ? '' : 'red'}" data-act="sfxtoggle">Effects: ${getPrefs().sfx ? 'On' : 'Off'}</button><button class="act ${getPrefs().music ? '' : 'red'}" data-act="musictoggle">Music: ${getPrefs().music ? 'On' : 'Off'}</button></div>
       <div class="row"><div class="grow"><div class="t">♿ Accessibility</div><div class="s">Text size and a colour-blind-friendly palette.</div></div><div style="display:flex;gap:4px"><button class="act" data-act="textsize">Text size: ${['Normal', 'Large', 'Largest'][a11y.text]}</button><button class="act ${a11y.cb ? '' : 'red'}" data-act="cbmode">Colour-blind mode: ${a11y.cb ? 'On' : 'Off'}</button></div></div>
+      ${window.AndroidNotify ? `<div class="row"><div class="grow"><div class="t">🔔 Reminders</div><div class="s">A note when a party returns, or when the guild misses you.</div></div><button class="act ${notifyOn() ? '' : 'red'}" data-act="notifytoggle">${notifyOn() ? 'On' : 'Off'}</button></div>` : ''}
       <div class="row"><div class="grow"><div class="t">📷 Photo mode</div><div class="s">Hides the interface so you can look at your town. Tap to leave.</div></div><button class="act" data-act="photo">Start</button></div>
       <div class="row"><div class="grow"><div class="t">🧾 Error log</div><div class="s">${readErrs().length} recorded on this device.</div></div><button class="act red" data-act="errlog">Open</button></div>
       <div class="row"><div class="grow"><div class="t">🌐 Language</div><div class="s">English / 한국어 / 日本語</div></div>${Object.entries(LANGS).map(([k, n]) => `<button class="act ${getLang() === k ? '' : 'red'}" style="${getLang() === k ? 'outline:2px solid #fff8' : ''}" data-act="lang" data-l="${k}">${n}</button>`).join('')}</div>
@@ -2222,6 +2236,7 @@ const ACT = {
   charm(d) { const h = G.heroes.find(x => x.id === +d.id), C = CHARMS[d.k]; if (!h || !C || G.gold < C.gold || G.ore < C.ore) return; G.gold -= C.gold; G.ore -= C.ore; h.charm = d.k; toast(`${C.icon} ${h.name} wears the ${C.name}.`); sfx('goal'); },
   trade(d) { chooseTrade(+d.n); },
   theme(d) { const T = THEMES[d.k]; if (!T) return; const own = (G.flags.themes ||= ['crimson']); if (!own.includes(d.k)) { if (G.gold < T[2]) return; G.gold -= T[2]; own.push(d.k); } G.flags.theme = d.k; applyTheme(); toast(`🎨 The hall now flies ${T[0]} banners and a matching roof.`); },
+  notifytoggle() { try { localStorage.setItem(NOTIFY_KEY, notifyOn() ? '0' : '1'); } catch (e) { /* ignore */ } },
   textsize() { a11y.text = (a11y.text + 1) % 3; applyA11y(); },
   cbmode() { a11y.cb = a11y.cb ? 0 : 1; applyA11y(); },
   photo() { photoT = performance.now(); setPhoto(true); },

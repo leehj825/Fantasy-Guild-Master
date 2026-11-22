@@ -596,5 +596,11 @@ export const KO_PEOPLE = {
   '📔 Diary': '📔 일기',
   '🎟 Monthly pass': '🎟 월간 패스',
   '✔ Claimed': '✔ 수령함',
+  'Guild news': '길드 소식',
+  'An expedition party has returned!': '원정대가 돌아왔습니다!',
+  'Your heroes are rested and ready for work.': '영웅들이 충분히 쉬고 일할 준비가 됐습니다.',
+  'Your guild misses you! Come and collect your daily reward.': '길드가 당신을 기다려요! 오늘의 보상을 받으러 오세요.',
+  '🔔 Reminders': '🔔 알림',
+  'A note when a party returns, or when the guild misses you.': '원정대가 돌아오거나 길드가 당신을 기다릴 때 알려 드립니다.',
   'hearty stew': '푸짐한 스튜', 'roast boar': '멧돼지 구이', 'honey bread': '꿀빵', 'mushroom pie': '버섯 파이', 'herbal tea': '약초차',
 };
