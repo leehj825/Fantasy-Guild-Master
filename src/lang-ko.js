@@ -274,6 +274,7 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^Active this run: (.+)$/, t => `이번 길드에 적용 중: ${t}`],
     [/^A short roguelike dive: eight rooms.*Shards: (\d+) · Best depth: (\d)\/8 · Runs: (\d+)$/, (a, b, c) => `짧은 로그라이크 탐험: 방 8개와 마지막 보스. 조각으로 영구 강화를 삽니다. 조각: ${a} · 최고 깊이: ${b}/8 · 도전: ${c}회`],
     [/^Room (\d)\/8 · Run gold (\d+) · Relics: (.+)$/, (n, g, rl) => `방 ${n}/8 · 이번 골드 ${g} · 유물: ${rl === 'none' ? '없음' : rl}`],
     [/^Health (-?\d+)\/(\d+) · Party power (.+)$/, (a, b, c) => `체력 ${a}/${b} · 파티 전투력 ${c}`],
