@@ -735,5 +735,10 @@ export const KO_PEOPLE = {
   'Build a Forge to arm your heroes': '영웅 무장을 위해 대장간을 지으세요',
   'Recruit more heroes': '영웅을 더 모집하세요',
   'Spend gold on buildings and upgrades': '골드를 건물과 업그레이드에 쓰세요',
+  'Your party': '내 파티',
+  'required': '필수',
+  'optional': '선택',
+  'No bonds in this party.': '이 파티에는 인연이 없습니다.',
+  '✨ Auto-fill best': '✨ 최적 편성',
   'hearty stew': '푸짐한 스튜', 'roast boar': '멧돼지 구이', 'honey bread': '꿀빵', 'mushroom pie': '버섯 파이', 'herbal tea': '약초차',
 };
