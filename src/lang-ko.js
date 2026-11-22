@@ -274,6 +274,10 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^(.+) Needs 3 of: (.+)\.$/, (p, l) => `${f(p)} 필요: ${l.split(', ').map(x => f(x)).join(', ')} 중 3개.`],
+    [/^🎭 Role(?:: (\S+) (.+?))?( · 🎖 Full kit \+8% power)?$/, (i, n, k2) => `🎭 역할${n ? ': ' + i + ' ' + f(n) : ''}${k2 ? ' · 🎖 풀 세트 전투력 +8%' : ''}`],
+    [/^(\S+) (.+) is now a (.+)\.$/, (i, h, r2) => `${i} ${h}이(가) ${f(r2.charAt(0).toUpperCase() + r2.slice(1))}이(가) 되었습니다.`],
+    [/^Day (\d+): Took up the role of (.+)\.$/, (d, r2) => `${d}일째: ${f(r2.charAt(0).toUpperCase() + r2.slice(1))} 역할을 맡았습니다.`],
     [/^Bonds: (.+)$/, b => `인연: ${b}`],
     [/^(.*)Boss weak to (\S+): (.+)$/, (a, w, v) => `${a}보스 약점 ${w}: ${v.replace('✘ none', '✘ 없음')}`],
     [/^✅ Mission complete: (.+) \(\+(\d+)g\)$/, (t, g) => `✅ 미션 완료: ${f(t)} (+${g}골드)`],

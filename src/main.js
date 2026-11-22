@@ -344,7 +344,7 @@ G.buildings[0].pop = 1; G.buildings[0].group.scale.setScalar(1);
 /* ------------------------------------------------------------------ *
  *  Derived stats
  * ------------------------------------------------------------------ */
-const popCap = () => 4 + ofType('tent').length * 3 + ofType('cottage').length + ofType('tavern').length * 4 + G.outpost * 3 + G.rank * 4 + 2 * regionPerk('greenwood');
+const popCap = () => (hasDistrict('home') ? 3 : 0) + 4 + ofType('tent').length * 3 + ofType('cottage').length + ofType('tavern').length * 4 + G.outpost * 3 + G.rank * 4 + 2 * regionPerk('greenwood');
 const maxLevel = () => [3, 5, 7, 9][G.rank];
 const boardSlots = () => 3 + G.boardLvl + (G.rank >= 2 ? 1 : 0) + (G.rank >= 3 ? 1 : 0);
 const craftSpeed = () => (1 + 0.25 * G.staff.smith) * (G.research.forging ? 1.3 : 1) * (G.research.mythril ? 1.4 : 1) * (1 + 0.1 * regionPerk('stonepeak')) * (G.flags.faction === 'vanguard' ? 1.15 : 1) * (G.flags.smithTaught ? 1.1 : 1);
@@ -413,6 +413,10 @@ const PROMO = {
   cleric: { name: 'Saint', icon: '✨', pw: 1.2, survive: 0.1, mana: 2, desc: '+20% power, far fewer casualties, +2 Mana.' },
   alchemist: { name: 'Grand Alchemist', icon: '🧪', pw: 1.3, mana: 2, desc: '+30% power, +2 Mana after each success.' },
 };
+// roles (level 3+): the same class can be built as a tank, a striker or a support; a full kit (legendary weapon + charm + gear +3) adds a set bonus
+const ROLES = { tank: ['🛡', 'Tank', 'Survival +9%, power −5%. Stays calm under pressure.', { pw: 0.95, survive: 0.09 }], striker: ['⚔', 'Striker', 'Power +10%, survival −3%. Hits hard.', { pw: 1.1, survive: -0.03 }], support: ['🎗', 'Support', 'Party success +3%, stamina drains 12% slower.', { succ: 0.03, decay: -0.12 }] };
+const roleCost = h => (h.role ? 300 : 0);
+const fullKit = h => !!(h.wep && h.charm && (h.plus || 0) >= 3);
 const PROMO2 = {
   knight: { name: 'Berserker', icon: '🪓', pw: 1.45, survive: -0.05, desc: '+45% power, but more casualties.' },
   ranger: { name: 'Beastmaster', icon: '🐺', pw: 1.2, loot: 0.15, mana: 1, desc: '+20% power, +15% loot, +1 Mana after each success.' },
@@ -437,6 +441,8 @@ function heroMods(h) {
   if (h.boon) { m.pw *= h.boon.pw || 1; m.succ += h.boon.succ || 0; m.loot += h.boon.loot || 0; m.survive += h.boon.survive || 0; }
   if ((h.loy ?? 60) >= 80) m.pw *= 1.04; else if ((h.loy ?? 60) <= 25) m.pw *= 0.96;
   if (h.cls === 'rogue') m.loot += 0.15;
+  if (h.role && ROLES[h.role]) { const R = ROLES[h.role][3]; m.pw *= R.pw || 1; m.survive += R.survive || 0; m.succ += R.succ || 0; m.decay += R.decay || 0; }
+  if (fullKit(h)) { m.pw *= 1.08; m.survive += 0.05; }
   { const L = h.wep && LEGWEP[h.wep]; if (L) { m.pw *= L.pw || 1; m.survive += L.survive || 0; m.loot += L.loot || 0; m.mana += L.mana || 0; m.decay += L.decay || 0; if (L.pwType) for (const [t, v] of Object.entries(L.pwType)) m.pwType[t] = (m.pwType[t] || 1) * v; } }
   if (h.charm && CHARMS[h.charm]) { const C = CHARMS[h.charm]; m.pw *= C.pw || 1; m.decay += C.decay || 0; m.loot += C.loot || 0; m.survive += C.survive || 0; }
   { const tm = tagMods(h.tags); m.pw *= tm.pw; m.survive += tm.survive; m.loot += tm.loot; m.decay += tm.decay; m.succ += tm.succ; m.xp = tm.xp; m.happy = tm.happy * (1 - 0.04 * legacyLvl('hearth')); }
@@ -447,7 +453,7 @@ function heroMods(h) {
 const survBonus = h => (traitOf(h) === 'brave' ? 0.35 : 0) + heroMods(h).survive;
 const heroLabel = h => h.promo ? promoOf(h).name : CLASSES[h.cls].label;
 function gainXp(h, n) {
-  h.xp += n * heroMods(h).xp * (1 + 0.06 * legacyLvl('tutor')) * (1 + 0.1 * Math.min(3, retireN('instructor'))) * (hasPet('fox') ? 1.05 : 1);
+  h.xp += n * heroMods(h).xp * (1 + 0.06 * legacyLvl('tutor')) * (1 + 0.1 * Math.min(3, retireN('instructor'))) * (hasDistrict('training') ? 1.08 : 1) * (hasPet('fox') ? 1.05 : 1);
   while (h.xp >= h.level + 1) { h.xp -= h.level + 1; h.level++; sfx('level'); diary(h, `Reached level ${h.level}.`); floatText(h.pos, `⬆ ${h.name} Lv${h.level}`, '#9bff9b'); if (h.level === 3 || h.level === 6) toast(`✨ ${h.name} can choose a new talent! (tap the hero)`); }
 }
 function addPromoGear(h) { h.mesh.add(vox(0.46, 0.5, 0.05, 0xe8c04a, 0, 0.3, -0.2), vox(0.1, 0.1, 0.06, 0xc0392b, 0, 0.62, -0.23)); }
@@ -516,7 +522,7 @@ function createHero(d) {
     mesh, pos: mesh.position, bub, state: 'idle', target: null, onArrive: null, timer: 0, onDone: null, cool: 0, phase: Math.random() * 6, vis: true,
   };
   codexAdd('classes', h.cls); if (d.tags) { h.tags = d.tags; h.bio = d.bio; h.likes = d.likes; h.dislikes = d.dislikes; } else Object.assign(h, makeProfile(h.cls));
-  (h.tags || []).forEach(t => codexAdd('tags', t)); h.loy = d.loy ?? 60; h.charm = d.charm || null; h.wep = d.wep || null; h.diary = d.diary || []; h.marks = d.marks || []; h.title = d.title || null; h.boon = d.boon || null; h.arc = d.arc || { id: pickArc(h), ch: 0 };
+  (h.tags || []).forEach(t => codexAdd('tags', t)); h.loy = d.loy ?? 60; h.charm = d.charm || null; h.role = d.role || null; h.wep = d.wep || null; h.diary = d.diary || []; h.marks = d.marks || []; h.title = d.title || null; h.boon = d.boon || null; h.arc = d.arc || { id: pickArc(h), ch: 0 };
   mesh.userData.hid = h.id; G.heroes.push(h); if (h.vip) addStar(h); if (h.promo) addPromoGear(h); if (d.bonds === undefined) assignBonds(h); else if (!h.aff) { h.aff = {}; for (const [id, k] of Object.entries(h.bonds || {})) h.aff[id] = k === 'rival' ? -35 : 35; }
   return h;
 }
@@ -1206,7 +1212,7 @@ function updateEconomy(dt) {
   if (t.trickle >= 12) { t.trickle = 0; G.ore += Math.random() < 0.7 ? Math.round(1 * (G.research.prospect ? 1.5 : 1)) : 0; G.herbs += Math.random() < 0.6 ? 1 : 0; G.wood += Math.random() < 0.75 ? 1 : 0; if (G.staff.porter) { G.ore += G.staff.porter; G.herbs += G.staff.porter; G.wood += G.staff.porter; } }
   // tavern + market passive gold
   t.tavern += dt;
-  if (t.tavern >= 4) { t.tavern = 0; let g = 0; ofType('tavern').forEach(b => g += b.level); ofType('market').forEach(b => { g += 0.5 * adj(b).gold; }); if (g > 0) { G.gold += g; } }
+  if (t.tavern >= 4) { t.tavern = 0; let g = 0; ofType('tavern').forEach(b => g += b.level); ofType('market').forEach(b => { g += 0.5 * adj(b).gold * (hasDistrict('commerce') ? 1.25 : 1); }); if (g > 0) { G.gold += g; } }
   // wages
   t.wage -= dt;
   if (t.wage <= 0) { t.wage = 30; const w = wage(); if (w > 0) { const paid = Math.min(w, G.gold); G.gold -= paid; floatText(G.buildings[0].door, `-${paid} wages`, '#ffa'); } }
@@ -1644,6 +1650,27 @@ const PASS_STEP = 40, monthKey = () => { const d = new Date(); return d.getFullY
 function pass() { const f = G.flags; if (!f.sp || f.sp.m !== monthKey()) f.sp = { m: monthKey(), pts: 0, claimed: 0 }; return f.sp; }
 const passTier = () => Math.min(10, Math.floor(pass().pts / PASS_STEP));
 function passPts(n) { const sp = pass(), before = passTier(); sp.pts += n + (n >= 5 ? legacyLvl('patron') : 0); if (passTier() > before) { toast(`🎟 Monthly pass: tier ${passTier()} reached! Claim it in the pass menu.`); sfx('chime'); } }
+// ---- districts: three or more related buildings close together form a district with a perk; a coloured ring marks it on the ground
+const DISTRICTS = {
+  commerce: { icon: '🛍', name: 'Market District', types: ['market', 'tavern', 'warehouse'], color: 0xe8c04a, perk: 'Passive market gold +25%.' },
+  training: { icon: '🏋', name: 'Training District', types: ['training', 'tower', 'forge', 'alchemy'], color: 0xe0503a, perk: 'Heroes gain +8% experience.' },
+  home: { icon: '🏡', name: 'Residential District', types: ['tent', 'cottage', 'garden', 'fountain', 'pond'], color: 0x4aa8ff, perk: '+3 population capacity.' },
+};
+const districtGroup = new THREE.Group(); scene.add(districtGroup);
+let distKey = '', distVal = {};
+function districts() {
+  const k = G.buildings.length + ':' + moveVer; if (k === distKey) return distVal; distKey = k; distVal = {};
+  for (const [id, D] of Object.entries(DISTRICTS)) {
+    const bs = G.buildings.filter(b => D.types.includes(b.type)); if (bs.length < 3) continue;
+    const c = b => [b.cx + b.w / 2, b.cz + b.d / 2]; let best = null;
+    for (const a of bs) { const [ax, az] = c(a), m = bs.filter(b => { const [x, z] = c(b); return Math.hypot(x - ax, z - az) <= 8; }); if (m.length >= 3 && (!best || m.length > best.length)) best = m; }
+    if (best) { const xs = best.map(b => c(b)[0]), zs = best.map(b => c(b)[1]); distVal[id] = { n: best.length, x: xs.reduce((p, q) => p + q) / xs.length, z: zs.reduce((p, q) => p + q) / zs.length, r: Math.max(4, Math.min(9, Math.max(...best.map(b => Math.hypot(c(b)[0] - xs.reduce((p, q) => p + q) / xs.length, c(b)[1] - zs.reduce((p, q) => p + q) / zs.length))) + 2.5)) }; }
+  }
+  while (districtGroup.children.length) { const o = districtGroup.children[0]; districtGroup.remove(o); o.geometry.dispose(); }
+  for (const [id, v] of Object.entries(distVal)) { const m = new THREE.Mesh(new THREE.RingGeometry(v.r - 0.35, v.r, 48), new THREE.MeshBasicMaterial({ color: DISTRICTS[id].color, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide })); m.rotation.x = -Math.PI / 2; m.position.set(v.x, 0.05, v.z); districtGroup.add(m); }
+  return distVal;
+}
+const hasDistrict = id => !!districts()[id];
 // ---- today's three missions, and a one-line suggestion for what to do next
 const MISSIONS = [
   { id: 'quest', icon: '📜', text: 'Complete expeditions', need: [2, 3], gold: 150 },
@@ -2300,6 +2327,7 @@ function modalContent() {
       const T = { head: '', abil: '', gear: '', story: '' }; let cur = 'head'; T.head = `<div class="row"><div style="font-size:34px">${c.icon}</div><div class="grow"><div class="t">${h.vip ? '⭐ ' : ''}${h.name}</div><div class="s">Level ${h.level} ${heroLabel(h)} · ${stateTxt}${h.quests ? ' · ' + h.quests + ' expeditions' : ''}</div></div>${aq ? `<button class="act" data-act="watch" data-q="${aq.id}">👁 Watch</button>` : ''}</div>`;
       const P = promoOf(h) || PROMO[h.cls], hm = heroMods(h), pend = (h.talents || []).length < talentSlots(h);
       cur = 'abil';
+      if (h.level >= 3) T[cur] += `<div class="sec">🎭 Role${h.role ? ': ' + ROLES[h.role][0] + ' ' + ROLES[h.role][1] : ''}${fullKit(h) ? ' · 🎖 Full kit +8% power' : ''}</div>` + Object.entries(ROLES).filter(([k]) => k !== h.role).map(([k, R]) => `<div class="row"><div style="font-size:24px">${R[0]}</div><div class="grow"><div class="t">${R[1]}</div><div class="s">${R[2]}</div></div><button class="act" data-act="role" data-id="${h.id}" data-k="${k}" ${G.gold < roleCost(h) ? 'disabled' : ''}>${roleCost(h) ? roleCost(h) + 'g' : 'Choose'}</button></div>`).join('');
       if (h.promo) T[cur] += `<div class="row" style="border-color:#e8c04a"><div style="font-size:30px">${P.icon}</div><div class="grow"><div class="t">${P.name}</div><div class="s">${P.desc}</div></div></div>`;
       else T[cur] += [['a', PROMO[h.cls]], ['b', PROMO2[h.cls]]].map(([k, Q]) => `<div class="row"><div style="font-size:30px">${Q.icon}</div><div class="grow"><div class="t">Promotion: ${Q.name}</div><div class="s">${Q.desc} Needs level 5 and Guild Rank Hold.</div>${cost(500)}</div><button class="act" data-act="promote" data-k="${k}" data-id="${h.id}" ${G.rank >= 1 && h.level >= 5 && G.gold >= 500 ? '' : 'disabled'}>Promote</button></div>`).join('');
       if ((h.talents || []).length) T[cur] += `<div class="s">Talents: ${(h.talents || []).map(id => { const t = talentDef(h.cls, id); return t ? `<span class="tag" title="${t[2]}">${t[1]}</span>` : ''; }).join('')}</div>`;
@@ -2345,7 +2373,8 @@ function modalContent() {
       let facHtml;
       if (factionOf()) { const F = factionOf(); facHtml = `<div class="row" style="border-color:#b070ff"><div style="font-size:30px">${F.icon}</div><div class="grow"><div class="t">Specialization: ${F.name}</div><div class="s">${F.perk}</div></div></div>`; }
       else facHtml = `<div class="sec">Guild Specialization <span class="s">(permanent · needs Guild Rank Hold)</span></div>` + Object.entries(FACTIONS).map(([k, F]) => `<div class="row"><div style="font-size:30px">${F.icon}</div><div class="grow"><div class="t">${F.name}</div><div class="s">${F.desc}</div><div class="s" style="color:#9bff9b">${F.perk}</div>${cost(2000)}</div><button class="act" data-act="faction" data-f="${k}" ${G.rank >= 1 && G.gold >= 2000 ? '' : 'disabled'}>Declare</button></div>`).join('');
-      return ['⬆️ Guild & Outpost', rankHtml + facHtml + landHtml + `
+      const distHtml = `<div class="sec">Districts <span class="s">· 3+ related buildings within a few tiles</span></div>` + Object.entries(DISTRICTS).map(([id, D]) => { const v = districts()[id]; return `<div class="row" style="${v ? 'border-color:#' + D.color.toString(16).padStart(6, '0') : 'opacity:.7'}"><div style="font-size:26px">${D.icon}</div><div class="grow"><div class="t">${D.name} ${v ? '<span class="tag">✔ Active (' + v.n + ')</span>' : ''}</div><div class="s">${D.perk} Needs 3 of: ${D.types.map(t => BUILDINGS[t].name).join(', ')}.</div></div></div>`; }).join('');
+      return ['⬆️ Guild & Outpost', rankHtml + facHtml + landHtml + distHtml + `
         <div class="row"><div class="grow"><div class="t">Expand Outpost <span class="tag">Lv ${G.outpost}/5</span></div><div class="s">+3 population capacity.</div>${cost(c1)}</div><button class="act" data-act="up" data-k="outpost" ${G.gold < c1 || G.outpost >= 5 ? 'disabled' : ''}>Upgrade</button></div>
         <div class="row"><div class="grow"><div class="t">Quest Board Expansion <span class="tag">Lv ${G.boardLvl}/3</span></div><div class="s">+1 quest slot on the board.</div>${cost(c2)}</div><button class="act" data-act="up" data-k="boardLvl" ${G.gold < c2 || G.boardLvl >= 3 ? 'disabled' : ''}>Upgrade</button></div>
         <div class="row"><div class="grow"><div class="t">Fortify Walls <span class="tag">Lv ${G.walls}/4</span></div><div class="s">+3 defense against monster raids.</div>${cost(c3)}</div><button class="act" data-act="up" data-k="walls" ${G.gold < c3 || G.walls >= 4 ? 'disabled' : ''}>Upgrade</button></div>`];
@@ -2427,6 +2456,7 @@ const ACT = {
   storychoice(d) { chooseStory(+d.i); },
   dive(d) { dispatchDive(d && d.m); },
   hero(d) { openModal('hero', +d.id); },
+  role(d) { const h = G.heroes.find(x => x.id === +d.id), R = ROLES[d.k]; if (!h || !R || h.level < 3 || G.gold < roleCost(h)) return; G.gold -= roleCost(h); h.role = d.k; diary(h, `Took up the role of ${R[1].toLowerCase()}.`); toast(`${R[0]} ${h.name} is now a ${R[1].toLowerCase()}.`); sfx('goal'); },
   heroes() { openModal('heroes'); },
   hfilter(d) { heroFilter = d.k; },
   hsort(d) { heroSort = d.k; },
@@ -2783,7 +2813,7 @@ function serialize() {
   return {
     v: 1, savedAt: Date.now(), g,
     buildings: G.buildings.map(b => ({ type: b.type, cx: b.cx, cz: b.cz, rot: b.rot || 0, level: b.level, stock: b.stock, progress: b.progress, spec: b.spec })),
-    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, promo: h.promo, talents: h.talents, bonds: h.bonds, aff: h.aff, vow: h.vow, quests: h.quests, vip: h.vip, tags: h.tags, bio: h.bio, likes: h.likes, dislikes: h.dislikes, loy: h.loy, marks: h.marks, plus: h.plus, train: h.train, arc: h.arc, title: h.title, boon: h.boon, charm: h.charm, wep: h.wep, diary: h.diary, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
+    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, promo: h.promo, talents: h.talents, bonds: h.bonds, aff: h.aff, vow: h.vow, quests: h.quests, vip: h.vip, tags: h.tags, bio: h.bio, likes: h.likes, dislikes: h.dislikes, loy: h.loy, marks: h.marks, plus: h.plus, train: h.train, arc: h.arc, title: h.title, boon: h.boon, charm: h.charm, role: h.role, wep: h.wep, diary: h.diary, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
     quests: G.quests.map(q => { const o = {}; for (const [k, v] of Object.entries(q)) if (k !== 'heroes' && k !== 'script') o[k] = v; o.heroIds = (q.heroes || []).map(h => h.id); return o; }),
     extra: serializeExtra(),
   };
@@ -3109,4 +3139,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__renderer = renderer; window.__scene = scene; window.__api = { missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__renderer = renderer; window.__scene = scene; window.__api = { districts, fullKit, ROLES, missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
