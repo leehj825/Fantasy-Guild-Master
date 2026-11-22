@@ -202,3 +202,10 @@ body.watching #tutorial,body.placing #tutorial{display:none}
 #adOffer .bx{background:#0006;border:1px solid #ffd27a88;color:#fff;border-radius:50%;width:26px;height:26px;padding:0;font-size:13px;cursor:pointer;flex:none}
 @media (max-width:640px){#adOffer{bottom:128px;left:6px;right:6px;transform:none;font-size:12px;padding:6px 8px}}
 body.watching #adOffer{bottom:200px}
+
+/* accessibility: larger interface text, colour-blind-friendly bars, photo mode */
+body.bigtext #modalBox, body.bigtext #objectives, body.bigtext #toolbar, body.bigtext #topbar, body.bigtext #toasts { zoom: var(--ui-zoom, 1); }
+body.cb [style*="#5be35b"], body.cb [style*="rgb(91, 227, 91)"] { background: #3d9bff !important; }
+body.cb [style*="#e0503a"], body.cb [style*="rgb(224, 80, 58)"] { background: #ff9d2e !important; }
+body.cb .act:disabled { text-decoration: line-through; }
+body.photo #topbar, body.photo #objectives, body.photo #toolbar, body.photo #camctl, body.photo #toasts, body.photo #banner, body.photo #adOffer, body.photo #tutorial, body.photo #modal, body.photo .bub { display: none !important; }

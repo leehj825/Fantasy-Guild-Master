@@ -1,0 +1,21 @@
+name: Smoke
+
+# Boots the game in headless Chromium, builds a town, saves, and loads saves that lack newer fields.
+on:
+  push:
+    paths: ['src/**', 'tests/smoke.e2e.cjs', 'index.html', '.github/workflows/smoke.yml']
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm install --no-save playwright && npx playwright install --with-deps chromium
+      - run: |
+          python3 -m http.server 8123 >/dev/null 2>&1 &
+          sleep 2
+          node tests/smoke.e2e.cjs

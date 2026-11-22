@@ -12,10 +12,10 @@ const MIN = +(process.argv[2] || 60);
     const SRC = { gold: {}, renown: {} };
     for (const k of ['gold', 'renown']) { let v = G[k]; Object.defineProperty(G, k, { get() { return v; }, set(n) { const d = n - v; if (d > 0) { const st = (new Error().stack.split('\n')[2] || '').trim().replace(/^at /, '').split(' ')[0]; SRC[k][st] = (SRC[k][st] || 0) + d; } v = n; } }); }
     const log = [], t0 = G.time; let botT = 0, lastLog = -1, firstQuest = null, firstRank = {}, diveFirst = null;
-    const spot = (type) => { const t = { tavern: [4, 3], forge: [4, 3], alchemy: [4, 3], warehouse: [4, 3], smelter: [3, 2], market: [3, 2], tent: [2, 2], tower: [2, 2], portal: [3, 3], garden: [3, 2] }[type]; const cands = []; for (let x = 3; x <= 24; x++) for (let z = 3; z <= 24; z++) cands.push([x, z, Math.hypot(x + t[0] / 2 - 14.5, z + t[1] / 2 - 13)]); cands.sort((p, q) => p[2] - q[2]);
+    const spot = (type) => { const t = { tavern: [4, 3], forge: [4, 3], alchemy: [4, 3], warehouse: [4, 3], smelter: [3, 2], market: [3, 2], tent: [2, 2], tower: [2, 2], portal: [3, 3], garden: [3, 2], farm: [3, 3], bakery: [3, 2], well: [2, 2] }[type]; const cands = []; for (let x = 3; x <= 24; x++) for (let z = 3; z <= 24; z++) cands.push([x, z, Math.hypot(x + t[0] / 2 - 14.5, z + t[1] / 2 - 13)]); cands.sort((p, q) => p[2] - q[2]);
       for (const [x, z] of cands) { if (z >= 14 && z <= 18 && x >= 10 && x <= 20) continue; for (const rot of [0]) if (a.canPlace(type, x, z, rot)) return [x, z]; } return null; };
-    const COST = { tavern: 200, forge: 300, market: 120, tent: 80, alchemy: 450, warehouse: 250, smelter: 350, tower: 400, portal: 700, garden: 90 };
-    const want = [['tavern', () => 1], ['forge', () => 1], ['tent', () => 1], ['market', () => 1], ['alchemy', () => G.renown >= 3 ? 1 : 0], ['tent', () => 2], ['warehouse', () => G.renown >= 2 ? 1 : 0], ['tent', () => 3], ['garden', () => 1], ['smelter', () => G.rank >= 1 ? 1 : 0], ['tower', () => G.rank >= 1 ? 1 : 0], ['portal', () => G.renown >= 6 ? 1 : 0], ['tent', () => 4], ['warehouse', () => 2], ['tower', () => 2]];
+    const COST = { tavern: 200, forge: 300, market: 120, tent: 80, alchemy: 450, warehouse: 250, smelter: 350, tower: 400, portal: 700, garden: 90, farm: 180, bakery: 220, well: 140 };
+    const want = [['tavern', () => 1], ['forge', () => 1], ['tent', () => 1], ['market', () => 1], ['alchemy', () => G.renown >= 3 ? 1 : 0], ['tent', () => 2], ['warehouse', () => G.renown >= 2 ? 1 : 0], ['tent', () => 3], ['garden', () => 1], ['smelter', () => G.rank >= 1 ? 1 : 0], ['tower', () => G.rank >= 1 ? 1 : 0], ['portal', () => G.renown >= 6 ? 1 : 0], ['tent', () => 4], ['warehouse', () => 2], ['tower', () => 2], ['farm', () => G.renown >= 3 ? 1 : 0], ['bakery', () => count('farm') ? 1 : 0], ['well', () => G.renown >= 4 ? 1 : 0]];
     const count = t => G.buildings.filter(b => b.type === t).length;
     const bot = () => {
       // build
@@ -45,6 +45,12 @@ const MIN = +(process.argv[2] || 60);
       if (dq && dq.offer) a.pickRelic?.(dq, 0);
       if (dq && !dq.offer && dq.relics && false) {}
       if (dq && dq.cleared >= 10 + 5 * Math.floor(G.rank) && !dq.script.wiped) S.resolveDive(dq, 'recalled');
+      // newer systems: events, specializations, pets, trade caravans, monthly pass
+      while ((G.flags.evq || []).length) { a.ACT.eventchoose({ i: 0 }); if ((G.flags.evq || []).length && !a.ACT.eventchoose({ i: 1 })) break; }
+      for (const bld of G.buildings) if (bld.level >= 3 && !bld.spec) { const o = { tavern: 'feast', lumber: 'saw', farm: 'granary', bakery: 'loaves' }[bld.type]; if (o) a.ACT.spec({ id: bld.id, k: o }); }
+      if (G.gold > 900) for (const k of ['cat', 'hawk', 'fox']) a.ACT.petbuy({ k });
+      if (G.gold > 1500 && count('market')) a.ACT.trade({ n: 500 });
+      for (let i = 0; i < 10; i++) { if (a.passTier() > a.pass().claimed) a.ACT.passclaim({ i: a.pass().claimed }); }
       // flyer
       if (G.heroes.length < a.popCap?.() && G.gold > 400 && Math.random() < 0.02) a.ACT.flyer({});
     };

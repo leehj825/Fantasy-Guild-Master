@@ -1,8 +1,9 @@
 // Display-time translation layer. All code and data stay in English; text is translated where it is shown
 // (toasts, modals, HUD, logs). The Korean dictionary lives in lang-ko.js.
 import { KO_DICT, makeKoRules } from './lang-ko.js';
+import { JA_DICT } from './lang-ja.js';
 
-export const LANGS = { en: 'English', ko: '한국어' };
+export const LANGS = { en: 'English', ko: '한국어', ja: '日本語 (partial)' };
 let lang = 'en', dict = {}, rules = [], rx = null;
 const cache = new Map(), listeners = new Set(), KEY = 'fantasy-guild-master-lang';
 const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -11,7 +12,7 @@ export const getLang = () => lang;
 export function onLangChange(f) { listeners.add(f); }
 export function initLang() {
   let l = null; try { l = localStorage.getItem(KEY); } catch (e) { /* storage unavailable */ }
-  if (!l) l = (navigator.language || '').toLowerCase().startsWith('ko') ? 'ko' : 'en';
+  if (!l) l = (navigator.language || '').toLowerCase().startsWith('ko') ? 'ko' : (navigator.language || '').toLowerCase().startsWith('ja') ? 'ja' : 'en';
   applyLang(LANGS[l] ? l : 'en', false);
 }
 export function setLang(l) { if (LANGS[l] && l !== lang) applyLang(l, true); }
@@ -20,6 +21,10 @@ function applyLang(l, persist) {
   if (l === 'ko') {
     dict = KO_DICT; rules = makeKoRules(tr);
     const keys = Object.keys(dict).sort((a, b) => b.length - a.length);   // longest phrase first
+    rx = new RegExp('(?<![A-Za-z])(?:' + keys.map(esc).join('|') + ')(?![A-Za-z])', 'g');
+  } else if (l === 'ja') {
+    dict = JA_DICT; rules = [];
+    const keys = Object.keys(dict).sort((a, b) => b.length - a.length);
     rx = new RegExp('(?<![A-Za-z])(?:' + keys.map(esc).join('|') + ')(?![A-Za-z])', 'g');
   } else { dict = {}; rules = []; rx = null; }
   if (persist) { try { localStorage.setItem(KEY, l); } catch (e) { /* ignore */ } }

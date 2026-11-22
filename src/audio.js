@@ -33,6 +33,8 @@ export function setPref(k, on) {
   if (ctx) { sfxBus.gain.value = prefs.sfx ? 0.5 : 0; musicBus.gain.value = prefs.music ? 0.2 : 0; }
 }
 export function setMusicMood(m) { mood = m; }
+let style = 0;   // 0 spring, 1 summer, 2 autumn, 3 winter
+export function setMusicStyle(i) { style = i | 0; }
 
 function tone(freq, dur, type = 'sine', vol = 0.3, when = 0, bus = sfxBus, slideTo = null) {
   const t = ctx.currentTime + when, o = ctx.createOscillator(), g = ctx.createGain();
@@ -69,13 +71,14 @@ export function sfx(name) {
 }
 // quiet ambient music: a slow pad plus random pentatonic notes; darker and busier in battle
 const SC = { base: [0, 2, 4, 7, 9], battle: [0, 3, 5, 7, 10] };
+const SEASON_SC = [[0, 2, 4, 7, 9], [0, 2, 4, 7, 9, 11], [0, 3, 5, 7, 10], [0, 3, 7, 10, 12]], SEASON_ROOT = [174.6, 196, 164.8, 146.8], SEASON_NOTE = [0.35, 0.45, 0.3, 0.18];
 function startMusic() {
   if (musicTimer) return; let step = 0;
   musicTimer = setInterval(() => {
     if (!ctx || ctx.state !== 'running' || !prefs.music) return;
-    const battle = mood === 'battle', root = battle ? 110 : 174.6, sc = SC[mood];
-    if (step % 16 === 0) for (const semi of (battle ? [0, 3, 7] : [0, 4, 7])) tone(root * Math.pow(2, semi / 12), 4.2, 'triangle', 0.32, 0, musicBus);
-    if (Math.random() < (battle ? 0.7 : 0.35)) tone(root * 2 * Math.pow(2, sc[Math.floor(Math.random() * sc.length)] / 12), 0.7, 'sine', 0.3, 0, musicBus);
+    const battle = mood === 'battle', root = battle ? 110 : SEASON_ROOT[style], sc = battle ? SC.battle : SEASON_SC[style];
+    if (step % 16 === 0) for (const semi of (battle ? [0, 3, 7] : style >= 2 ? [0, 3, 7] : [0, 4, 7])) tone(root * Math.pow(2, semi / 12), 4.2, 'triangle', 0.32, 0, musicBus);
+    if (Math.random() < (battle ? 0.7 : SEASON_NOTE[style])) tone(root * 2 * Math.pow(2, sc[Math.floor(Math.random() * sc.length)] / 12), 0.7, 'sine', 0.3, 0, musicBus);
     if (battle && step % 2 === 0) tone(root / 2, 0.18, 'square', 0.09, 0, musicBus);
     step++;
   }, 250);

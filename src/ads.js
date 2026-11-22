@@ -9,6 +9,9 @@ const PLACEMENTS = {            // perHour: most offers an hour; gap: seconds be
   doubleLoot: { perHour: 6, gap: 0 },
   restGuild: { perHour: 8, gap: 240 },
   diveRescue: { perHour: 4, gap: 0 },
+  awayDouble: { perHour: 3, gap: 0 },
+  caravanDouble: { perHour: 4, gap: 0 },
+  dailyRetry: { perHour: 3, gap: 0 },
 };
 const GLOBAL_GAP = 180, SESSION_MAX = 10;
 const log = [];                 // {t, placement} of finished ads

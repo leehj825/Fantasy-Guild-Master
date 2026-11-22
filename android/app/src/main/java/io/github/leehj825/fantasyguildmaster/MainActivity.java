@@ -2,6 +2,12 @@ package io.github.leehj825.fantasyguildmaster;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AlarmManager;
+import android.app.PendingIntent;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
@@ -16,6 +22,17 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import com.android.billingclient.api.AcknowledgePurchaseParams;
+import com.android.billingclient.api.BillingClient;
+import com.android.billingclient.api.BillingClientStateListener;
+import com.android.billingclient.api.BillingFlowParams;
+import com.android.billingclient.api.BillingResult;
+import com.android.billingclient.api.PendingPurchasesParams;
+import com.android.billingclient.api.ProductDetails;
+import com.android.billingclient.api.Purchase;
+import com.android.billingclient.api.PurchasesUpdatedListener;
+import com.android.billingclient.api.QueryProductDetailsParams;
+import com.android.billingclient.api.QueryPurchasesParams;
 import com.google.android.gms.ads.AdError;
 import com.google.android.gms.ads.AdListener;
 import com.google.android.gms.ads.AdRequest;
@@ -30,6 +47,8 @@ import com.google.android.ump.ConsentInformation;
 import com.google.android.ump.ConsentRequestParameters;
 import com.google.android.ump.UserMessagingPlatform;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -65,6 +84,13 @@ public class MainActivity extends Activity {
     private AdView banner;
     private RewardedAd rewarded;
     private boolean adsStarted = false;
+    private LinearLayout rootView;
+
+    // Play Billing: one-time products created in the Play Console with these ids
+    private static final String[] PRODUCT_IDS = { "starter_pack" };
+    private BillingClient billing;
+    private final Map<String, ProductDetails> details = new HashMap<>();
+    private boolean billingReady = false;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -76,7 +102,14 @@ public class MainActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.addView(web, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         setContentView(root);
+        rootView = root;
         web.addJavascriptInterface(new AdBridge(), "AndroidAds");
+        web.addJavascriptInterface(new BillingBridge(), "AndroidBilling");
+        web.addJavascriptInterface(new NotifyBridge(), "AndroidNotify");
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED && !getSharedPreferences("iap", MODE_PRIVATE).getBoolean("asked_notify", false)) {
+            getSharedPreferences("iap", MODE_PRIVATE).edit().putBoolean("asked_notify", true).apply();
+            requestPermissions(new String[] { "android.permission.POST_NOTIFICATIONS" }, 1);
+        }
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
 
         WebSettings s = web.getSettings();
@@ -112,6 +145,7 @@ public class MainActivity extends Activity {
         });
         web.loadUrl(BASE + "www/index.html");
         startConsentThenAds(root);
+        startBilling();
     }
 
     // ---------------------------------------------------------------- ads
@@ -171,6 +205,102 @@ public class MainActivity extends Activity {
         ad.show(this, reward -> earned[0] = true);
     }
 
+    // ---------------------------------------------------------------- purchases
+    private boolean ownedLocal(String id) { return getSharedPreferences("iap", MODE_PRIVATE).getBoolean(id, false); }
+
+    private void startBilling() {
+        PurchasesUpdatedListener listener = (result, purchases) -> {
+            if (result.getResponseCode() == BillingClient.BillingResponseCode.OK && purchases != null) {
+                for (Purchase p : purchases) handlePurchase(p, true);
+            } else {
+                for (String id : PRODUCT_IDS) if (pendingId != null && id.equals(pendingId)) { reply(id, false); pendingId = null; }
+            }
+        };
+        billing = BillingClient.newBuilder(this).setListener(listener)
+                .enablePendingPurchases(PendingPurchasesParams.newBuilder().enableOneTimeProducts().build()).build();
+        connectBilling();
+    }
+
+    private void connectBilling() {
+        billing.startConnection(new BillingClientStateListener() {
+            @Override public void onBillingSetupFinished(BillingResult r) {
+                if (r.getResponseCode() != BillingClient.BillingResponseCode.OK) return;
+                billingReady = true;
+                queryDetails();
+                restorePurchases();
+            }
+            @Override public void onBillingServiceDisconnected() { billingReady = false; web.postDelayed(MainActivity.this::connectBilling, 30000); }
+        });
+    }
+
+    private void queryDetails() {
+        List<QueryProductDetailsParams.Product> list = new ArrayList<>();
+        for (String id : PRODUCT_IDS) list.add(QueryProductDetailsParams.Product.newBuilder().setProductId(id).setProductType(BillingClient.ProductType.INAPP).build());
+        billing.queryProductDetailsAsync(QueryProductDetailsParams.newBuilder().setProductList(list).build(), (r, found) -> {
+            for (ProductDetails d : found) details.put(d.getProductId(), d);
+        });
+    }
+
+    // Purchases made earlier (or on another device) come back here, so nothing paid for is lost after a reinstall
+    private void restorePurchases() {
+        billing.queryPurchasesAsync(QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.INAPP).build(), (r, purchases) -> {
+            if (r.getResponseCode() == BillingClient.BillingResponseCode.OK) for (Purchase p : purchases) handlePurchase(p, false);
+        });
+    }
+
+    private String pendingId = null;
+
+    private void handlePurchase(final Purchase p, final boolean fresh) {
+        if (p.getPurchaseState() != Purchase.PurchaseState.PURCHASED) return;
+        for (final String id : p.getProducts()) {
+            getSharedPreferences("iap", MODE_PRIVATE).edit().putBoolean(id, true).apply();
+            if (fresh) { reply(id, true); pendingId = null; }
+        }
+        if (!p.isAcknowledged()) {
+            billing.acknowledgePurchase(AcknowledgePurchaseParams.newBuilder().setPurchaseToken(p.getPurchaseToken()).build(), r -> { });
+        }
+    }
+
+    private void reply(final String id, final boolean ok) {
+        web.post(() -> web.evaluateJavascript("window.__iapResult&&window.__iapResult('" + id + "'," + ok + ")", null));
+    }
+
+    private void buy(final String id) {
+        final ProductDetails d = details.get(id);
+        if (!billingReady || d == null) { reply(id, false); return; }
+        pendingId = id;
+        List<BillingFlowParams.ProductDetailsParams> pl = new ArrayList<>();
+        pl.add(BillingFlowParams.ProductDetailsParams.newBuilder().setProductDetails(d).build());
+        BillingResult r = billing.launchBillingFlow(this, BillingFlowParams.newBuilder().setProductDetailsParamsList(pl).build());
+        if (r.getResponseCode() != BillingClient.BillingResponseCode.OK) { pendingId = null; reply(id, false); }
+    }
+
+    private class BillingBridge {
+        @JavascriptInterface public boolean isReady() { return billingReady && !details.isEmpty(); }
+        @JavascriptInterface public boolean owned(String id) { return ownedLocal(id); }
+        @JavascriptInterface public String price(String id) {
+            ProductDetails d = details.get(id);
+            return d != null && d.getOneTimePurchaseOfferDetails() != null ? d.getOneTimePurchaseOfferDetails().getFormattedPrice() : "";
+        }
+        @JavascriptInterface public void buy(final String id) { runOnUiThread(() -> MainActivity.this.buy(id)); }
+    }
+
+    // ---------------------------------------------------------------- reminders
+    private PendingIntent alarmIntent(int id, String title, String text, int flags) {
+        Intent i = new Intent(this, NotifyReceiver.class).putExtra("id", id).putExtra("title", title).putExtra("text", text);
+        return PendingIntent.getBroadcast(this, id, i, PendingIntent.FLAG_IMMUTABLE | flags);
+    }
+    private class NotifyBridge {
+        @JavascriptInterface public void schedule(int id, int seconds, String title, String text) {
+            AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+            if (am != null) am.setAndAllowWhileIdle(AlarmManager.RTC, System.currentTimeMillis() + seconds * 1000L, alarmIntent(id, title, text, PendingIntent.FLAG_UPDATE_CURRENT));
+        }
+        @JavascriptInterface public void cancelAll() {
+            AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+            if (am != null) for (int id = 1; id <= 3; id++) am.cancel(alarmIntent(id, "", "", PendingIntent.FLAG_UPDATE_CURRENT));
+        }
+    }
+
     // What the page can call (see src/ads.js)
     private class AdBridge {
         @JavascriptInterface public boolean isReady() { return rewarded != null; }
@@ -193,7 +323,7 @@ public class MainActivity extends Activity {
     }
 
     // WebView.onPause() does not stop Web Audio, so tell the page to silence itself first
-    @Override protected void onPause() { if (banner != null) banner.pause(); web.evaluateJavascript("window.__audioHidden&&window.__audioHidden(true)", null); web.onPause(); super.onPause(); }
-    @Override protected void onResume() { super.onResume(); if (banner != null) banner.resume(); web.onResume(); web.evaluateJavascript("window.__audioHidden&&window.__audioHidden(false)", null); }
+    @Override protected void onPause() { web.evaluateJavascript("window.__scheduleNotify&&window.__scheduleNotify()", null); if (banner != null) banner.pause(); web.evaluateJavascript("window.__audioHidden&&window.__audioHidden(true)", null); web.onPause(); super.onPause(); }
+    @Override protected void onResume() { super.onResume(); web.evaluateJavascript("window.__cancelNotify&&window.__cancelNotify()", null); if (banner != null) banner.resume(); web.onResume(); web.evaluateJavascript("window.__audioHidden&&window.__audioHidden(false)", null); }
     @Override protected void onDestroy() { if (banner != null) banner.destroy(); web.destroy(); super.onDestroy(); }
 }
