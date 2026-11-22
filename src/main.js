@@ -970,7 +970,7 @@ function dispatchDive(mode) {
   if (G.quests.some(q => q.dive)) return toast('A party is already inside the dungeon.');
   const r = readyHeroes().sort((a, b) => heroPower(b, 'combat') - heroPower(a, 'combat')).slice(0, 4);
   if (r.length < 2) return toast('The dive needs at least 2 geared, rested heroes.');
-  const q = { id: G.nextId++, name: { daily: 'Daily Dive', rush: 'Boss Rush', hard: 'Hardcore Dive' }[mode] || 'Endless Dive', mode: mode || null, rush: mode === 'rush', hard: mode === 'hard', type: 'dive', dive: true, state: 'active', heroes: r, party: r.map(heroSnap), seed: mode === 'daily' ? dailySeed() : (Math.random() * 1e9) | 0, heals: [], enchants: [], relics: [], offer: null, elapsed: 0, cleared: 0, pending: newPending(), dur: 1e9, t: 1e9, chance: 0.5, minH: 2, maxH: 4, diff: 0, loot: {}, enchant: false, gold: 0, renown: 0 };
+  const q = { id: G.nextId++, name: { daily: 'Daily Dive', rush: 'Boss Rush', hard: 'Hardcore Dive', speed: 'Speed Dive' }[mode] || 'Endless Dive', mode: mode || null, rush: mode === 'rush', hard: mode === 'hard', speed: mode === 'speed', limit: mode === 'speed' ? 240 : 0, type: 'dive', dive: true, state: 'active', heroes: r, party: r.map(heroSnap), seed: mode === 'daily' ? dailySeed() : (Math.random() * 1e9) | 0, heals: [], enchants: [], relics: [], offer: null, elapsed: 0, cleared: 0, pending: newPending(), dur: 1e9, t: 1e9, chance: 0.5, minH: 2, maxH: 4, diff: 0, loot: {}, enchant: false, gold: 0, renown: 0 };
   q.script = newDiveScript(q); ensureFloors(q, 0); G.quests.push(q);
   r.forEach(h => { h.state = 'quest'; h.mesh.visible = false; setMood(h, null); h.onDone = null; });
   sfx('horn'); toast(`🌀 ${r.length} heroes step through the portal… Recall to bank your loot!`); renderModal(true);
@@ -987,6 +987,7 @@ function bankPending(q) {
   return txt;
 }
 function diveTick(q, dt) {
+  if (q.limit && q.elapsed >= q.limit && !q.S_end) { q.S_end = 1; toast('⏱ Time is up! The Speed Dive ends.'); resolveDive(q, 'recalled'); return; }
   q.elapsed += dt; q.t = q.dur - q.elapsed; const S = q.script; ensureFloors(q, q.elapsed);
   while (q.cleared < S.floors.length && S.floors[q.cleared].e <= q.elapsed && !S.floors[q.cleared].lost) {
     const f = S.floors[q.cleared]; for (const k of Object.keys(q.pending)) q.pending[k] += f.reward[k] || 0;
@@ -1513,10 +1514,11 @@ function challengeDone(q) {
   const f = G.flags, C = (f.chal ||= { daily: {}, rush: 0, hard: 0 }), n = q.cleared, key = dayKey();
   if (q.mode === 'rush') { C.rush = Math.max(C.rush, n); }
   else if (q.mode === 'hard') { C.hard = Math.max(C.hard, n); }
+  else if (q.mode === 'speed') { C.speed = Math.max(C.speed || 0, n); }
   else if (q.mode === 'daily') {
     const D = C.daily; if (D.key !== key) { C.daily = { key, best: 0, claimed: false }; }
     C.daily.best = Math.max(C.daily.best, n);
-    if (!C.daily.claimed && n >= 3) { C.daily.claimed = true; const g = 80 * n; G.gold += g; if (n >= 10) G.rare.mythril += 1; toast(`📅 Daily Dive bonus: +${g}g${n >= 10 ? ' and a Mythril shard' : ''}!`); chron(`📅 Daily Dive: reached floor ${n}.`); }
+    if (!C.daily.claimed && n >= 3) { C.daily.claimed = true; const g = 80 * n; G.gold += g; if (n >= 10) G.rare.mythril += 1; toast(`📅 Daily Dive bonus: +${g}g${n >= 10 ? ' and a Mythril shard' : ''}!`); chron(`📅 Daily Dive: reached floor ${n}.`); if (Ads.canShow('dailyRetry')) showAdOffer('dailyRetry', `▶ Watch an ad: +50% daily bonus (+${Math.round(g / 2)}g)`, 12, () => { G.gold += Math.round(g / 2); toast(`📅 Extra +${Math.round(g / 2)}g!`); }); }
   }
   if (q.mode !== 'daily' && n >= 5) { const g = (q.rush ? 60 : 40) * n; G.gold += g; toast(`🏅 ${q.name} reward: +${g}g (floor ${n}).`); }
 }
@@ -1548,6 +1550,16 @@ function tickTrade() {
   if (ok) { const g = Math.round(t.amt * rnd(1.4, 2.0)); G.gold += g; toast(`🐪 The caravan returned with ${g}g!`); chron(`🐪 A trade caravan returned with ${g}g.`); }
   else { const g = Math.round(t.amt * 0.3); G.gold += g; toast(`🐪 The caravan was ambushed. Only ${g}g was saved.`); chron('🐪 A trade caravan was ambushed.'); }
   sfx(ok ? 'goal' : 'lose');
+  if (ok && t.amt >= 500 && Ads.canShow('caravanDouble')) { const bonus = Math.round(t.amt * 0.5); showAdOffer('caravanDouble', `▶ Watch an ad: a bigger haul (+${bonus}g)`, 12, () => { G.gold += bonus; toast(`🐪 Bonus haul: +${bonus}g!`); }); }
+}
+// ---- while you were away: the guild keeps earning a little (half the passive rate, up to 4 hours) and finished expeditions report in
+let pendingAway = null;
+const passiveRate = () => { let g = 0; ofType('tavern').forEach(b => g += b.level * 0.25); ofType('market').forEach(b => { g += 0.125 * adj(b).gold; }); ofType('farm').forEach(b => { if (b.spec === 'orchard') g += 0.4; }); ofType('bakery').forEach(b => { if (b.spec === 'pastry') g += 0.5; }); return g; };
+function checkAway() {
+  const a = pendingAway; pendingAway = null; if (!a || a.secs < 180 || !G.buildings.length) return;
+  const secs = Math.min(a.secs, 4 * 3600), gold = Math.round(passiveRate() * secs * 0.5), done = G.quests.filter(q => q.state === 'active' && !q.dive && q.t <= 0.5).length;
+  if (gold < 10 && !done) return; G.gold += gold; G.flags.away = { gold, mins: Math.round(secs / 60), done, doubled: false };
+  setTimeout(() => openModal('away'), 1800);
 }
 // ---- accessibility, photo mode and a local error log
 const A11Y_KEY = 'fantasy-guild-master-a11y', ERR_KEY = 'fantasy-guild-master-errors';
@@ -1829,7 +1841,7 @@ function modalContent() {
         const dq = G.quests.find(q => q.dive);
         h += `<div class="sec">Waystone Portal</div><div class="row" style="border-color:#b070ff"><div style="font-size:30px">🌀</div><div class="grow"><div class="t">Endless Dive</div><div class="s">Send 2–4 geared heroes through the portal. Floors get harder forever: <b>recall to bank your loot</b> or fight on for rare materials (💎 🐉 🪶). Loot is banked automatically every 5 floors; a wipe-out loses what is unbanked. Best: floor ${G.diveBest}.</div></div><button class="act" data-act="dive" ${dq || rd.length < 2 ? 'disabled' : ''}>${dq ? 'In progress' : (rd.length < 2 ? 'Need 2 ready' : 'Dive!')}</button></div>`;
         { const C = G.flags.chal || { daily: {}, rush: 0, hard: 0 }, dd = C.daily.key === dayKey() ? C.daily : { best: 0, claimed: false }, off = dq || rd.length < 2 ? 'disabled' : '', ce = calEvent();
-          h += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0"><button class="act red" data-act="dive" data-m="daily" ${off}>📅 Daily Dive (best ${dd.best}${dd.claimed ? ' ✔' : ''})</button><button class="act red" data-act="dive" data-m="rush" ${off}>👹 Boss Rush (best ${C.rush})</button><button class="act red" data-act="dive" data-m="hard" ${off}>💀 Hardcore (best ${C.hard})</button></div><div class="s">Daily: the same dungeon for everyone today; first run to floor 3+ earns a bonus. Boss Rush: a boss every floor, double pay. Hardcore: no rescue, +50% gold.</div>`;
+          h += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0"><button class="act red" data-act="dive" data-m="daily" ${off}>📅 Daily Dive (best ${dd.best}${dd.claimed ? ' ✔' : ''})</button><button class="act red" data-act="dive" data-m="rush" ${off}>👹 Boss Rush (best ${C.rush})</button><button class="act red" data-act="dive" data-m="hard" ${off}>💀 Hardcore (best ${C.hard})</button><button class="act red" data-act="dive" data-m="speed" ${off}>⏱ Speed Dive (best ${C.speed || 0})</button></div><div class="s">Daily: the same dungeon for everyone today; first run to floor 3+ earns a bonus. Boss Rush: a boss every floor, double pay. Hardcore: no rescue, +50% gold. Speed Dive: you are recalled after 4 minutes; get as deep as you can.</div>`;
           if (ce) h += `<div class="s" style="color:#ffd24a">${ce.icon} ${ce.name}: ${ce.desc}</div>`; }
       }
       h += '<div class="sec">Active Expeditions</div>' + (act.map(q => q.dive
@@ -1898,6 +1910,8 @@ function modalContent() {
       h += IAP.available ? '' : '<div class="s">Purchases are not available right now (they need the Android app and a connection).</div>';
       return ['🛒 Shop', h];
     }
+    case 'away': { const A = G.flags.away; if (!A) return ['Welcome back', '<div class="s">Nothing new.</div>'];
+      return ['☀ Welcome back!', `<div class="s" style="font-size:14px;line-height:1.6">You were away for about <b>${A.mins} min</b>. The guild kept working: <b>+${A.gold}g</b> from the tavern and market${A.done ? `, and <b>${A.done}</b> expedition${A.done > 1 ? 's' : ''} finished` : ''}.</div>${!A.doubled && A.gold >= 20 && Ads.canShow('awayDouble') ? `<button class="act" data-act="awaydouble" style="margin-top:10px">▶ Watch an ad: double it (+${A.gold}g)</button>` : ''}<button class="act red" data-act="close" style="margin:10px 0 0 6px">Continue</button>`]; }
     case 'daily': {
       const L = G.flags.login || { streak: 1, pending: 0 };
       let h = `<div class="s">Come back every day for a bigger reward. Missing a day starts the track over.</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0">` + DAILY.map((r, i) => { const rw = dailyReward(i), cur = i === L.streak - 1, done = i < L.streak - (L.pending ? 1 : 0); return `<div class="row" style="flex:1 1 90px;flex-direction:column;align-items:center;text-align:center;${cur ? 'border-color:#ffd24a;background:#ffd24a22' : ''}${done ? ';opacity:.55' : ''}"><div class="t">Day ${i + 1}</div><div class="s">${rw.gold}g${rw.ore ? '<br>+' + rw.ore + ' ore' : ''}${rw.herbs ? '<br>+' + rw.herbs + ' herbs' : ''}${rw.wood ? '<br>+' + rw.wood + ' wood' : ''}${rw.mana ? '<br>+' + rw.mana + ' mana' : ''}${rw.mythril ? '<br>+1 💎' : ''}</div>${done ? '✔' : ''}</div>`; }).join('') + '</div>';
@@ -2130,6 +2144,7 @@ const ACT = {
   errlog() { openModal('errlog'); },
   errcopy() { const t = readErrs().join('\n'); try { navigator.clipboard.writeText(t).then(() => toast('🧾 Copied.'), () => toast('🧾 Could not copy; select the text instead.')); } catch (e) { toast('🧾 Could not copy; select the text instead.'); } },
   errclear() { try { localStorage.removeItem(ERR_KEY); } catch (e) { /* ignore */ } toast('🧾 Cleared.'); },
+  async awaydouble() { const A = G.flags.away; if (!A || A.doubled) return; const ok = await Ads.show('awayDouble'); if (!ok) return toast('The ad was not completed — no reward.'); A.doubled = true; G.gold += A.gold; toast(`☀ Doubled: +${A.gold}g!`); },
   eventopen() { openModal('event'); },
   eventchoose(d) { chooseEvent(+d.i); },
   async iapbuy(d) { const ok = await IAP.buy(d.id); if (!ok) return toast('The purchase was not completed.'); grantPurchase(d.id); renderModal(true); },
@@ -2463,7 +2478,8 @@ function loadGame() {
     });
     G.nextId = Math.max(G.nextId, nextId);
     d.heroes.forEach(sh => { const h = createHero(sh); if (sh.onQuest) { h.state = 'quest'; h.mesh.visible = false; } });
-    const away = Math.max(0, Math.min(600, (Date.now() - d.savedAt) / 1000));
+    const away = Math.max(0, Math.min(600, (Date.now() - d.savedAt) / 1000)), awayRaw = Math.max(0, (Date.now() - d.savedAt) / 1000);
+    pendingAway = { secs: awayRaw, quests0: d.quests.filter(x => x.state === 'active' && !x.dive).length };
     d.quests.forEach(sq => {
       const q = { ...sq }; q.heroes = (sq.heroIds || []).map(id => G.heroes.find(h => h.id === id)).filter(Boolean); delete q.heroIds;
       if (q.state === 'active') {
@@ -2730,7 +2746,7 @@ function frame() {
  * ------------------------------------------------------------------ */
 initLang();
 resize();
-const loaded = loadGame(); applyA11y(); try { applyTheme(); } catch (e) { /* cosmetic */ } setTimeout(() => { try { if (IAP.owned('starter_pack') && !G.flags.starter) grantPurchase('starter_pack'); } catch (e) { /* offline */ } }, 5000); checkDaily(); setTimeout(() => { if (G.flags.login && G.flags.login.pending && (G.flags.tutDone || G.questsDone > 0)) openModal('daily'); }, 2500); loadedOnce = true; try { buildLandmarks(false); } catch (e) { /* decoration */ }
+const loaded = loadGame(); checkAway(); applyA11y(); try { applyTheme(); } catch (e) { /* cosmetic */ } setTimeout(() => { try { if (IAP.owned('starter_pack') && !G.flags.starter) grantPurchase('starter_pack'); } catch (e) { /* offline */ } }, 5000); checkDaily(); setTimeout(() => { if (G.flags.login && G.flags.login.pending && (G.flags.tutDone || G.questsDone > 0)) openModal('daily'); }, 2500); loadedOnce = true; try { buildLandmarks(false); } catch (e) { /* decoration */ }
 if (!loaded) {
   G.gold += 300 * legacyLvl('purse'); G.renown += 2 * legacyLvl('name'); G.flags.gen = LEGACY.gen + 1; if (LEGACY.gen) chron(`🏛 Generation ${LEGACY.gen + 1} of the guild begins.`);
   spawnHero('knight', true); spawnHero('ranger', true);
@@ -2741,4 +2757,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__renderer = renderer; window.__scene = scene; window.__api = { logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__renderer = renderer; window.__scene = scene; window.__api = { checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };

@@ -274,6 +274,14 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^▶ Watch an ad: \+50% daily bonus \(\+(\d+)g\)$/, g => `▶ 광고 보고 일일 보너스 +50% (+${g}골드)`],
+    [/^📅 Extra \+(\d+)g!$/, g => `📅 추가 +${g}골드!`],
+    [/^⏱ Speed Dive \(best (\d+)\)$/, n => `⏱ 스피드 다이브 (최고 ${n})`],
+    [/^You were away for about (\d+) min\. The guild kept working: \+(\d+)g from the tavern and market(?:, and (\d+) expeditions? finished)?\.$/, (m, g, d) => `약 ${m}분 동안 자리를 비우셨습니다. 길드는 계속 일했습니다: 주점과 시장에서 +${g}골드${d ? `, 원정 ${d}건 완료` : ''}.`],
+    [/^▶ Watch an ad: double it \(\+(\d+)g\)$/, g => `▶ 광고 보고 두 배로 (+${g}골드)`],
+    [/^☀ Doubled: \+(\d+)g!$/, g => `☀ 두 배! +${g}골드!`],
+    [/^🐪 Bonus haul: \+(\d+)g!$/, g => `🐪 보너스 수익: +${g}골드!`],
+    [/^▶ Watch an ad: a bigger haul \(\+(\d+)g\)$/, g => `▶ 광고 보고 수익 늘리기 (+${g}골드)`],
     [/^(\d+) recorded on this device\.$/, n => `이 기기에 ${n}건 기록됨.`],
     [/^🔮 Charm(?:: (.+))?$/, n => n ? `🔮 부적: ${f(n)}` : '🔮 부적'],
     [/^🐪 A caravan leaves with (\d+)g of goods\. It will be back in 2–3 minutes\.$/, n => `🐪 카라반이 ${n}골드어치 물건을 싣고 떠났습니다. 2~3분 뒤 돌아옵니다.`],

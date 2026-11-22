@@ -576,5 +576,10 @@ export const KO_PEOPLE = {
   '🧾 Copied.': '🧾 복사했습니다.',
   '🧾 Could not copy; select the text instead.': '🧾 복사하지 못했습니다. 텍스트를 직접 선택해 주세요.',
   '🧾 Cleared.': '🧾 지웠습니다.',
+  '☀ Welcome back!': '☀ 어서 오세요!',
+  '▶ Watch an ad: double it': '▶ 광고 보고 두 배로',
+  'Speed Dive': '스피드 다이브',
+  'Speed Dive: you are recalled after 4 minutes; get as deep as you can.': '스피드 다이브: 4분 뒤 귀환합니다. 최대한 깊이 내려가세요.',
+  '⏱ Time is up! The Speed Dive ends.': '⏱ 시간 종료! 스피드 다이브가 끝납니다.',
   'hearty stew': '푸짐한 스튜', 'roast boar': '멧돼지 구이', 'honey bread': '꿀빵', 'mushroom pie': '버섯 파이', 'herbal tea': '약초차',
 };
