@@ -274,6 +274,12 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^Choose a specialization \((\d+)g, permanent\)$/, n => `전문화 선택 (${n}골드, 영구)`],
+    [/^Grain: (\d+)\/60$/, n => `곡식: ${n}/60`],
+    [/^Grain: (\d+) · Bread: (\d+)\/40$/, (a, b) => `곡식: ${a} · 빵: ${b}/40`],
+    [/^🥖 Bread in stock: (\d+) \(meals pay 40% more\)$/, n => `🥖 빵 재고: ${n} (식사 수입 +40%)`],
+    [/^(\S+) Specialization: (.+?) — (.+)$/, (i, n, d) => `${i} 전문화: ${f(n)} — ${f(d)}`],
+    [/^(\S+) (.+) became a (.+)!$/, (i, b, n) => `${i} ${f(b)}이(가) ${f(n)}(으)로 전문화했습니다!`],
     [/^🌊 Lost (\d+) herbs; the heroes are weary\.$/, n => `🌊 약초 ${n}개를 잃었고 영웅들이 지쳤습니다.`],
     [/^🔥 Lost (\d+) wood and (\d+) ore\.$/, (w, o) => `🔥 목재 ${w}, 광석 ${o}를 잃었습니다.`],
     [/^🎁 Starter pack: \+(\d+)g, \+2 Mythril and materials\. Thank you!$/, g => `🎁 스타터 팩: +${g}골드, 미스릴 +2와 재료. 감사합니다!`],

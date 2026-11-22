@@ -319,6 +319,22 @@ function addBuilding(type, cx, cz, rot = 0) {
   G.buildings.push(b); occVersion++;
   return b;
 }
+// ---- production chain and specializations
+const SPEC = {
+  tavern: { feast: ['🍽', 'Feast Hall', 'Meals pay 25% more.'], inn: ['🛏', 'Cosy Inn', 'Heroes who rest here gain +15 extra happiness.'] },
+  lumber: { saw: ['🪚', 'Sawmill', 'Wood comes 60% faster.'], lodge: ['🌿', "Forester's Lodge", 'Also gathers 1 herb every 20 s.'] },
+  farm: { granary: ['🌾', 'Granary', 'Grain comes 60% faster.'], orchard: ['🍎', 'Orchard', 'Sells fruit: +0.4 gold per second.'] },
+  bakery: { loaves: ['🥖', 'Big Ovens', 'Each batch makes 2 loaves.'], pastry: ['🥐', 'Pastry Shop', 'Sells pastries: +0.5 gold per second.'] },
+};
+const specOf = (type) => { const b = first(type); return b && b.spec; };
+const specCost = b => 200 + 100 * b.level;
+const grain = () => (G.flags.grain || 0), bread = () => (G.flags.bread || 0);
+function tickProduction(dt) {
+  const f = G.flags;
+  for (const b of ofType('farm')) { b.acc = (b.acc || 0) + dt; if (b.acc >= 9 / (1 + 0.3 * (b.level - 1)) / (b.spec === 'granary' ? 1.6 : 1)) { b.acc = 0; f.grain = Math.min(60, grain() + 1); } if (b.spec === 'orchard') G.gold += 0.4 * dt; }
+  for (const b of ofType('bakery')) { b.acc = (b.acc || 0) + dt; if (b.acc >= 12 / (1 + 0.3 * (b.level - 1)) && grain() >= 2 && bread() < 40) { b.acc = 0; f.grain -= 2; f.bread = Math.min(40, bread() + (b.spec === 'loaves' ? 2 : 1)); } if (b.spec === 'pastry') G.gold += 0.5 * dt; }
+  for (const b of ofType('lumber')) if (b.spec === 'lodge') { b.acc2 = (b.acc2 || 0) + dt; if (b.acc2 >= 20) { b.acc2 = 0; G.herbs++; } }
+}
 const ofType = t => G.buildings.filter(b => b.type === t);
 const first = t => G.buildings.find(b => b.type === t);
 
@@ -333,7 +349,7 @@ const maxLevel = () => [3, 5, 7, 9][G.rank];
 const boardSlots = () => 3 + G.boardLvl + (G.rank >= 2 ? 1 : 0) + (G.rank >= 3 ? 1 : 0);
 const craftSpeed = () => (1 + 0.25 * G.staff.smith) * (G.research.forging ? 1.3 : 1) * (G.research.mythril ? 1.4 : 1) * (1 + 0.1 * regionPerk('stonepeak')) * (G.flags.faction === 'vanguard' ? 1.15 : 1) * (G.flags.smithTaught ? 1.1 : 1);
 const alchSpeed = () => (1 + 0.25 * G.staff.alch) * (G.research.forging ? 1.15 : 1) * (1 + 0.1 * regionPerk('ashen')) * (G.flags.faction === 'arcane' ? 1.15 : 1);
-const mealGold = tav => { tav = tav || first('tavern'); return (G.flags.fest ? 1.5 : 1) * (seasonIdx() === 3 ? 1.25 : 1) * 9 * (1 + 0.15 * G.staff.cook) * (1 + 0.3 * ((tav?.level || 1) - 1)) * (tav ? adj(tav).meal : 1); };
+const mealGold = tav => { tav = tav || first('tavern'); return (tav && tav.spec === 'feast' ? 1.25 : 1) * (G.flags.fest ? 1.5 : 1) * (seasonIdx() === 3 ? 1.25 : 1) * 9 * (1 + 0.15 * G.staff.cook) * (1 + 0.3 * ((tav?.level || 1) - 1)) * (tav ? adj(tav).meal : 1); };
 const questGoldMul = () => (G.research.charter ? 1.25 : 1) * (seasonIdx() === 1 ? 1.1 : 1) * (1 + 0.002 * (G.flags.rep ?? 10)) * (first('monument') ? 1.05 : 1) * (1 + 0.03 * squares()) * (1 + 0.05 * regionPerk('dunes')) * (1 + 0.03 * legacyLvl('trade'));
 const trickleMul = () => (1 + 0.5 * G.staff.porter);
 const warehouseBonus = () => ofType('warehouse').reduce((s, w) => s + 6 + 4 * (w.level - 1), 0);
@@ -610,9 +626,10 @@ function decide(h) {
     setMood(h, '🍺');
     if (tavern) {
       return visit(h, tavern, 2.5, () => {
-        const g = mealGold(tavern) * (traitOf(h) === 'glutton' ? 2 : 1);
+        const fed = bread() > 0; if (fed) G.flags.bread--;
+        const g = mealGold(tavern) * (traitOf(h) === 'glutton' ? 2 : 1) * (fed ? 1.4 : 1);
         gain(tavern.door, g);
-        h.stamina = 100; h.happy = Math.min(100, h.happy + 30);
+        h.stamina = 100; h.happy = Math.min(100, h.happy + 30 + (fed ? 10 : 0) + (tavern.spec === 'inn' ? 15 : 0));
       });
     }
     return wanderNearHall(h);
@@ -1185,7 +1202,8 @@ function updateEconomy(dt) {
     t.spawn = Math.max(18, 45 - G.renown * 0.3) / (first('portal') ? 2 : 1) * (1 - 0.004 * (G.flags.rep ?? 10));
     if (ofType('tavern').length && G.heroes.length < popCap()) spawnHero();
   }
-  for (const b of ofType('lumber')) { b.acc = (b.acc || 0) + dt; if (b.acc >= 8 / (1 + 0.3 * (b.level - 1))) { b.acc = 0; G.wood++; } }
+  tickProduction(dt);
+  for (const b of ofType('lumber')) { b.acc = (b.acc || 0) + dt; if (b.acc >= 8 / (1 + 0.3 * (b.level - 1)) / (b.spec === 'saw' ? 1.6 : 1)) { b.acc = 0; G.wood++; } }
   roadT -= dt; if (roadDirty && roadT <= 0) { roadT = 0.4; rebuildRoads(); }
   tickMemorial(dt); tickAdOffer(dt); tickRival(dt); tickWear(dt); tickWeekly(dt); tickAuto(dt); tickSeason(dt); tickFestival(dt); { const cot = ofType('cottage').length; if (cot) G.gold += cot * 0.06 * dt * (1 + 0.004 * (G.flags.rep ?? 10)); }
   // quests
@@ -1917,8 +1935,16 @@ function modalContent() {
       { const notes = adj(b).notes; if (notes.length) h += `<div class="s" style="color:#9bff9b;margin-top:4px">${notes.map(n => '✦ ' + n).join('<br>')}</div>`; }
       if (b.type === 'warehouse') h += `<div class="s">This warehouse adds <b>+${6 + 4 * (b.level - 1)}</b> stock to every Forge and Lab · total bonus +${warehouseBonus()}</div>`;
       if (b.type === 'tavern') h += `<div class="s">Meal price: ${mealGold(b).toFixed(1)}g · Passive: ${b.level * 0.25}g/s</div>`;
+      if (b.type === 'farm') h += `<div class="s">Grain: <b>${grain()}</b>/60</div>`;
+      if (b.type === 'bakery') h += `<div class="s">Grain: ${grain()} · Bread: <b>${bread()}</b>/40</div>`;
+      if (b.type === 'tavern' && bread() > 0) h += `<div class="s">🥖 Bread in stock: ${bread()} (meals pay 40% more)</div>`;
+      if (SPEC[b.type]) {
+        if (b.spec) { const S = SPEC[b.type][b.spec]; h += `<div class="s" style="color:#ffd24a;margin-top:4px">${S[0]} Specialization: <b>${S[1]}</b> — ${S[2]}</div>`; }
+        else if (b.level >= 3) h += `<div class="sec">Choose a specialization (${specCost(b)}g, permanent)</div>` + Object.entries(SPEC[b.type]).map(([k, S]) => `<div class="row"><div style="font-size:24px">${S[0]}</div><div class="grow"><div class="t">${S[1]}</div><div class="s">${S[2]}</div></div><button class="act" data-act="spec" data-id="${b.id}" data-k="${k}" ${G.gold < specCost(b) ? 'disabled' : ''}>Choose</button></div>`).join('');
+        else h += `<div class="s" style="opacity:.7">At level 3 this building can specialize.</div>`;
+      }
       const uc = 150 * b.level + 100;
-      if (['forge', 'alchemy', 'tavern', 'warehouse', 'smelter', 'lumber'].includes(b.type)) h += `</div><button class="act" data-act="upBuilding" data-id="${b.id}" ${G.gold < uc || G.wood < 5 * b.level || b.level >= maxLevel() || !hasRare(upReq(b)) ? 'disabled' : ''}>${b.level >= maxLevel() ? (G.rank < 3 ? 'Raise guild rank' : 'Max level') : `Upgrade<br>${uc}g + ${5 * b.level}🪵 ${rareTags(upReq(b))}`}</button></div>`; else h += '</div></div>';
+      if (['forge', 'alchemy', 'tavern', 'warehouse', 'smelter', 'lumber', 'farm', 'bakery'].includes(b.type)) h += `</div><button class="act" data-act="upBuilding" data-id="${b.id}" ${G.gold < uc || G.wood < 5 * b.level || b.level >= maxLevel() || !hasRare(upReq(b)) ? 'disabled' : ''}>${b.level >= maxLevel() ? (G.rank < 3 ? 'Raise guild rank' : 'Max level') : `Upgrade<br>${uc}g + ${5 * b.level}🪵 ${rareTags(upReq(b))}`}</button></div>`; else h += '</div></div>';
       if (b.type !== 'hall' && !t.walkable) h += `<button class="act red" data-act="moveB" data-id="${b.id}" style="margin:6px 0">🧭 Move building (free)</button>`;
       if (b.type === 'memorial') h += `<div class="sec">In memory</div>` + (G.fallen.length ? [...G.fallen].reverse().slice(0, 12).map(f => `<div class="s">${f.vip ? '⭐ ' : ''}<b>${f.name}</b> — level ${f.level} ${f.cls}; ${f.deed}</div>`).join('') : '<div class="s">No one has fallen yet.</div>');
       if (b.type === 'portal') h += `<div class="s">Deepest dive so far: floor <b>${G.diveBest}</b></div><button class="act" data-act="open" data-k="quests" style="margin:6px 0">Open the Endless Dive</button>`;
@@ -1987,6 +2013,7 @@ const ACT = {
   relmap() { openModal('relmap'); },
   dailyopen() { openModal('daily'); },
   shop() { openModal('shop'); },
+  spec(d) { const b = G.buildings.find(x => x.id === +d.id); if (!b || b.spec || b.level < 3 || !SPEC[b.type] || !SPEC[b.type][d.k] || G.gold < specCost(b)) return; G.gold -= specCost(b); b.spec = d.k; sfx('goal'); toast(`${SPEC[b.type][d.k][0]} ${BUILDINGS[b.type].name} became a ${SPEC[b.type][d.k][1]}!`); chron(`${SPEC[b.type][d.k][0]} The ${BUILDINGS[b.type].name} became a ${SPEC[b.type][d.k][1]}.`); renderModal(true); },
   eventopen() { openModal('event'); },
   eventchoose(d) { chooseEvent(+d.i); },
   async iapbuy(d) { const ok = await IAP.buy(d.id); if (!ok) return toast('The purchase was not completed.'); grantPurchase(d.id); renderModal(true); },
@@ -2292,7 +2319,7 @@ function serialize() {
   Object.assign(g, { staff: G.staff, research: G.research, tm: G.tm, orders: G.orders, rare: G.rare, market: G.market, goalsDone: G.goalsDone, stats: G.stats, fallen: G.fallen, flags: G.flags, region: G.region, regions: G.regions });
   return {
     v: 1, savedAt: Date.now(), g,
-    buildings: G.buildings.map(b => ({ type: b.type, cx: b.cx, cz: b.cz, rot: b.rot || 0, level: b.level, stock: b.stock, progress: b.progress })),
+    buildings: G.buildings.map(b => ({ type: b.type, cx: b.cx, cz: b.cz, rot: b.rot || 0, level: b.level, stock: b.stock, progress: b.progress, spec: b.spec })),
     heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, promo: h.promo, talents: h.talents, bonds: h.bonds, aff: h.aff, vow: h.vow, quests: h.quests, vip: h.vip, tags: h.tags, bio: h.bio, likes: h.likes, dislikes: h.dislikes, loy: h.loy, marks: h.marks, plus: h.plus, train: h.train, arc: h.arc, title: h.title, boon: h.boon, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
     quests: G.quests.map(q => { const o = {}; for (const [k, v] of Object.entries(q)) if (k !== 'heroes' && k !== 'script') o[k] = v; o.heroIds = (q.heroes || []).map(h => h.id); return o; }),
     extra: serializeExtra(),
@@ -2316,7 +2343,7 @@ function loadGame() {
     const nextId = G.nextId;
     d.buildings.forEach(sb => {
       if (sb.type === 'hall') { G.buildings[0].level = sb.level; return; }
-      const b = addBuilding(sb.type, sb.cx, sb.cz, sb.rot || 0); b.level = sb.level; b.stock = sb.stock; b.progress = sb.progress; b.pop = 1; b.group.scale.setScalar(1);
+      const b = addBuilding(sb.type, sb.cx, sb.cz, sb.rot || 0); b.level = sb.level; b.stock = sb.stock; b.progress = sb.progress; if (sb.spec) b.spec = sb.spec; b.pop = 1; b.group.scale.setScalar(1);
     });
     G.nextId = Math.max(G.nextId, nextId);
     d.heroes.forEach(sh => { const h = createHero(sh); if (sh.onQuest) { h.state = 'quest'; h.mesh.visible = false; } });
