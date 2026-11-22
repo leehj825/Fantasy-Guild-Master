@@ -331,7 +331,7 @@ const specCost = b => 200 + 100 * b.level;
 const grain = () => (G.flags.grain || 0), bread = () => (G.flags.bread || 0);
 function tickProduction(dt) {
   const f = G.flags;
-  for (const b of ofType('farm')) { b.acc = (b.acc || 0) + dt; if (b.acc >= 9 / (1 + 0.3 * (b.level - 1)) / (b.spec === 'granary' ? 1.6 : 1)) { b.acc = 0; f.grain = Math.min(60, grain() + 1); } if (b.spec === 'orchard') G.gold += 0.4 * dt; }
+  for (const b of ofType('farm')) { b.acc = (b.acc || 0) + dt; if (b.acc >= 9 / (1 + 0.3 * (b.level - 1)) / (b.spec === 'granary' ? 1.6 : 1) / (1 + 0.15 * legacyLvl('farmers'))) { b.acc = 0; f.grain = Math.min(60, grain() + 1); } if (b.spec === 'orchard') G.gold += 0.4 * dt; }
   for (const b of ofType('bakery')) { b.acc = (b.acc || 0) + dt; if (b.acc >= 12 / (1 + 0.3 * (b.level - 1)) && grain() >= 2 && bread() < 40) { b.acc = 0; f.grain -= 2; f.bread = Math.min(40, bread() + (b.spec === 'loaves' ? 2 : 1)); } if (b.spec === 'pastry') G.gold += 0.5 * dt; }
   for (const b of ofType('lumber')) if (b.spec === 'lodge') { b.acc2 = (b.acc2 || 0) + dt; if (b.acc2 >= 20) { b.acc2 = 0; G.herbs++; } }
 }
@@ -350,7 +350,7 @@ const boardSlots = () => 3 + G.boardLvl + (G.rank >= 2 ? 1 : 0) + (G.rank >= 3 ?
 const craftSpeed = () => (1 + 0.25 * G.staff.smith) * (G.research.forging ? 1.3 : 1) * (G.research.mythril ? 1.4 : 1) * (1 + 0.1 * regionPerk('stonepeak')) * (G.flags.faction === 'vanguard' ? 1.15 : 1) * (G.flags.smithTaught ? 1.1 : 1);
 const alchSpeed = () => (1 + 0.25 * G.staff.alch) * (G.research.forging ? 1.15 : 1) * (1 + 0.1 * regionPerk('ashen')) * (G.flags.faction === 'arcane' ? 1.15 : 1);
 const mealGold = tav => { tav = tav || first('tavern'); return (tav && tav.spec === 'feast' ? 1.25 : 1) * (G.flags.fest ? 1.5 : 1) * (seasonIdx() === 3 ? 1.25 : 1) * 9 * (1 + 0.15 * G.staff.cook) * (1 + 0.3 * ((tav?.level || 1) - 1)) * (tav ? adj(tav).meal : 1); };
-const questGoldMul = () => (hasPet('dog') ? 1.03 : 1) * (calEvent() ? calEvent().mul : 1) * (1 + 0.04 * Math.min(3, retireN('quartermaster'))) * (G.research.charter ? 1.25 : 1) * (seasonIdx() === 1 ? 1.1 : 1) * (1 + 0.002 * (G.flags.rep ?? 10)) * (first('monument') ? 1.05 : 1) * (1 + 0.03 * squares()) * (1 + 0.05 * regionPerk('dunes')) * (1 + 0.03 * legacyLvl('trade'));
+const questGoldMul = () => (1 + 0.02 * (G.flags.kw ? kingdomLv() : 0)) * (hasPet('dog') ? 1.03 : 1) * (calEvent() ? calEvent().mul : 1) * (1 + 0.04 * Math.min(3, retireN('quartermaster'))) * (G.research.charter ? 1.25 : 1) * (seasonIdx() === 1 ? 1.1 : 1) * (1 + 0.002 * (G.flags.rep ?? 10)) * (first('monument') ? 1.05 : 1) * (1 + 0.03 * squares()) * (1 + 0.05 * regionPerk('dunes')) * (1 + 0.03 * legacyLvl('trade'));
 const trickleMul = () => (1 + 0.5 * G.staff.porter);
 const warehouseBonus = () => ofType('warehouse').reduce((s, w) => s + 6 + 4 * (w.level - 1), 0);
 const stockCap = b => 4 + 2 * b.level + warehouseBonus();
@@ -978,9 +978,10 @@ const diveProg = q => { const f = diveFloor(q); return f ? Math.min(100, Math.ma
 function dispatchDive(mode) {
   if (!first('portal')) return toast('Build a Waystone Portal first.');
   if (G.quests.some(q => q.dive)) return toast('A party is already inside the dungeon.');
-  const r = readyHeroes().sort((a, b) => heroPower(b, 'combat') - heroPower(a, 'combat')).slice(0, 4);
+  const WR = mode === 'weekly' ? weekRule() : null;
+  const r = readyHeroes().filter(h => !WR || !WR.cls || h.cls === WR.cls).sort((a, b) => heroPower(b, 'combat') - heroPower(a, 'combat')).slice(0, 4);
   if (r.length < 2) return toast('The dive needs at least 2 geared, rested heroes.');
-  const q = { id: G.nextId++, name: { daily: 'Daily Dive', rush: 'Boss Rush', hard: 'Hardcore Dive', speed: 'Speed Dive' }[mode] || 'Endless Dive', mode: mode || null, rush: mode === 'rush', hard: mode === 'hard', speed: mode === 'speed', limit: mode === 'speed' ? 240 : 0, type: 'dive', dive: true, state: 'active', heroes: r, party: r.map(heroSnap), seed: mode === 'daily' ? dailySeed() : (Math.random() * 1e9) | 0, heals: [], enchants: [], relics: [], offer: null, elapsed: 0, cleared: 0, pending: newPending(), dur: 1e9, t: 1e9, chance: 0.5, minH: 2, maxH: 4, diff: 0, loot: {}, enchant: false, gold: 0, renown: 0 };
+  const q = { id: G.nextId++, name: { daily: 'Daily Dive', rush: 'Boss Rush', hard: 'Hardcore Dive', speed: 'Speed Dive', weekly: 'Weekly Challenge' }[mode] || 'Endless Dive', mode: mode || null, rush: mode === 'rush' || !!(WR && WR.rush), hard: mode === 'hard' || !!(WR && WR.hard), speed: mode === 'speed', limit: mode === 'speed' || (WR && WR.speed) ? 240 : 0, type: 'dive', dive: true, state: 'active', heroes: r, party: r.map(heroSnap), seed: mode === 'daily' ? dailySeed() : mode === 'weekly' ? dailySeed() * 7 + 3 : (Math.random() * 1e9) | 0, heals: [], enchants: [], relics: [], offer: null, elapsed: 0, cleared: 0, pending: newPending(), dur: 1e9, t: 1e9, chance: 0.5, minH: 2, maxH: 4, diff: 0, loot: {}, enchant: false, gold: 0, renown: 0 };
   q.script = newDiveScript(q); ensureFloors(q, 0); G.quests.push(q);
   r.forEach(h => { h.state = 'quest'; h.mesh.visible = false; setMood(h, null); h.onDone = null; });
   sfx('horn'); toast(`🌀 ${r.length} heroes step through the portal… Recall to bank your loot!`); renderModal(true);
@@ -1222,7 +1223,7 @@ function updateEconomy(dt) {
   // quests
   t.quest -= dt;
   if (t.quest <= 0) { t.quest = 14; if (G.quests.filter(q => q.state === 'open').length < boardSlots()) genQuest(); legendTick(); }
-  townTick(dt); tickPeople(dt); tickDisaster(dt); tickFamily(dt); tickTrade();
+  townTick(dt); tickPeople(dt); tickDisaster(dt); tickFamily(dt); tickTrade(); tickKingdom(dt);
   for (const q of [...G.quests]) if (q.state === 'active') { if (q.dive) diveTick(q, dt); else { q.t -= dt; if (q.t <= 0 || q.dur - q.t >= questEnd(q)) (q.defense ? resolveDefense(q) : resolveQuest(q)); } }
   // events
   t.merchant -= dt; if (t.merchant <= 0) { t.merchant = rnd(150, 220); if (G.renown >= 2 && !G.merchant) startMerchant(); }
@@ -1331,6 +1332,10 @@ const PERKS = {
   trade: { icon: '🧭', name: 'Trade Routes', desc: 'Quest gold +3% per level.' },
   hearth: { icon: '🔥', name: 'Warm Hearth', desc: 'Heroes lose happiness 4% slower per level.' },
   recruits: { icon: '🛡', name: 'Veteran Recruits', desc: 'New heroes arrive 1 level higher every 2 levels.' },
+  farmers: { icon: '🌾', name: 'Fertile Soil', desc: 'Farms grow grain 15% faster per level.' },
+  smiths: { icon: '🔨', name: 'Master Smiths', desc: 'Legendary weapons cost 10% less per level.' },
+  crown: { icon: '👑', name: 'Royal Blood', desc: 'Crown favor gains are 10% larger per level.' },
+  patron: { icon: '🎟', name: 'Season Patron', desc: 'Monthly pass points +1 per level from big events.' },
 };
 const legacyGain = () => 3 + Math.floor(G.renown / 25) + Math.floor((codexN('bosses') + codexN('relics') + codexN('classes') + codexN('tags') + codexN('arcs')) / 4) + Object.keys(G.flags.ach || {}).length + (G.flags.legendDone ? 5 : 0);
 const canInherit = () => G.rank >= 3 || !!G.flags.legendDone;
@@ -1339,6 +1344,16 @@ function codexAdd(k, id) { const c = ((G.flags.codex ||= {})[k] ||= {}); c[id] =
 const codexN = k => Object.keys(((G.flags.codex || {})[k]) || {}).length;
 const CODEX_BOSS = { ogre: 'Ogre Warchief', chief: 'Bandit Chief', golem: 'Ancient Golem', frostgiant: 'Frost Giant', duneking: 'Dune Warlord', lich: 'Bone Lich' };
 const ACHS = [
+  { id: 'trophy', icon: '🏆', name: 'Hall of Fame', desc: 'Build the Trophy Hall.', ok: () => !!first('trophy'), rew: { gold: 500 } },
+  { id: 'wep3', icon: '⚔', name: 'Armoury', desc: 'Forge 3 legendary weapons.', ok: () => Object.keys(armory()).length >= 3, rew: { gold: 1500, mythril: 1 } },
+  { id: 'champ', icon: '🏅', name: 'Regional Champion', desc: 'Pass all three trials of a region.', ok: () => Object.values(G.regions).some(r => (r.trial || 0) >= 3), rew: { gold: 1200, renown: 2 } },
+  { id: 'crown5', icon: '👑', name: 'Friend of the Crown', desc: 'Reach Crown favor level 5.', ok: () => !!G.flags.kw && kingdomLv() >= 5, rew: { gold: 2500, mythril: 2 } },
+  { id: 'pets4', icon: '🐾', name: 'Menagerie', desc: 'Own all four companions.', ok: () => (G.flags.pets || []).length >= 4, rew: { gold: 800 } },
+  { id: 'pass10', icon: '🎟', name: 'Pass Master', desc: 'Reach tier 10 of the monthly pass.', ok: () => passTier() >= 10, rew: { gold: 1000, mythril: 1 } },
+  { id: 'retire3', icon: '🏡', name: 'Honoured Veterans', desc: 'Retire 3 heroes.', ok: () => retired().length >= 3, rew: { gold: 900 } },
+  { id: 'family', icon: '👶', name: 'A Guild Family', desc: 'Welcome a child of the guild.', ok: () => (G.flags.born || 0) >= 1, rew: { gold: 600 } },
+  { id: 'rooms10', icon: '🚪', name: 'Room Explorer', desc: 'Decide the fate of 10 dive rooms.', ok: () => (G.flags.rooms || 0) >= 10, rew: { gold: 1000 } },
+  { id: 'weekly3', icon: '📅', name: 'Weekly Regular', desc: 'Finish 3 weekly challenges.', ok: () => ((G.flags.wc || {}).done || 0) >= 3, rew: { gold: 1200, mythril: 1 } },
   { id: 'boss3', icon: '👑', name: 'Giant Slayer', desc: 'Defeat 3 different bosses.', ok: () => codexN('bosses') >= 3, rew: { gold: 600 } },
   { id: 'bossall', icon: '🏆', name: 'Bane of Bosses', desc: 'Defeat all 6 bosses.', ok: () => codexN('bosses') >= 6, rew: { gold: 3000, renown: 5, mythril: 2 } },
   { id: 'cls6', icon: '🎭', name: 'A Full Roster', desc: 'Recruit every class.', ok: () => codexN('classes') >= 6, rew: { gold: 800 } },
@@ -1471,6 +1486,10 @@ const EVENTS = {
   plague: { icon: '🤒', title: 'Sickness spreads', text: 'A fever is going around the village and some heroes are coughing.', ch: [
     { label: 'Buy medicine (−10 herbs, −60g)', ok: () => G.gold >= 60 && G.herbs >= 10, fx: () => { G.gold -= 60; G.herbs -= 10; repGain(2); toast('🤒 The fever passes quickly.'); } },
     { label: 'Rest and hope', fx: () => { const k = wellN() ? 6 : 18; G.heroes.forEach(h => { h.stamina = Math.max(5, h.stamina - k); h.happy = Math.max(0, h.happy - k / 2); }); toast('🤒 The heroes recover slowly.'); } } ] },
+  warcall: { icon: '👑', title: 'The Crown calls for aid', text: 'A border war flares up. The king asks the guild to support the realm. Your standing with the Crown depends on it.', ch: [
+    { label: 'Send supplies (−300g, −20 ore): +30 favor', ok: () => G.gold >= 300 && G.ore >= 20, fx: () => { G.gold -= 300; G.ore -= 20; kingdomFavor(30); } },
+    { label: 'Send a party (heroes tire, +300g): +50 favor', ok: () => readyHeroes().length >= 2, fx: () => { readyHeroes().slice(0, 3).forEach(h => { h.stamina = Math.max(10, h.stamina - 40); gainXp(h, 2); }); G.gold += 300; kingdomFavor(50); } },
+    { label: 'Decline: −5 favor', fx: () => kingdomFavor(-5) } ] },
   rest: { icon: '🛏', title: 'A quiet room', text: 'On the dive you found a safe, dry chamber with a few cots.', ch: [
     { label: 'Rest here (heroes recover stamina)', fx: () => { G.heroes.forEach(h => { h.stamina = Math.min(100, h.stamina + 30); }); toast('🛏 Everyone feels rested.'); } },
     { label: 'Move on', fx: () => { G.gold += 40; toast('🛏 You pressed on. +40g.'); } } ] },
@@ -1487,7 +1506,15 @@ const EVENTS = {
 };
 const evq = () => (G.flags.evq ||= []);
 function pushEvent(id) { const q = evq(); if (q.length >= 3 || q.includes(id)) return; q.push(id); sfx('chime'); toast(`📬 ${EVENTS[id].icon} ${EVENTS[id].title}`); }
-function chooseEvent(i) { const q = evq(), E = EVENTS[q[0]]; if (!E) return; const c = E.ch[i]; if (!c || (c.ok && !c.ok())) return; c.fx(); chron(`${E.icon} ${E.title}: ${c.label.replace(/\s*\(.*$/, '')}`); q.shift(); closeModal(); if (q.length) setTimeout(() => openModal('event'), 200); }
+function chooseEvent(i) { const q = evq(), E = EVENTS[q[0]]; if (!E) return; const c = E.ch[i]; if (!c || (c.ok && !c.ok())) return; c.fx(); if (ROOM_KINDS.includes(evq()[0])) G.flags.rooms = (G.flags.rooms || 0) + 1; chron(`${E.icon} ${E.title}: ${c.label.replace(/\s*\(.*$/, '')}`); q.shift(); closeModal(); if (q.length) setTimeout(() => openModal('event'), 200); }
+// ---- after the legend: the Crown's favor grows with each call to arms; every level gives a permanent bonus
+const KW_PER = 100, kingdom = () => (G.flags.kw ||= { fame: 0, t: 300 });
+const kingdomLv = () => Math.min(10, Math.floor(kingdom().fame / KW_PER));
+function kingdomFavor(n) {
+  if (n > 0) n = Math.round(n * (1 + 0.1 * legacyLvl('crown'))); const k = kingdom(), before = kingdomLv(); k.fame = Math.max(0, k.fame + n); toast(`👑 Crown favor ${n >= 0 ? '+' : ''}${n}`);
+  if (kingdomLv() > before) { const lv = kingdomLv(); G.gold += 500 * lv; G.renown += 2; toast(`👑 The Crown honours the guild: level ${lv}! +${500 * lv}g, +2⭐`); chron(`👑 Crown favor reached level ${lv}.`); sfx('goal'); }
+}
+function tickKingdom(dt) { if (!G.flags.legendDone) return; const k = kingdom(); k.t -= dt; if (k.t <= 0) { k.t = 480 + Math.random() * 240; pushEvent('warcall'); } }
 let disasterT = 420;
 function tickDisaster(dt) {
   disasterT -= dt; if (disasterT > 0) return; disasterT = 420 + Math.random() * 360;
@@ -1516,7 +1543,7 @@ function tickFamily(dt) {
       if (pairs.length) {
         const [a, b] = pick(pairs), name = pick(NAMES), tags = [...new Set([pick(a.tags || ['brave']), pick(b.tags || ['brave'])])].slice(0, 2);
         kids().push({ name, cls: pick([a.cls, b.cls]), parents: [a.name, b.name], tags, grow: G.time + 480 });
-        toast(`👶 ${a.name} and ${b.name} had a child: ${name}!`); chron(`👶 ${a.name} and ${b.name} welcomed ${name} into the world.`); sfx('chime'); a.happy = Math.min(100, a.happy + 20); b.happy = Math.min(100, b.happy + 20); diary(a, `Welcomed a child, ${name}, with ${b.name}.`); diary(b, `Welcomed a child, ${name}, with ${a.name}.`);
+        G.flags.born = (G.flags.born || 0) + 1; toast(`👶 ${a.name} and ${b.name} had a child: ${name}!`); chron(`👶 ${a.name} and ${b.name} welcomed ${name} into the world.`); sfx('chime'); a.happy = Math.min(100, a.happy + 20); b.happy = Math.min(100, b.happy + 20); diary(a, `Welcomed a child, ${name}, with ${b.name}.`); diary(b, `Welcomed a child, ${name}, with ${a.name}.`);
       }
     }
   }
@@ -1529,18 +1556,24 @@ function tickFamily(dt) {
   }
 }
 // ---- challenge dives: a daily seeded dive, Boss Rush (a boss every floor, double pay) and Hardcore (no rescue, +50% gold)
+// weekly challenge: one seeded dive per week with a special rule; the first run that reaches floor 5 pays out
+const weekKey = () => { const d = new Date(), t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())), day = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - day); const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1)); return t.getUTCFullYear() + '-W' + Math.ceil(((t - y0) / 864e5 + 1) / 7); };
+const WEEK_RULES = [{ id: 'knight', icon: '🛡', name: 'Knights only', cls: 'knight' }, { id: 'wizard', icon: '🔮', name: 'Wizards only', cls: 'wizard' }, { id: 'ranger', icon: '🏹', name: 'Rangers only', cls: 'ranger' }, { id: 'rush', icon: '👹', name: 'Boss gauntlet', rush: 1 }, { id: 'hard', icon: '💀', name: 'No mercy', hard: 1 }, { id: 'speed', icon: '⏱', name: 'Against the clock', speed: 1 }];
+const weekRule = () => { let h = 0; for (const c of weekKey()) h = (h * 31 + c.charCodeAt(0)) % 9973; return WEEK_RULES[h % WEEK_RULES.length]; };
+const weekState = () => { const w = (G.flags.wc ||= { done: 0 }); if (w.key !== weekKey()) { w.key = weekKey(); w.best = 0; w.claimed = false; } return w; };
 const dailySeed = () => { let h = 7; for (const c of dayKey()) h = (h * 31 + c.charCodeAt(0)) % 1000003; return h * 977 + 13; };
 function challengeDone(q) {
   const f = G.flags, C = (f.chal ||= { daily: {}, rush: 0, hard: 0 }), n = q.cleared, key = dayKey();
   if (q.mode === 'rush') { C.rush = Math.max(C.rush, n); }
   else if (q.mode === 'hard') { C.hard = Math.max(C.hard, n); }
   else if (q.mode === 'speed') { C.speed = Math.max(C.speed || 0, n); }
+  else if (q.mode === 'weekly') { const w = weekState(); w.best = Math.max(w.best, n); if (!w.claimed && n >= 5) { w.claimed = true; w.done++; const g = 150 * n; G.gold += g; if (n >= 10) G.rare.mythril += 2; passPts(10); toast(`📅 Weekly challenge cleared! +${g}g${n >= 10 ? ' and 2 Mythril' : ''}`); chron(`📅 Weekly challenge: floor ${n}.`); } }
   else if (q.mode === 'daily') {
     const D = C.daily; if (D.key !== key) { C.daily = { key, best: 0, claimed: false }; }
     C.daily.best = Math.max(C.daily.best, n);
     if (!C.daily.claimed && n >= 3) { C.daily.claimed = true; passPts(5); const g = 80 * n; G.gold += g; if (n >= 10) G.rare.mythril += 1; toast(`📅 Daily Dive bonus: +${g}g${n >= 10 ? ' and a Mythril shard' : ''}!`); chron(`📅 Daily Dive: reached floor ${n}.`); if (Ads.canShow('dailyRetry')) showAdOffer('dailyRetry', `▶ Watch an ad: +50% daily bonus (+${Math.round(g / 2)}g)`, 12, () => { G.gold += Math.round(g / 2); toast(`📅 Extra +${Math.round(g / 2)}g!`); }); }
   }
-  if (q.mode !== 'daily' && n >= 5) { const g = (q.rush ? 60 : 40) * n; G.gold += g; toast(`🏅 ${q.name} reward: +${g}g (floor ${n}).`); }
+  if (q.mode !== 'daily' && q.mode !== 'weekly' && n >= 5) { const g = (q.rush ? 60 : 40) * n; G.gold += g; toast(`🏅 ${q.name} reward: +${g}g (floor ${n}).`); }
 }
 // limited-time calendar events (real dates): a small bonus while they last
 const CAL = [
@@ -1583,7 +1616,7 @@ const PASS = [{ gold: 150 }, { gold: 200, ore: 10 }, { gold: 250, herbs: 10 }, {
 const PASS_STEP = 40, monthKey = () => { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1); };
 function pass() { const f = G.flags; if (!f.sp || f.sp.m !== monthKey()) f.sp = { m: monthKey(), pts: 0, claimed: 0 }; return f.sp; }
 const passTier = () => Math.min(10, Math.floor(pass().pts / PASS_STEP));
-function passPts(n) { const sp = pass(), before = passTier(); sp.pts += n; if (passTier() > before) { toast(`🎟 Monthly pass: tier ${passTier()} reached! Claim it in the pass menu.`); sfx('chime'); } }
+function passPts(n) { const sp = pass(), before = passTier(); sp.pts += n + (n >= 5 ? legacyLvl('patron') : 0); if (passTier() > before) { toast(`🎟 Monthly pass: tier ${passTier()} reached! Claim it in the pass menu.`); sfx('chime'); } }
 // ---- hero diary: a few lines per hero about what happened to them
 const diary = (h, text) => { if (!h) return; const d = (h.diary ||= []); d.push({ d: Math.floor(G.time / 60) + 1, t: text }); if (d.length > 8) d.shift(); };
 // ---- 3D companions and disaster visuals
@@ -1644,14 +1677,15 @@ const LEGWEP = {
   shadow: { icon: '🌑', name: 'Nightfang Dagger', cls: 'rogue', desc: '+10% power, +35% loot.', pw: 1.1, loot: 0.35, gold: 600, ingots: 4, mythril: 1 },
   elixir: { icon: '⚗', name: 'Philosopher’s Flask', cls: 'alchemist', desc: '+15% power, +3 Mana after success.', pw: 1.15, mana: 3, gold: 700, ingots: 4, mythril: 2 },
 };
+const legCost = L => Math.round(L.gold * (1 - 0.1 * legacyLvl('smiths')));
 const bps = () => (G.flags.bp ||= {}), armory = () => (G.flags.arm ||= {});
 function dropBlueprint(src) {
   const have = bps(), pool = Object.keys(LEGWEP).filter(k => !have[k]); if (!pool.length) return;
   const k = pick(pool); have[k] = 1; toast(`📜 Blueprint found: ${LEGWEP[k].icon} ${LEGWEP[k].name}! Craft it at the Forge.`); chron(`📜 Found the blueprint of ${LEGWEP[k].name} (${src}).`); sfx('chime');
 }
 function craftLegend(k) {
-  const L = LEGWEP[k]; if (!L || !bps()[k] || armory()[k] || !first('forge') || G.gold < L.gold || G.ingots < L.ingots || G.rare.mythril < L.mythril) return;
-  G.gold -= L.gold; G.ingots -= L.ingots; G.rare.mythril -= L.mythril; armory()[k] = 'free'; sfx('goal'); toast(`${L.icon} The smiths forged ${L.name}!`); chron(`${L.icon} ${L.name} was forged.`);
+  const L = LEGWEP[k]; if (!L || !bps()[k] || armory()[k] || !first('forge') || G.gold < legCost(L) || G.ingots < L.ingots || G.rare.mythril < L.mythril) return;
+  G.gold -= legCost(L); G.ingots -= L.ingots; G.rare.mythril -= L.mythril; armory()[k] = 'free'; sfx('goal'); toast(`${L.icon} The smiths forged ${L.name}!`); chron(`${L.icon} ${L.name} was forged.`);
 }
 function equipLegend(h, k) {
   if (!armory()[k] || LEGWEP[k].cls !== h.cls) return; for (const x of G.heroes) if (x.wep === k) x.wep = null; h.wep = k; armory()[k] = h.name; toast(`${LEGWEP[k].icon} ${h.name} wields ${LEGWEP[k].name}.`);
@@ -1998,7 +2032,7 @@ function modalContent() {
         const dq = G.quests.find(q => q.dive);
         h += `<div class="sec">Waystone Portal</div><div class="row" style="border-color:#b070ff"><div style="font-size:30px">🌀</div><div class="grow"><div class="t">Endless Dive</div><div class="s">Send 2–4 geared heroes through the portal. Floors get harder forever: <b>recall to bank your loot</b> or fight on for rare materials (💎 🐉 🪶). Loot is banked automatically every 5 floors; a wipe-out loses what is unbanked. Best: floor ${G.diveBest}.</div></div><button class="act" data-act="dive" ${dq || rd.length < 2 ? 'disabled' : ''}>${dq ? 'In progress' : (rd.length < 2 ? 'Need 2 ready' : 'Dive!')}</button></div>`;
         { const C = G.flags.chal || { daily: {}, rush: 0, hard: 0 }, dd = C.daily.key === dayKey() ? C.daily : { best: 0, claimed: false }, off = dq || rd.length < 2 ? 'disabled' : '', ce = calEvent();
-          h += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0"><button class="act red" data-act="dive" data-m="daily" ${off}>📅 Daily Dive (best ${dd.best}${dd.claimed ? ' ✔' : ''})</button><button class="act red" data-act="dive" data-m="rush" ${off}>👹 Boss Rush (best ${C.rush})</button><button class="act red" data-act="dive" data-m="hard" ${off}>💀 Hardcore (best ${C.hard})</button><button class="act red" data-act="dive" data-m="speed" ${off}>⏱ Speed Dive (best ${C.speed || 0})</button></div><div class="s">Daily: the same dungeon for everyone today; first run to floor 3+ earns a bonus. Boss Rush: a boss every floor, double pay. Hardcore: no rescue, +50% gold. Speed Dive: you are recalled after 4 minutes; get as deep as you can.</div>`;
+          h += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0"><button class="act red" data-act="dive" data-m="daily" ${off}>📅 Daily Dive (best ${dd.best}${dd.claimed ? ' ✔' : ''})</button><button class="act red" data-act="dive" data-m="rush" ${off}>👹 Boss Rush (best ${C.rush})</button><button class="act red" data-act="dive" data-m="hard" ${off}>💀 Hardcore (best ${C.hard})</button><button class="act red" data-act="dive" data-m="speed" ${off}>⏱ Speed Dive (best ${C.speed || 0})</button><button class="act red" data-act="dive" data-m="weekly" ${off}>📅 Weekly: ${weekRule().icon} ${weekRule().name} (best ${weekState().best}${weekState().claimed ? ' ✔' : ''})</button></div><div class="s">Daily: the same dungeon for everyone today; first run to floor 3+ earns a bonus. Boss Rush: a boss every floor, double pay. Hardcore: no rescue, +50% gold. Speed Dive: you are recalled after 4 minutes; get as deep as you can.</div>`;
           if (ce) h += `<div class="s" style="color:#ffd24a">${ce.icon} ${ce.name}: ${ce.desc}</div>`; }
       }
       h += '<div class="sec">Active Expeditions</div>' + (act.map(q => q.dive
@@ -2034,6 +2068,7 @@ function modalContent() {
       <div class="row"><div class="grow"><div class="t">♿ Accessibility</div><div class="s">Text size and a colour-blind-friendly palette.</div></div><div style="display:flex;gap:4px"><button class="act" data-act="textsize">Text size: ${['Normal', 'Large', 'Largest'][a11y.text]}</button><button class="act ${a11y.cb ? '' : 'red'}" data-act="cbmode">Colour-blind mode: ${a11y.cb ? 'On' : 'Off'}</button></div></div>
       ${window.AndroidNotify ? `<div class="row"><div class="grow"><div class="t">🔔 Reminders</div><div class="s">A note when a party returns, or when the guild misses you.</div></div><button class="act ${notifyOn() ? '' : 'red'}" data-act="notifytoggle">${notifyOn() ? 'On' : 'Off'}</button></div>` : ''}
       <div class="row"><div class="grow"><div class="t">📈 Performance</div><div class="s">Frame time ${frameEma.toFixed(0)} ms (about ${Math.round(1000 / Math.max(8, frameEma))} fps)${slowT >= 5 ? ' · slow: decorations paused' : ''}. When it stays slow the game pauses pets and disaster effects, and Auto graphics lowers the resolution.</div></div></div>
+      ${G.flags.legendDone ? `<div class="row"><div class="grow"><div class="t">👑 Crown favor</div><div class="s">Level ${kingdomLv()}/10 · ${kingdom().fame % KW_PER}/${KW_PER} toward the next. Each level: +2% quest gold. The Crown calls for aid every few minutes.</div></div></div>` : ''}
       <div class="row"><div class="grow"><div class="t">📷 Photo mode</div><div class="s">Hides the interface so you can look at your town. Tap to leave.</div></div><button class="act" data-act="photo">Start</button></div>
       <div class="row"><div class="grow"><div class="t">🧾 Error log</div><div class="s">${readErrs().length} recorded on this device.</div></div><button class="act red" data-act="errlog">Open</button></div>
       <div class="row"><div class="grow"><div class="t">🌐 Language</div><div class="s">English / 한국어 / 日本語</div></div>${Object.entries(LANGS).map(([k, n]) => `<button class="act ${getLang() === k ? '' : 'red'}" style="${getLang() === k ? 'outline:2px solid #fff8' : ''}" data-act="lang" data-l="${k}">${n}</button>`).join('')}</div>
@@ -2209,7 +2244,7 @@ function modalContent() {
     case 'building': {
       const b = G.buildings.find(x => x.id === modalArg); if (!b) return ['', ''];
       const t = BUILDINGS[b.type]; let h = `<div class="s">${t.desc}</div><div class="row"><div class="grow"><div class="t">Level ${b.level}</div>`;
-      if (b.type === 'forge') h += `<div class="sec">📜 Legendary weapons <span class="s">· blueprints drop from bosses and every 10th dive floor</span></div>` + Object.entries(LEGWEP).map(([k, L]) => `<div class="row"><div style="font-size:24px">${bps()[k] ? L.icon : '❔'}</div><div class="grow"><div class="t">${bps()[k] ? L.name : 'Unknown blueprint'} <span class="tag">${CLASSES[L.cls].label}</span></div><div class="s">${bps()[k] ? L.desc : 'Defeat bosses or dive deeper to find it.'}</div>${bps()[k] && !armory()[k] ? `<div class="s">${L.gold}g · ${L.ingots} 🔩 · ${L.mythril} 💎</div>` : ''}</div>${armory()[k] ? `<span class="tag">✔ ${armory()[k] === 'free' ? 'Forged' : armory()[k]}</span>` : bps()[k] ? `<button class="act" data-act="craftlegend" data-k="${k}" ${G.gold < L.gold || G.ingots < L.ingots || G.rare.mythril < L.mythril ? 'disabled' : ''}>Forge</button>` : ''}</div>`).join('');
+      if (b.type === 'forge') h += `<div class="sec">📜 Legendary weapons <span class="s">· blueprints drop from bosses and every 10th dive floor</span></div>` + Object.entries(LEGWEP).map(([k, L]) => `<div class="row"><div style="font-size:24px">${bps()[k] ? L.icon : '❔'}</div><div class="grow"><div class="t">${bps()[k] ? L.name : 'Unknown blueprint'} <span class="tag">${CLASSES[L.cls].label}</span></div><div class="s">${bps()[k] ? L.desc : 'Defeat bosses or dive deeper to find it.'}</div>${bps()[k] && !armory()[k] ? `<div class="s">${legCost(L)}g · ${L.ingots} 🔩 · ${L.mythril} 💎</div>` : ''}</div>${armory()[k] ? `<span class="tag">✔ ${armory()[k] === 'free' ? 'Forged' : armory()[k]}</span>` : bps()[k] ? `<button class="act" data-act="craftlegend" data-k="${k}" ${G.gold < legCost(L) || G.ingots < L.ingots || G.rare.mythril < L.mythril ? 'disabled' : ''}>Forge</button>` : ''}</div>`).join('');
       if (b.type === 'forge') h += `<div class="s">Weapons in stock: <b>${b.stock}/${stockCap(b)}</b> · Iron Ore: ${G.ore}</div><div class="bar"><i style="width:${b.progress * 100}%"></i></div>`;
       if (b.type === 'alchemy') h += `<div class="s">Potions in stock: <b>${b.stock}/${stockCap(b)}</b> · Herbs: ${G.herbs}</div><div class="bar"><i style="width:${b.progress * 100}%"></i></div>`;
       if (b.type === 'forge' || b.type === 'alchemy') { const g = b.grade || 1; h += `<div class="s" style="margin-top:6px">Crafting grade (switch when stock is empty):</div><div style="display:flex;gap:5px;margin:3px 0">` + [1, 2, 3].map(x => `<button class="act ${g === x ? '' : 'red'}" style="${g === x ? 'outline:2px solid #fff8' : ''}" data-act="grade" data-id="${b.id}" data-g="${x}" ${gradeUnlocked(b, x) ? '' : 'disabled'}>${GRADE[b.type][x]}<br><span style="font-weight:400;font-size:11px">${costText(gradeCost(b.type, x))}</span></button>`).join('') + '</div>'; }
@@ -2930,4 +2965,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__renderer = renderer; window.__scene = scene; window.__api = { dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__renderer = renderer; window.__scene = scene; window.__api = { weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };

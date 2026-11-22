@@ -274,6 +274,13 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^📅 Weekly: (\S+) (.+) \(best (\d+)( ✔)?\)$/, (i, n, b, c) => `📅 주간: ${i} ${f(n)} (최고 ${b}${c || ''})`],
+    [/^📅 Weekly challenge cleared! \+(\d+)g( and 2 Mythril)?$/, (g, m) => `📅 주간 챌린지 클리어! +${g}골드${m ? '와 미스릴 2' : ''}`],
+    [/^📅 Weekly challenge: floor (\d+)\.$/, n => `📅 주간 챌린지: ${n}층.`],
+    [/^👑 Crown favor ([+-]\d+)$/, n => `👑 왕실 호감 ${n}`],
+    [/^👑 The Crown honours the guild: level (\d+)! \+(\d+)g, \+2⭐$/, (l, g) => `👑 왕실이 길드를 치하합니다: ${l}단계! +${g}골드, +2⭐`],
+    [/^👑 Crown favor reached level (\d+)\.$/, l => `👑 왕실 호감도 ${l}단계 도달.`],
+    [/^Level (\d+)\/10 · (\d+)\/100 toward the next\. Each level: \+2% quest gold\. The Crown calls for aid every few minutes\.$/, (l, p) => `${l}/10단계 · 다음까지 ${p}/100. 단계마다 퀘스트 골드 +2%. 왕실은 몇 분마다 도움을 청합니다.`],
     [/^📜 Blueprint found: (\S+) (.+)! Craft it at the Forge\.$/, (i, n) => `📜 설계도 발견: ${i} ${f(n)}! 대장간에서 제작하세요.`],
     [/^📜 Found the blueprint of (.+) \((.+)\)\.$/, (n, s2) => `📜 ${f(n)}의 설계도를 찾았습니다 (${f(s2)}).`],
     [/^(\S+) The smiths forged (.+)!$/, (i, n) => `${i} 대장장이들이 ${f(n)}을(를) 제작했습니다!`],

@@ -61,6 +61,7 @@ English and 한국어 (Korean). Pick a language in ⚙ Settings; it is remembere
 - Companions (pets with small bonuses), hero charms forged at the Forge, trade caravans from the Market, and hall banner colour themes.
 - Accessibility (text size, colour-blind mode), partial Japanese, seasonal music, photo mode and a local error log with a copy button.
 - Away summary with an optional double-reward ad, Speed Dive, hero promotion branches, region trials with a Champion title, a free monthly pass, 3D companions, disaster visuals, hall roof themes and a hero diary.
+- 3D dive-room dioramas, legendary weapons (blueprints → Forge → equip), Trophy Hall, Crown favor after the legend quest, weekly seeded challenge, more legacy perks and achievements.
 - Android reminder notifications (expedition returned, heroes rested, come-back nudge); toggle in Settings.
 - Release prep: `docs/STORE.md` (listing text, data-safety answers, checklist), `tools/store_screenshots.cjs`, `tests/smoke.e2e.cjs` (save-migration smoke test, also run by `.github/workflows/smoke.yml`).
 - **Seasons and time:** four seasons with perks and falling petals/leaves/snow, a day-night cycle, hero chatter, a Guild Chronicle diary, decor with a happiness perk (fountain, banner, statue) and the Ember Colossus legend questline after Fortress.
