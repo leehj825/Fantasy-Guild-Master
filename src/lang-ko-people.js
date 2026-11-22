@@ -602,5 +602,6 @@ export const KO_PEOPLE = {
   'Your guild misses you! Come and collect your daily reward.': '길드가 당신을 기다려요! 오늘의 보상을 받으러 오세요.',
   '🔔 Reminders': '🔔 알림',
   'A note when a party returns, or when the guild misses you.': '원정대가 돌아오거나 길드가 당신을 기다릴 때 알려 드립니다.',
+  '📈 Performance': '📈 성능',
   'hearty stew': '푸짐한 스튜', 'roast boar': '멧돼지 구이', 'honey bread': '꿀빵', 'mushroom pie': '버섯 파이', 'herbal tea': '약초차',
 };

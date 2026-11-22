@@ -274,6 +274,7 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^Frame time (\d+) ms \(about (\d+) fps\)( · slow: decorations paused)?\. When it stays slow the game pauses pets and disaster effects, and Auto graphics lowers the resolution\.$/, (m, f, sl) => `프레임 시간 ${m}ms (약 ${f}fps)${sl ? ' · 느림: 장식 효과 일시 정지' : ''}. 계속 느리면 반려동물과 재난 효과를 멈추고, 자동 그래픽은 해상도를 낮춥니다.`],
     [/^🎟 Monthly pass: tier (\d+) reached! Claim it in the pass menu\.$/, n => `🎟 월간 패스: ${n}단계 도달! 패스 메뉴에서 받으세요.`],
     [/^🎟 Tier (\d+) claimed!$/, n => `🎟 ${n}단계 보상을 받았습니다!`],
     [/^Tier (\d+)$/, n => `${n}단계`],
