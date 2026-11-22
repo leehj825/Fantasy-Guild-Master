@@ -535,7 +535,7 @@ function createHero(d) {
     mesh, pos: mesh.position, bub, state: 'idle', target: null, onArrive: null, timer: 0, onDone: null, cool: 0, phase: Math.random() * 6, vis: true,
   };
   codexAdd('classes', h.cls); if (d.tags) { h.tags = d.tags; h.bio = d.bio; h.likes = d.likes; h.dislikes = d.dislikes; } else Object.assign(h, makeProfile(h.cls));
-  (h.tags || []).forEach(t => codexAdd('tags', t)); h.loy = d.loy ?? 60; h.charm = d.charm || null; h.eq = d.eq || null; h.sk = d.sk || null; h.role = d.role || null; h.wep = d.wep || null; h.diary = d.diary || []; h.marks = d.marks || []; h.title = d.title || null; h.boon = d.boon || null; h.arc = d.arc || { id: pickArc(h), ch: 0 };
+  (h.tags || []).forEach(t => codexAdd('tags', t)); h.loy = d.loy ?? 60; h.charm = d.charm || null; h.hat = d.hat || null; setTimeout(() => { try { applyHat(h); } catch (e) { /* cosmetic */ } }, 50); h.eq = d.eq || null; h.sk = d.sk || null; h.role = d.role || null; h.wep = d.wep || null; h.diary = d.diary || []; h.marks = d.marks || []; h.title = d.title || null; h.boon = d.boon || null; h.arc = d.arc || { id: pickArc(h), ch: 0 };
   mesh.userData.hid = h.id; G.heroes.push(h); if (loadedOnce) cardAdd(h); if (h.vip) addStar(h); if (h.promo) addPromoGear(h); if (d.bonds === undefined) assignBonds(h); else if (!h.aff) { h.aff = {}; for (const [id, k] of Object.entries(h.bonds || {})) h.aff[id] = k === 'rival' ? -35 : 35; }
   return h;
 }
@@ -2006,6 +2006,26 @@ function dvChoose(i) {
   if (L.length > 14) r.log = L.slice(-14); if (!r.offer) dvAdvance(r);
 }
 function dvRelic(i) { const r = dvState().run; if (!r || !r.offer) return; r.relics.push(r.offer[i]); r.log.push(`  Took ${DV_RELICS[r.offer[i]][1]}.`); r.offer = null; dvAdvance(r); }
+// ---- cosmetics: hats unlocked by achievements; purely visual
+const HATS = {
+  plume: ['🪶', 'Red plume', 'boss3', 'Defeat 3 different bosses.'], crown: ['👑', 'Golden crown', 'bossall', 'Defeat all 6 bosses.'], party: ['🎉', 'Party hat', 'family', 'Welcome a child of the guild.'], halo: ['😇', 'Halo', 'pass10', 'Reach tier 10 of the monthly pass.'], flowers: ['🌸', 'Flower wreath', 'champ', 'Pass all three trials of a region.'], explorer: ['🧢', 'Explorer’s cap', 'rooms10', 'Decide the fate of 10 dive rooms.'],
+};
+const hatOwned = k => !!(G.flags.ach || {})[HATS[k][2]];
+function buildHat(k) {
+  const g = new THREE.Group(), V = (...a) => g.add(vox(...a));
+  if (k === 'plume') { V(0.34, 0.1, 0.34, 0xb0b4bc, 0, 0, 0); V(0.08, 0.34, 0.08, 0xd03a3a, 0.1, 0.1, 0); }
+  else if (k === 'crown') { V(0.34, 0.12, 0.34, 0xe8c04a, 0, 0, 0, 0xffc040, 0.4); for (const [x, z] of [[-0.13, -0.13], [0.13, -0.13], [-0.13, 0.13], [0.13, 0.13]]) V(0.07, 0.12, 0.07, 0xffd870, x, 0.12, z, 0xffc040, 0.5); }
+  else if (k === 'party') { const c = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.36, 8), new THREE.MeshLambertMaterial({ color: 0xe84aa8 })); c.position.y = 0.18; g.add(c); g.add(sphG(0.06, 0xffe84a, 0, 0.38, 0)); }
+  else if (k === 'halo') { const t = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.025, 6, 20), new THREE.MeshBasicMaterial({ color: 0xffe880 })); t.rotation.x = Math.PI / 2; t.position.y = 0.22; g.add(t); }
+  else if (k === 'flowers') { for (let i = 0; i < 7; i++) g.add(sphG(0.055, [0xff7ab8, 0xffd24a, 0xffffff][i % 3], Math.cos(i / 7 * 6.283) * 0.2, 0.04, Math.sin(i / 7 * 6.283) * 0.2)); }
+  else if (k === 'explorer') { V(0.34, 0.12, 0.34, 0x4a7a3a, 0, 0, 0); V(0.34, 0.04, 0.16, 0x3a5a2a, 0, 0.0, 0.22); }
+  return g;
+}
+function applyHat(h) {
+  if (h.hatMesh) { h.mesh.remove(h.hatMesh); h.hatMesh = null; }
+  if (!h.hat || !HATS[h.hat]) return; const box = new THREE.Box3().setFromObject(h.mesh), top = (box.max.y - h.mesh.position.y) / (h.mesh.scale.y || 1);
+  const g = buildHat(h.hat); g.position.y = top - 0.05; h.mesh.add(g); h.hatMesh = g;
+}
 // ---- hero diary: a few lines per hero about what happened to them
 const diary = (h, text) => { if (!h) return; const d = (h.diary ||= []); d.push({ d: Math.floor(G.time / 60) + 1, t: text }); if (d.length > 8) d.shift(); };
 // ---- 3D companions and disaster visuals
@@ -2695,6 +2715,7 @@ function modalContent() {
         T[cur] += `<div class="row"><div class="grow"><div class="t">⚒ Gear +${pl}/${mp}</div><div class="s">Each step: +5% power. ${first('forge') ? (pl >= mp ? 'Upgrade the Forge for more steps.' : `Next: ${pc.gold}g, ${pc.ore} ore${pc.ing ? ', ' + pc.ing + ' ingots' : ''}`) : 'Needs a Forge.'}</div></div><button class="act" data-act="reinforce" data-id="${h.id}" ${canP ? '' : 'disabled'}>Reinforce</button></div>`;
         T[cur] += `<div class="row"><div class="grow"><div class="t">🏋 Intensive training</div><div class="s">${h.train > 0 ? 'Training… ' + Math.ceil(h.train) + 's left' : first('training') ? `80 s of drills for ${tc}g — heroes in training cannot go on quests.` : 'Needs a Training Grounds.'}</div></div><button class="act" data-act="trainhero" data-id="${h.id}" ${first('training') && !(h.train > 0) && h.state !== 'quest' && G.gold >= tc ? '' : 'disabled'}>Train</button></div>`; }
       cur = 'story';
+      T[cur] += `<div class="sec">🎩 Hat</div><div style="display:flex;gap:5px;flex-wrap:wrap">` + `<button class="act ${h.hat ? 'red' : ''}" data-act="sethat" data-id="${h.id}" data-k="">None</button>` + Object.entries(HATS).map(([k, H]) => hatOwned(k) ? `<button class="act ${h.hat === k ? '' : 'red'}" data-act="sethat" data-id="${h.id}" data-k="${k}">${H[0]} ${H[1]}</button>` : `<button class="act red" disabled title="${H[3]}">🔒 ${H[1]}</button>`).join('') + `</div><div class="s">Hats unlock with achievements (hover a locked hat to see how).</div>`;
       if ((h.diary || []).length) T[cur] += `<div class="sec">📔 Diary</div>` + [...h.diary].reverse().slice(0, 6).map(e => `<div class="s">Day ${e.d}: ${e.t}</div>`).join('');
       cur = 'gear';
       { const own = Object.keys(LEGWEP).filter(k => armory()[k] && LEGWEP[k].cls === h.cls); if (h.wep || own.length) T[cur] += `<div class="sec">⚔ Legendary weapon${h.wep ? ': ' + LEGWEP[h.wep].icon + ' ' + LEGWEP[h.wep].name : ''}</div>` + own.filter(k => k !== h.wep).map(k => `<div class="row"><div style="font-size:22px">${LEGWEP[k].icon}</div><div class="grow"><div class="t">${LEGWEP[k].name}</div><div class="s">${LEGWEP[k].desc}${armory()[k] !== 'free' ? ' (now with ' + armory()[k] + ')' : ''}</div></div><button class="act" data-act="equiplegend" data-id="${h.id}" data-k="${k}">Equip</button></div>`).join(''); }
@@ -2798,6 +2819,7 @@ const ACT = {
   storychoice(d) { chooseStory(+d.i); },
   dive(d) { dispatchDive(d && d.m); },
   hero(d) { openModal('hero', +d.id); },
+  sethat(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h) return; if (d.k && !(HATS[d.k] && hatOwned(d.k))) return; h.hat = d.k || null; applyHat(h); sfx('click'); },
   skup(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h || !BRANCH[d.k] || skPoints(h) <= 0) return; h.sk = h.sk || {}; if ((h.sk[d.k] || 0) >= 3) return; h.sk[d.k] = (h.sk[d.k] || 0) + 1; sfx('level'); if (h.sk[d.k] === 3) toast(`🌳 ${h.name} mastered ${BRANCH[d.k].names[h.cls]}!`); },
   skreset(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h || G.gold < 200 || !h.sk) return; G.gold -= 200; h.sk = null; toast(`🌳 ${h.name}'s mastery points were reset.`); },
   role(d) { const h = G.heroes.find(x => x.id === +d.id), R = ROLES[d.k]; if (!h || !R || h.level < 3 || G.gold < roleCost(h)) return; G.gold -= roleCost(h); h.role = d.k; diary(h, `Took up the role of ${R[1].toLowerCase()}.`); toast(`${R[0]} ${h.name} is now a ${R[1].toLowerCase()}.`); sfx('goal'); },
@@ -3185,7 +3207,7 @@ function serialize() {
   return {
     v: 1, savedAt: Date.now(), g,
     buildings: G.buildings.map(b => ({ type: b.type, cx: b.cx, cz: b.cz, rot: b.rot || 0, level: b.level, stock: b.stock, progress: b.progress, spec: b.spec })),
-    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, promo: h.promo, talents: h.talents, bonds: h.bonds, aff: h.aff, vow: h.vow, quests: h.quests, vip: h.vip, tags: h.tags, bio: h.bio, likes: h.likes, dislikes: h.dislikes, loy: h.loy, marks: h.marks, plus: h.plus, train: h.train, arc: h.arc, title: h.title, boon: h.boon, charm: h.charm, eq: h.eq, sk: h.sk, role: h.role, wep: h.wep, diary: h.diary, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
+    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, promo: h.promo, talents: h.talents, bonds: h.bonds, aff: h.aff, vow: h.vow, quests: h.quests, vip: h.vip, tags: h.tags, bio: h.bio, likes: h.likes, dislikes: h.dislikes, loy: h.loy, marks: h.marks, plus: h.plus, train: h.train, arc: h.arc, title: h.title, boon: h.boon, charm: h.charm, hat: h.hat, eq: h.eq, sk: h.sk, role: h.role, wep: h.wep, diary: h.diary, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
     quests: G.quests.map(q => { const o = {}; for (const [k, v] of Object.entries(q)) if (k !== 'heroes' && k !== 'script') o[k] = v; o.heroIds = (q.heroes || []).map(h => h.id); return o; }),
     extra: serializeExtra(),
   };
@@ -3525,4 +3547,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__renderer = renderer; window.__scene = scene; window.__api = { dvStart, dvChoose, dvRelic, dvState, epilogue, ENDINGS, tickScenes, tickRivalArc, weather, tickCalendar, dayNo, tierDecor, whyFailed, tickAutoManage, rollItem, dropLoot, equipItem, inv, maybeFork, smiteGoblin, tickFlash, cardAdd, tickVisitors, districts, fullKit, ROLES, missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__renderer = renderer; window.__scene = scene; window.__api = { applyHat, HATS, dvStart, dvChoose, dvRelic, dvState, epilogue, ENDINGS, tickScenes, tickRivalArc, weather, tickCalendar, dayNo, tierDecor, whyFailed, tickAutoManage, rollItem, dropLoot, equipItem, inv, maybeFork, smiteGoblin, tickFlash, cardAdd, tickVisitors, districts, fullKit, ROLES, missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
