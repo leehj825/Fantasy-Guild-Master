@@ -274,6 +274,11 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^✅ Mission complete: (.+) \(\+(\d+)g\)$/, (t, g) => `✅ 미션 완료: ${f(t)} (+${g}골드)`],
+    [/^🎁 All of today’s missions done! Bonus chest: \+400g, \+10 ore, \+10 herbs$/, () => '🎁 오늘의 미션을 모두 완료했습니다! 보너스 상자: +400골드, 광석 +10, 약초 +10'],
+    [/^(\d+) heroes are ready — send an expedition$/, n => `영웅 ${n}명이 준비됐습니다 — 원정을 보내세요`],
+    [/^(\d+) heroes could use your attention$/, n => `영웅 ${n}명을 살펴보세요`],
+    [/^Mission: (.+) \((\d+)\/(\d+)\)$/, (t, a, b) => `미션: ${f(t)} (${a}/${b})`],
     [/^(\d+) heroes · (\d+) need attention$/, (a, b) => `영웅 ${a}명 · ${b}명 확인 필요`],
     [/^🏋 (\d+) heroes began training\.$/, n => `🏋 영웅 ${n}명이 훈련을 시작했습니다.`],
     [/^⚒ Reinforced the gear of (\d+) heroes\.$/, n => `⚒ 영웅 ${n}명의 장비를 강화했습니다.`],

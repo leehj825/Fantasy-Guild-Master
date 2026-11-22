@@ -870,7 +870,7 @@ function resolveQuest(q) {
     h.state = 'idle'; h.cool = 0; h.stamina = Math.max(20, h.stamina - 25 * (1 - 0.12 * Math.min(3, retireN('scout')) - (hasPet('hawk') ? 0.08 : 0)));
     h.pos.set(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1)); h.mesh.visible = true; h.target = null;
     if (!ok && q.deaths.includes(h.id)) { memorialize(h, `fell on "${q.name}"`); if (h.vip) G.renown = Math.max(0, G.renown - 1); removeHero(h, h.vip ? `☠ ${h.name} — a legend of the guild — has fallen!` : `${h.name} the ${CLASSES[h.cls].label} fell in battle...`); return; }
-    h.quests = (h.quests || 0) + 1; if (ok && h === q.heroes[0]) { passPts(1); if (q.boss && Math.random() < 0.5) dropBlueprint(ENEMY_NAME[q.boss] || 'a boss'); } diary(h, ok ? `Returned victorious from “${q.name}”.` : `Limped home from “${q.name}”.`);
+    h.quests = (h.quests || 0) + 1; if (ok && h === q.heroes[0]) { passPts(1); missionTick('quest'); if (q.boss && Math.random() < 0.5) dropBlueprint(ENEMY_NAME[q.boss] || 'a boss'); } diary(h, ok ? `Returned victorious from “${q.name}”.` : `Limped home from “${q.name}”.`);
     if (ok) gainXp(h, traitOf(h) === 'scholar' ? 2 : 1);
     if (ok && h.bonds && Object.entries(h.bonds).some(([id, k]) => k === 'apprentice' && q.heroes.some(x => x.id === +id))) gainXp(h, 1);   // a mentor in the party teaches
     h.loy = Math.max(0, Math.min(100, (h.loy ?? 60) + (ok ? 1 : -1)));
@@ -965,7 +965,7 @@ function checkStories() {
 function showStoryBanner() { const st = STORIES.find(x => x.id === G.flags.pending); if (!st) return; if (G.flags.pol && G.flags.pol.story === 'auto') { const i = st.choices.findIndex(c => !c.ok || c.ok()); if (i >= 0) { chooseStory(i); toast('📬 Auto-handled: ' + st.title); return; } } sfx('chime'); toast('📬 New event: ' + st.title); }
 function chooseStory(i) {
   const st = STORIES.find(x => x.id === G.flags.pending); if (!st) return; const c = st.choices[i]; if (!c || (c.ok && !c.ok())) return;
-  c.fx(); G.flags.pending = null; hideBanner('story'); closeModal(); toast(`📖 ${st.title}: ${c.label}`); chron(`📖 ${st.title}: ${c.label}`);
+  c.fx(); missionTick('story'); G.flags.pending = null; hideBanner('story'); closeModal(); toast(`📖 ${st.title}: ${c.label}`); chron(`📖 ${st.title}: ${c.label}`);
 }
 
 /* ------------------------------------------------------------------ *
@@ -1002,7 +1002,7 @@ function diveTick(q, dt) {
   q.elapsed += dt; q.t = q.dur - q.elapsed; const S = q.script; ensureFloors(q, q.elapsed);
   while (q.cleared < S.floors.length && S.floors[q.cleared].e <= q.elapsed && !S.floors[q.cleared].lost) {
     const f = S.floors[q.cleared]; for (const k of Object.keys(q.pending)) q.pending[k] += f.reward[k] || 0;
-    q.cleared++; if (!q.mode) G.diveBest = Math.max(G.diveBest, q.cleared);
+    missionTick('dive'); q.cleared++; if (!q.mode) G.diveBest = Math.max(G.diveBest, q.cleared);
     if (diveCheckpoint(f.k)) {
       toast(`🏁 Checkpoint — floor ${f.k + 1}! Banked: ${bankPending(q)}`); if (Math.random() < 0.45) pushEvent(pick(ROOM_KINDS)); if ((f.k + 1) % 10 === 0 && Math.random() < 0.7) dropBlueprint(`dive floor ${f.k + 1}`);
       if (q.offer) pickRelic(q, 0, true);   // an unchosen offer is taken automatically
@@ -1522,7 +1522,7 @@ const EVENTS = {
 };
 const evq = () => (G.flags.evq ||= []);
 function pushEvent(id) { const q = evq(); if (q.length >= 3 || q.includes(id)) return; q.push(id); sfx('chime'); toast(`📬 ${EVENTS[id].icon} ${EVENTS[id].title}`); }
-function chooseEvent(i) { const q = evq(), E = EVENTS[q[0]]; if (!E) return; const c = E.ch[i]; if (!c || (c.ok && !c.ok())) return; { const sn = { treasure: 'chest', trap: 'trap', fire: 'fire', flood: 'splash', shop: 'coin', rest: 'chime', heir: 'goal' }[q[0]]; if (sn) sfx(sn); } c.fx(); if (ROOM_KINDS.includes(evq()[0])) G.flags.rooms = (G.flags.rooms || 0) + 1; chron(`${E.icon} ${E.title}: ${c.label.replace(/\s*\(.*$/, '')}`); q.shift(); closeModal(); if (q.length) setTimeout(() => openModal('event'), 200); }
+function chooseEvent(i) { const q = evq(), E = EVENTS[q[0]]; if (!E) return; const c = E.ch[i]; if (!c || (c.ok && !c.ok())) return; missionTick('story'); { const sn = { treasure: 'chest', trap: 'trap', fire: 'fire', flood: 'splash', shop: 'coin', rest: 'chime', heir: 'goal' }[q[0]]; if (sn) sfx(sn); } c.fx(); if (ROOM_KINDS.includes(evq()[0])) G.flags.rooms = (G.flags.rooms || 0) + 1; chron(`${E.icon} ${E.title}: ${c.label.replace(/\s*\(.*$/, '')}`); q.shift(); closeModal(); if (q.length) setTimeout(() => openModal('event'), 200); }
 // ---- after the legend: the Crown's favor grows with each call to arms; every level gives a permanent bonus
 const KW_PER = 100, kingdom = () => (G.flags.kw ||= { fame: 0, t: 300 });
 const kingdomLv = () => Math.min(10, Math.floor(kingdom().fame / KW_PER));
@@ -1644,6 +1644,39 @@ const PASS_STEP = 40, monthKey = () => { const d = new Date(); return d.getFullY
 function pass() { const f = G.flags; if (!f.sp || f.sp.m !== monthKey()) f.sp = { m: monthKey(), pts: 0, claimed: 0 }; return f.sp; }
 const passTier = () => Math.min(10, Math.floor(pass().pts / PASS_STEP));
 function passPts(n) { const sp = pass(), before = passTier(); sp.pts += n + (n >= 5 ? legacyLvl('patron') : 0); if (passTier() > before) { toast(`🎟 Monthly pass: tier ${passTier()} reached! Claim it in the pass menu.`); sfx('chime'); } }
+// ---- today's three missions, and a one-line suggestion for what to do next
+const MISSIONS = [
+  { id: 'quest', icon: '📜', text: 'Complete expeditions', need: [2, 3], gold: 150 },
+  { id: 'upgrade', icon: '⚒', text: 'Reinforce or train heroes', need: [1, 2], gold: 150 },
+  { id: 'story', icon: '📖', text: 'Resolve stories or events', need: [1, 2], gold: 180 },
+  { id: 'build', icon: '🔨', text: 'Build something', need: [1, 1], gold: 120 },
+  { id: 'dive', icon: '🌀', text: 'Clear dive floors', need: [3, 6], gold: 200, req: () => !!first('portal') },
+  { id: 'gain', icon: '💰', text: 'Earn gold from tavern meals', need: [4, 8], gold: 120, req: () => !!first('tavern') },
+];
+function missions() {
+  const f = G.flags, key = dayKey(); if (f.dm && f.dm.key === key) return f.dm;
+  let h = 0; for (const c of key) h = (h * 31 + c.charCodeAt(0)) % 10007;
+  const pool = MISSIONS.filter(m => !m.req || m.req()), pick3 = []; for (let i = 0; pick3.length < 3 && i < 40; i++) { const m = pool[(h + i * 7) % pool.length]; if (!pick3.includes(m)) pick3.push(m); }
+  f.dm = { key, m: pick3.map((m, i) => ({ id: m.id, need: m.need[0] + ((h >> i) % (m.need[1] - m.need[0] + 1)), got: 0, done: false })), bonus: false };
+  return f.dm;
+}
+function missionTick(id, n = 1) {
+  const d = missions(); for (const m of d.m) if (m.id === id && !m.done) { m.got += n; if (m.got >= m.need) { m.done = true; const def = MISSIONS.find(x => x.id === id); G.gold += def.gold; passPts(3); toast(`✅ Mission complete: ${def.text} (+${def.gold}g)`); sfx('goal'); } }
+  if (!d.bonus && d.m.every(m => m.done)) { d.bonus = true; G.gold += 400; G.ore += 10; G.herbs += 10; G.rare.mythril += 0; passPts(5); toast('🎁 All of today’s missions done! Bonus chest: +400g, +10 ore, +10 herbs'); sfx('chest'); chron('🎁 Finished all daily missions.'); }
+}
+function nextAdvice() {
+  const L = G.flags.login;
+  if (L && L.pending) return ['🎁', 'Claim your daily reward', 'daily'];
+  if (G.flags.pending || evq().length) return ['📬', 'A decision is waiting in your inbox', 'inbox'];
+  if (!first('tavern')) return ['🔨', 'Build a Tavern so heroes can rest', 'build'];
+  if (!first('forge')) return ['🔨', 'Build a Forge to arm your heroes', 'build'];
+  const rd = readyHeroes().length, open = G.quests.filter(q => q.state === 'open').length, out = G.quests.filter(q => q.state === 'active').length;
+  if (rd >= 2 && open && out < 2 + G.boardLvl) return ['📜', `${rd} heroes are ready — send an expedition`, 'quests'];
+  if (todoCount()) return ['👥', `${todoCount()} heroes could use your attention`, 'heroes'];
+  if (G.heroes.length < popCap() && G.gold >= 60) return ['📣', 'Recruit more heroes', 'recruit'];
+  const d = missions(), m = d.m.find(x => !x.done); if (m) { const def = MISSIONS.find(x => x.id === m.id); return [def.icon, `Mission: ${def.text} (${m.got}/${m.need})`, { quest: 'quests', upgrade: 'heroes', story: 'inbox', build: 'build', dive: 'quests', gain: 'quests' }[m.id]]; }
+  return ['🏗', 'Spend gold on buildings and upgrades', 'build'];
+}
 // ---- hero management: a Heroes screen (sort, filter, to-do badges, bulk actions) and nameplates in the town
 let heroSort = 'level', heroFilter = 'all';
 const SORTS = { level: 'Level', tired: 'Tired first', cls: 'Class', todo: 'To-do' }, FILTERS = { all: 'All', todo: 'To-do', tired: 'Tired', gearless: 'No gear', quest: 'On quest' };
@@ -1864,7 +1897,7 @@ function choiceScore(c) { const f = c.fx; return (f.loy || 0) + (f.happy || 0) *
 function bestChoice(ch) { let best = -1, bs = -1e9; ch.choices.forEach((c, i) => { if (c.cost && G.gold < c.cost) return; const sc = choiceScore(c); if (sc > bs) { bs = sc; best = i; } }); return best; }
 function resolveHeroStory(h, i) {
   const ch = storyChapter(h), c = ch && ch.choices[i]; if (!c) return false; if (c.cost && G.gold < c.cost) { toast('Not enough gold.'); return false; } if (c.cost) G.gold -= c.cost;
-  applyFx(h, c.fx); (h.marks = h.marks || []).push(c.label.replace(/ \(.*\)$/, '')); if (h.marks.length > 6) h.marks.shift(); chron(`📖 ${h.name}: ${c.label.replace(/ \(.*\)$/, '')}`);
+  missionTick('story'); applyFx(h, c.fx); (h.marks = h.marks || []).push(c.label.replace(/ \(.*\)$/, '')); if (h.marks.length > 6) h.marks.shift(); chron(`📖 ${h.name}: ${c.label.replace(/ \(.*\)$/, '')}`);
   (G.flags.after = G.flags.after || []).push({ t: G.time + 90 + Math.random() * 90, hid: h.id, good: choiceScore(c) > 0 && Math.random() < 0.6 });
   h.arc.ch++; if (h.arc.ch >= ARCS[h.arc.id].ch.length) codexAdd('arcs', h.arc.id); G.stats.chapters = (G.stats.chapters || 0) + 1; sfx('goal'); toast(`📖 ${h.name}: ${(h.arc.ch >= ARCS[h.arc.id].ch.length ? 'their story reaches its end.' : 'the story goes on…')}`); return true;
 }
@@ -2021,7 +2054,8 @@ function updateHUD() {
   const ex = G.quests.filter(q => q.state === 'active').map(q => { const dv = q.dive, lab = dv ? `Floor ${diveFloorIndex(q.script, q.elapsed) + 1}` : `${Math.ceil(q.t)}s`, pr = dv ? diveProg(q) : 100 - q.t / q.dur * 100; return `<div class="exp" data-act="watch" data-q="${q.id}" title="Watch this expedition live"><span>${dv ? '🌀' : '👁'} ${q.name}</span><span>${lab}</span><div class="bar"><i style="width:${pr}%"></i></div></div>`; }).join('');
   if (ex !== $('expeds')._h) { $('expeds')._h = ex; $('expeds').innerHTML = ex ? trHtml('<h4>Expeditions:</h4>' + ex) : ''; }
   const open = GOALS.map((g, i) => [g, i]).filter(([, i]) => !G.goalsDone[i]).slice(0, 3), nDone = Object.keys(G.goalsDone).length;
-  const html = `<li class="s">${RANKS[G.rank].icon} <b>${RANKS[G.rank].name}</b> · goals ${nDone}/${GOALS.length}</li>` + open.map(([g]) => `<li>☐ ${g[0]} <span class="s">${rewardTags(g[2])}</span></li>`).join('');
+  const adv = nextAdvice(), dm = missions();
+  const html = `<li class="advice" data-open="${adv[2]}">👉 ${adv[0]} ${adv[1]}</li><li class="s">📅 ${dm.m.map(m => m.done ? '✅' : '▢').join(' ')} <span class="s">${dm.m.map(m => MISSIONS.find(x => x.id === m.id).icon + m.got + '/' + m.need).join(' ')}</span></li><li class="s">${RANKS[G.rank].icon} <b>${RANKS[G.rank].name}</b> · goals ${nDone}/${GOALS.length}</li>` + open.map(([g]) => `<li>☐ ${g[0]} <span class="s">${rewardTags(g[2])}</span></li>`).join('');
   if (html !== hudCache) { hudCache = html; $('objList').innerHTML = trHtml(html); }
   const rh = G.orders.map(o => {
     const needs = Object.entries(o.need).filter(([, v]) => v > 0).map(([k, v]) => `${ORDER_SRC[k].icon} ${v}`).join(' + '), avail = Object.keys(o.need).reduce((n, k) => n + (o.need[k] > 0 ? stockOf(k) : 0), 0);
@@ -2393,8 +2427,8 @@ const ACT = {
   htab(d) { heroTab = d.k; },
   hnav(d) { const l = heroList().length ? G.heroes : G.heroes, i = l.findIndex(x => x.id === modalArg); if (i < 0) return; modalArg = l[(i + +d.d + l.length) % l.length].id; },
   hfind(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h) return; closeModal(); camTarget.set(h.pos.x, 0, h.pos.z); viewS = Math.min(viewS, VIEW0.zoom * 0.8); updateCamera(); toast(`🔍 ${h.name}`); h.flash = 3; },
-  bulktrain() { let n = 0; for (const h of G.heroes) { if (h.state === 'quest' || h.train > 0 || !first('training')) continue; const c = trainCost(h); if (G.gold < c) break; G.gold -= c; h.train = 80; n++; } toast(n ? `🏋 ${n} heroes began training.` : 'Nothing to train (or not enough gold).'); },
-  bulkreinforce() { let n = 0; for (const h of G.heroes) { if (!first('forge') || (h.plus || 0) >= maxPlus()) continue; const c = plusCost(h); if (G.gold < c.gold || G.ore < c.ore || G.ingots < c.ing) continue; G.gold -= c.gold; G.ore -= c.ore; G.ingots -= c.ing; h.plus = (h.plus || 0) + 1; n++; } toast(n ? `⚒ Reinforced the gear of ${n} heroes.` : 'Nothing to reinforce (or not enough materials).'); },
+  bulktrain() { let n = 0; for (const h of G.heroes) { if (h.state === 'quest' || h.train > 0 || !first('training')) continue; const c = trainCost(h); if (G.gold < c) break; G.gold -= c; h.train = 80; n++; missionTick('upgrade'); } toast(n ? `🏋 ${n} heroes began training.` : 'Nothing to train (or not enough gold).'); },
+  bulkreinforce() { let n = 0; for (const h of G.heroes) { if (!first('forge') || (h.plus || 0) >= maxPlus()) continue; const c = plusCost(h); if (G.gold < c.gold || G.ore < c.ore || G.ingots < c.ing) continue; G.gold -= c.gold; G.ore -= c.ore; G.ingots -= c.ing; h.plus = (h.plus || 0) + 1; n++; missionTick('upgrade'); } toast(n ? `⚒ Reinforced the gear of ${n} heroes.` : 'Nothing to reinforce (or not enough materials).'); },
   save() { saveGame(false); renderModal(true); },
   tutorial() { tutorial.restart(); closeModal(); },
   newgame() { if (modalArg !== 'confirm') { modalArg = 'confirm'; return; } try { localStorage.removeItem(SAVE_KEY); } catch (e) { } window.__noSave = true; location.reload(); },
@@ -2445,8 +2479,8 @@ const ACT = {
   pave() { const pv = pavable(), c = pv.length * BUILDINGS.road.cost; if (!pv.length || G.gold < c) return; G.gold -= c; pv.forEach(([x, z]) => addBuilding('road', x, z)); sfx('build'); toast(`🛤 Paved ${pv.length} tiles (−${c}g).`); },
   inbox() { openModal('inbox'); },
   polcycle(d) { const O = { hstory: ['ask', 'auto'], story: ['ask', 'auto'], fest: ['ask', 'modest', 'lavish', 'skip'] }[d.k]; if (!O) return; const p = (G.flags.pol = G.flags.pol || {}); p[d.k] = O[(O.indexOf(p[d.k] || 'ask') + 1) % O.length]; },
-  reinforce(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h || !first('forge') || (h.plus || 0) >= maxPlus()) return; const c = plusCost(h); if (G.gold < c.gold || G.ore < c.ore || G.ingots < c.ing) return toast('Not enough materials.'); G.gold -= c.gold; G.ore -= c.ore; G.ingots -= c.ing; h.plus = (h.plus || 0) + 1; G.stats.reinf = (G.stats.reinf || 0) + 1; floatText(h.pos, `⚒ +${h.plus}`, '#ffd24a'); sfx('build'); toast(`⚒ ${h.name}'s gear is now +${h.plus}.`); },
-  trainhero(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h || !first('training') || h.train > 0 || h.state === 'quest') return; const c = trainCost(h); if (G.gold < c) return toast('Not enough gold.'); G.gold -= c; h.train = 80; toast(`🏋 ${h.name} begins intensive training.`); },
+  reinforce(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h || !first('forge') || (h.plus || 0) >= maxPlus()) return; const c = plusCost(h); if (G.gold < c.gold || G.ore < c.ore || G.ingots < c.ing) return toast('Not enough materials.'); G.gold -= c.gold; G.ore -= c.ore; G.ingots -= c.ing; h.plus = (h.plus || 0) + 1; missionTick('upgrade'); G.stats.reinf = (G.stats.reinf || 0) + 1; floatText(h.pos, `⚒ +${h.plus}`, '#ffd24a'); sfx('build'); toast(`⚒ ${h.name}'s gear is now +${h.plus}.`); },
+  trainhero(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h || !first('training') || h.train > 0 || h.state === 'quest') return; const c = trainCost(h); if (G.gold < c) return toast('Not enough gold.'); G.gold -= c; h.train = 80; missionTick('upgrade'); toast(`🏋 ${h.name} begins intensive training.`); },
   bannerx(d) { hideBanner(d.id); },
   festL() { startFest('L'); closeModal(); }, festM() { startFest('M'); closeModal(); }, festS() { G.flags.festPending = null; closeModal(); },
   festinbox() { openModal('fest'); },
@@ -2558,6 +2592,7 @@ function confirmPlacement() {
   if (!placing) return;
   const t = BUILDINGS[placing];
   if (!ghost.userData.ok) return toast(G.gold < t.cost && !moving ? 'Not enough gold.' : 'Cannot build there.');
+  if (!moving) missionTick('build');
   if (moving) {       // relocate: same building, new spot and facing
     const b = moving, [w, d] = footprint(b.type, ghostRot), th = ghostRot * Math.PI / 2, [cx, cz] = ghostCell; moving = null;
     b.cx = cx; b.cz = cz; b.w = w; b.d = d; b.rot = ghostRot;
@@ -3068,4 +3103,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__renderer = renderer; window.__scene = scene; window.__api = { heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__renderer = renderer; window.__scene = scene; window.__api = { missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
