@@ -274,6 +274,23 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^(.+) and (.+) have fought side by side for a long time\. Tonight they sit by the fire sharing stories\.$/, (a, b) => `${a}와(과) ${b}은(는) 오랫동안 나란히 싸웠습니다. 오늘 밤 둘은 불가에 앉아 이야기를 나눕니다.`],
+    [/^(.+) and (.+) keep finding reasons to be near each other\..*$/, (a, b) => `${a}와(과) ${b}은(는) 자꾸 서로의 곁에 있을 핑계를 찾습니다. 주점 사람들은 모르는 척합니다.`],
+    [/^(.+) and (.+) have been trading barbs all week\..*$/, (a, b) => `${a}와(과) ${b}은(는) 일주일 내내 말다툼을 합니다. 누군가 훈련장에서 결판을 내자고 합니다.`],
+    [/^(.+) has been teaching (.+) everything they know, and .+ is finally keeping up\.$/, (a, b) => `${a}이(가) 아는 모든 것을 ${b}에게 가르쳤고, ${b}이(가) 드디어 따라오기 시작했습니다.`],
+    [/^(.+) challenges you$/, n => `${n}이(가) 도전장을 내밀었습니다`],
+    [/^(.+), leader of (.+), challenges your best hero to a public duel for the town’s respect\.$/, (n, g) => `${n}, ${g}의 지도자가 마을의 존중을 걸고 가장 강한 영웅에게 공개 결투를 신청합니다.`],
+    [/^A monster pack threatens both (.+) and your guild\. (.+) proposes to fight it together\.$/, (g, n) => `괴물 무리가 ${g}와(과) 당신의 길드를 모두 위협합니다. ${n}이(가) 함께 싸우자고 제안합니다.`],
+    [/^(.+)’s proposal$/, n => `${n}의 제안`],
+    [/^(.+) offers to end the feud once and for all: an alliance, or a final contest to decide who leads the region\.$/, n => `${n}이(가) 불화를 끝내자고 제안합니다: 동맹, 또는 지역의 주인을 가릴 최후의 대결.`],
+    [/^🗡 (.+) wins the duel! The town cheers\.$/, n => `🗡 ${n}이(가) 결투에서 이겼습니다! 마을이 환호합니다.`],
+    [/^🗡 (.+) loses, but earns (.+)’s respect\.$/, (n, l) => `🗡 ${n}이(가) 졌지만 ${l}의 존중을 얻었습니다.`],
+    [/^(🤝|💘|⚡|🎓) (.+) & (.+): (.+)$/, (i, a, b, t) => `${i} ${a} & ${b}: ${f(t)}`],
+    [/^Endings found: (\d)\/(\d)\. .*$/, (a, b) => `발견한 엔딩: ${a}/${b}. 이야기는 계속됩니다 — 계속 플레이하거나 새 유산으로 다른 엔딩을 보세요.`],
+    [/^🌟 Regional fame: (\d+)\/100 · quest gold here \+(\d+)%$/, (a, b) => `🌟 지역 명성: ${a}/100 · 이 지역 퀘스트 골드 +${b}%`],
+    [/^Day (\d+): A moment with (.+): (.+)\.$/, (d, n, t) => `${d}일째: ${n}와(과)의 한때: ${f(t)}.`],
+    [/^Day (\d+): A moment with (.+)\.$/, (d, n) => `${d}일째: ${n}와(과)의 한때.`],
+    [/^Day (\d+): Beat (.+) in a duel\.$/, (d, n) => `${d}일째: 결투에서 ${n}을(를) 이겼습니다.`],
     [/^(.+)’s shop$/, n => `${n}의 가게`],
     [/^(\S+) Weather: (.+)\. (.+)$/, (i, w, d) => `${i} 날씨: ${f(w)}. ${f(d)}`],
     [/^Weather: (.+)$/, w => `날씨: ${f(w)}`],

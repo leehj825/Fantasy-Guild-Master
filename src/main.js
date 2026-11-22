@@ -350,7 +350,7 @@ const boardSlots = () => 3 + G.boardLvl + (G.rank >= 2 ? 1 : 0) + (G.rank >= 3 ?
 const craftSpeed = () => (1 + 0.25 * G.staff.smith) * (G.research.forging ? 1.3 : 1) * (G.research.mythril ? 1.4 : 1) * (1 + 0.1 * regionPerk('stonepeak')) * (G.flags.faction === 'vanguard' ? 1.15 : 1) * (G.flags.smithTaught ? 1.1 : 1);
 const alchSpeed = () => (1 + 0.25 * G.staff.alch) * (G.research.forging ? 1.15 : 1) * (1 + 0.1 * regionPerk('ashen')) * (G.flags.faction === 'arcane' ? 1.15 : 1);
 const mealGold = tav => { tav = tav || first('tavern'); return (weather() === 'snow' ? 1.1 : 1) * (tav && tav.spec === 'feast' ? 1.25 : 1) * (G.flags.fest ? 1.5 : 1) * (seasonIdx() === 3 ? 1.25 : 1) * 9 * (1 + 0.15 * G.staff.cook) * (1 + 0.3 * ((tav?.level || 1) - 1)) * (tav ? adj(tav).meal : 1); };
-const questGoldMul = () => (1 + 0.02 * (G.flags.kw ? kingdomLv() : 0)) * (hasPet('dog') ? 1.03 : 1) * (calEvent() ? calEvent().mul : 1) * (1 + 0.04 * Math.min(3, retireN('quartermaster'))) * (G.research.charter ? 1.25 : 1) * (seasonIdx() === 1 ? 1.1 : 1) * (1 + 0.002 * (G.flags.rep ?? 10)) * (first('monument') ? 1.05 : 1) * (1 + 0.03 * squares()) * (1 + 0.05 * regionPerk('dunes')) * (1 + 0.03 * legacyLvl('trade'));
+const questGoldMul = () => (rivalEnd() === 'ally' ? 1.08 : 1) * (1 + 0.02 * (G.flags.kw ? kingdomLv() : 0)) * (hasPet('dog') ? 1.03 : 1) * (calEvent() ? calEvent().mul : 1) * (1 + 0.04 * Math.min(3, retireN('quartermaster'))) * (G.research.charter ? 1.25 : 1) * (seasonIdx() === 1 ? 1.1 : 1) * (1 + 0.002 * (G.flags.rep ?? 10)) * (first('monument') ? 1.05 : 1) * (1 + 0.03 * squares()) * (1 + 0.05 * regionPerk('dunes')) * (1 + 0.03 * legacyLvl('trade'));
 const trickleMul = () => (1 + 0.5 * G.staff.porter);
 const warehouseBonus = () => ofType('warehouse').reduce((s, w) => s + 6 + 4 * (w.level - 1), 0);
 const stockCap = b => 4 + 2 * b.level + warehouseBonus();
@@ -813,7 +813,7 @@ const bossTag = q => { const B = BOSS[q.boss]; return B ? `<span class="tag" sty
 const ENEMY_NAME = { frostgiant: 'Frost Giant', duneking: 'Dune Warlord', lich: 'Bone Lich' };
 const modTags = q => (q.flashBy ? `<span class="tag" style="border-color:#ffd24a">⚡ Flash ×2 · ${Math.max(0, Math.ceil(q.flashBy - G.time))}s</span>` : '') + (q.contested ? `<span class="tag" style="border-color:#ff6a6a" title="A rival guild is after this job. Finish before the timer runs out!">⚔ ${Math.max(0, Math.ceil((q.expire || 0) - G.time))}s</span>` : '') + bossTag(q) + (q.town ? `<span class="tag" title="A small favour for the town: low pay, but the villagers will remember it.">🏘 ${q.who}</span>` : '') + (q.region && q.region !== 'greenwood' && REGIONS[q.region] ? `<span class="tag">${REGIONS[q.region].icon} ${REGIONS[q.region].name}</span>` : '') + (q.mods || []).map(k => `<span class="tag" title="${MODS[k].desc}">${MODS[k].icon} ${MODS[k].label}</span>`).join('');
 const flashOn = q => !!(q.flashBy && G.time <= q.flashBy);
-const questPay = q => Math.round(q.gold * questGoldMul() * (q.approachGold || 1) * (flashOn(q) ? 2 : 1));
+const questPay = q => Math.round(q.gold * questGoldMul() * (q.region ? fameMul(q.region) : 1) * (q.approachGold || 1) * (flashOn(q) ? 2 : 1));
 const readyHeroes = () => G.heroes.filter(h => h.gear && !(h.train > 0) && h.stamina >= 45 && h.state !== 'quest' && h.state !== 'leaving');
 function bestParty(q) {
   const r = readyHeroes().sort((a, b) => heroPower(b, q.type) - heroPower(a, q.type));
@@ -921,7 +921,7 @@ function resolveQuest(q) {
     }
     G.questsDone++; if (q.mods && q.mods.includes('elite')) G.stats.elite = (G.stats.elite || 0) + 1; if (q.town) G.stats.town = (G.stats.town || 0) + 1; if (q.legend) legendWon(q); else if (q.special) chron(`✔ ${q.name}`);
     if (q.town) { repGain(q.rep || 3); toast(`🏘 ${q.who} thanks you warmly. (+${q.rep || 3} town reputation)`); }
-    if (q.region && REGIONS[q.region]) { const rec = (G.regions[q.region] = G.regions[q.region] || { done: 0 }), before = regionLevel(q.region); rec.done++; regionTrial(q.region, rec); if (regionLevel(q.region) > before) toast(`🗺 ${REGIONS[q.region].name} mastery level ${regionLevel(q.region)}! ${REGIONS[q.region].perk}`); }
+    if (q.region && REGIONS[q.region]) { const rec = (G.regions[q.region] = G.regions[q.region] || { done: 0 }), before = regionLevel(q.region); rec.done++; rec.fame = Math.min(100, (rec.fame || 0) + (q.boss ? 8 : 2)); regionTrial(q.region, rec); if (regionLevel(q.region) > before) toast(`🗺 ${REGIONS[q.region].name} mastery level ${regionLevel(q.region)}! ${REGIONS[q.region].perk}`); }
     toast(`✔ ${q.name} complete! +${g}g, +${q.renown}⭐, loot collected.`);
   } else {
     G.renown = Math.max(0, G.renown - 1); if (q.town) repGain(-2);
@@ -1072,7 +1072,7 @@ function resolveDive(q, mode) {
  *  Events: monster incursion, wandering merchant, royal demand
  * ------------------------------------------------------------------ */
 const DEFENDER_NAMES = ['Guard', 'Sentry', 'Warden', 'Lookout'];
-function raidThreat(q) { return q.raidCount * 3.5 * (1 + 0.1 * G.rank) * (q.bossRaid ? 1.8 : 1); }
+function raidThreat(q) { return (rivalEnd() === 'war' ? 1.15 : 1) * q.raidCount * 3.5 * (1 + 0.1 * G.rank) * (q.bossRaid ? 1.8 : 1); }
 // defense posts: you pick up to three free heroes to man the walls (the best ones are taken automatically if you pick nobody)
 const freeHeroes = () => G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving');
 function postHeroes() {
@@ -1121,7 +1121,7 @@ function musterHeroes() {
 function resolveDefense(q) {
   sfx(q.ok ? 'win' : 'lose');
   const ok = q.ok, cp = G.goblins.length ? G.goblins[0].mesh.position.clone() : new THREE.Vector3(HALL.cx + 2.5, 0, HALL.cz + 3);
-  const loot = Math.round(35 * q.raidCount * (q.bossRaid ? 3 : 1) * (1 + 0.1 * G.rank)), ren = 1 + (q.bossRaid ? 3 : 0);
+  const loot = Math.round((rivalEnd() === 'war' ? 1.5 : 1) * 35 * q.raidCount * (q.bossRaid ? 3 : 1) * (1 + 0.1 * G.rank)), ren = 1 + (q.bossRaid ? 3 : 0);
   if (ok) { repGain(2); gain(cp, loot); G.renown += ren; G.stats.raidsWon++; if (q.bossRaid) { G.rare.mythril += 1; q.endText = `🛡️ The warchief falls! +${loot}g, +${ren}⭐, 1 💎`; } else q.endText = `🛡️ The raid is repelled! +${loot}g, +${ren}⭐`; }
   else {
     repGain(-5);
@@ -1258,7 +1258,7 @@ function updateEconomy(dt) {
   // quests
   t.quest -= dt;
   if (t.quest <= 0) { t.quest = 14; if (G.quests.filter(q => q.state === 'open').length < boardSlots()) genQuest(); legendTick(); }
-  townTick(dt); tickPeople(dt); tickDisaster(dt); tickFamily(dt); tickTrade(); tickKingdom(dt); tickRivalEvents(dt); tickVisitors(dt); tickFlash(dt); tickAutoManage(dt); tickCalendar();
+  townTick(dt); tickPeople(dt); tickDisaster(dt); tickFamily(dt); tickTrade(); tickKingdom(dt); tickRivalEvents(dt); tickVisitors(dt); tickFlash(dt); tickAutoManage(dt); tickCalendar(); tickScenes(dt); tickRivalArc();
   for (const q of [...G.quests]) if (q.state === 'active') { if (q.dive) diveTick(q, dt); else { q.t -= dt; maybeFork(q); if (q.t <= 0 || q.dur - q.t >= questEnd(q)) (q.defense ? resolveDefense(q) : resolveQuest(q)); } }
   // events
   t.merchant -= dt; if (t.merchant <= 0) { t.merchant = rnd(150, 220); if (G.renown >= 2 && !G.merchant) startMerchant(); }
@@ -1565,8 +1565,9 @@ const EVENTS = {
     { label: 'Leave it', fx: () => { } } ] },
 };
 const evq = () => (G.flags.evq ||= []);
-function pushEvent(id) { const q = evq(); if (q.length >= 3 || q.includes(id)) return; q.push(id); sfx('chime'); toast(`📬 ${EVENTS[id].icon} ${EVENTS[id].title}`); }
-function chooseEvent(i) { const q = evq(), E = EVENTS[q[0]]; if (!E) return; const c = E.ch[i]; if (!c || (c.ok && !c.ok())) return; missionTick('story'); { const sn = { treasure: 'chest', trap: 'trap', fire: 'fire', flood: 'splash', shop: 'coin', rest: 'chime', heir: 'goal' }[q[0]]; if (sn) sfx(sn); } c.fx(); if (ROOM_KINDS.includes(evq()[0])) G.flags.rooms = (G.flags.rooms || 0) + 1; chron(`${E.icon} ${E.title}: ${c.label.replace(/\s*\(.*$/, '')}`); q.shift(); closeModal(); if (q.length) setTimeout(() => openModal('event'), 200); }
+const evStr = (E, k) => typeof E[k] === 'function' ? E[k]() : E[k];
+function pushEvent(id) { const q = evq(); if (q.length >= 3 || q.includes(id)) return; q.push(id); sfx('chime'); toast(`📬 ${EVENTS[id].icon} ${evStr(EVENTS[id], 'title')}`); }
+function chooseEvent(i) { const q = evq(), E = EVENTS[q[0]]; if (!E) return; const c = E.ch[i]; if (!c || (c.ok && !c.ok())) return; missionTick('story'); { const sn = { treasure: 'chest', trap: 'trap', fire: 'fire', flood: 'splash', shop: 'coin', rest: 'chime', heir: 'goal' }[q[0]]; if (sn) sfx(sn); } c.fx(); if (ROOM_KINDS.includes(evq()[0])) G.flags.rooms = (G.flags.rooms || 0) + 1; chron(`${E.icon} ${evStr(E, 'title')}: ${evStr(c, 'label').replace(/\s*\(.*$/, '')}`); q.shift(); closeModal(); if (q.length) setTimeout(() => openModal('event'), 200); }
 // ---- after the legend: the Crown's favor grows with each call to arms; every level gives a permanent bonus
 const KW_PER = 100, kingdom = () => (G.flags.kw ||= { fame: 0, t: 300 });
 const kingdomLv = () => Math.min(10, Math.floor(kingdom().fame / KW_PER));
@@ -1899,6 +1900,65 @@ function tickCalendar() {
   if (d % 5 === 0 && d > 1) { toast('🛍 Market day! Sell prices are higher and a merchant may stop by.'); sfx('chime'); }
   if (d % 10 === 0 && d > 1 && G.buildings.length >= 5) pushEvent('tournament');
 }
+// ---- relationship scenes: when two bonded heroes grow close, a short scene asks the guild master what should happen
+const SCENES = {
+  friend: { icon: '🤝', title: 'Old friends', text: (a, b) => `${a} and ${b} have fought side by side for a long time. Tonight they sit by the fire sharing stories.`, ch: [
+    ['Raise a toast with them (−30g)', 30, (a, b) => { addAff(a, b, 20, true); a.happy = Math.min(100, a.happy + 15); b.happy = Math.min(100, b.happy + 15); }],
+    ['Suggest they train together', 0, (a, b) => { gainXp(a, 2); gainXp(b, 2); }],
+    ['Leave them be', 0, () => { }] ] },
+  sweet: { icon: '💘', title: 'Something in the air', text: (a, b) => `${a} and ${b} keep finding reasons to be near each other. The whole tavern is pretending not to notice.`, ch: [
+    ['Arrange a quiet dinner for two (−50g)', 50, (a, b) => { addAff(a, b, 25, true); a.loy = Math.min(100, (a.loy ?? 60) + 10); b.loy = Math.min(100, (b.loy ?? 60) + 10); }],
+    ['Tease them gently', 0, (a, b) => { a.happy = Math.min(100, a.happy + 8); b.happy = Math.min(100, b.happy + 8); }],
+    ['Say nothing', 0, () => { }] ] },
+  rival: { icon: '⚡', title: 'A heated rivalry', text: (a, b) => `${a} and ${b} have been trading barbs all week. Someone suggests settling it in the training yard.`, ch: [
+    ['Hold a friendly duel (they both learn)', 0, (a, b) => { gainXp(a, 2); gainXp(b, 2); addAff(a, b, 10, true); }],
+    ['Make them share a quest', 0, (a, b) => { addAff(a, b, 15, true); }],
+    ['Let it simmer', 0, (a, b) => { a.happy = Math.max(0, a.happy - 6); b.happy = Math.max(0, b.happy - 6); }] ] },
+  mentor: { icon: '🎓', title: 'Master and student', text: (a, b) => `${a} has been teaching ${b} everything they know, and ${b} is finally keeping up.`, ch: [
+    ['Reward the student’s progress (−40g)', 40, (a, b) => { gainXp(b, 3); addAff(a, b, 15, true); }],
+    ['Let the teacher take a break', 0, (a, b) => { a.stamina = Math.min(100, a.stamina + 30); }],
+    ['Carry on', 0, () => { }] ] },
+};
+SCENES.apprentice = SCENES.mentor;
+const scenePair = () => { const p = G.flags.sceneP; if (!p) return null; const a = G.heroes.find(h => h.id === p[0]), b = G.heroes.find(h => h.id === p[1]); return a && b ? [a, b, p[2]] : null; };
+EVENTS.scene = { icon: '💞', title: () => { const p = scenePair(); return p ? SCENES[p[2]].title : 'A quiet moment'; }, text: () => { const p = scenePair(); return p ? SCENES[p[2]].text(p[0].name, p[1].name) : ''; },
+  ch: [0, 1, 2].map(i => ({ label: () => { const p = scenePair(); return p ? SCENES[p[2]].ch[i][0] : 'Continue'; }, ok: () => { const p = scenePair(); return !p || G.gold >= SCENES[p[2]].ch[i][1]; }, fx: () => { const p = scenePair(); if (!p) return; const c = SCENES[p[2]].ch[i]; G.gold -= c[1]; c[2](p[0], p[1]); diary(p[0], `A moment with ${p[1].name}: ${c[0].replace(/ \(.*$/, '').toLowerCase()}.`); diary(p[1], `A moment with ${p[0].name}.`); toast(`${SCENES[p[2]].icon} ${p[0].name} & ${p[1].name}: ${c[0].replace(/ \(.*$/, '')}`); } })) };
+let sceneT = 300;
+function tickScenes(dt) {
+  sceneT -= dt; if (sceneT > 0) return; sceneT = 360 + Math.random() * 300; if (evq().includes('scene')) return; const done = (G.flags.scenes ||= {});
+  for (const a of G.heroes) for (const [id, k] of Object.entries(a.bonds || {})) { const b = G.heroes.find(x => x.id === +id); if (!b || a.id > b.id || !SCENES[k] || a.state === 'quest' || b.state === 'quest') continue; const key = a.id + '-' + b.id + k; if (done[key] || ((a.aff || {})[b.id] || 0) < 50 && k !== 'rival') continue; done[key] = 1; G.flags.sceneP = [a.id, b.id, k]; return pushEvent('scene'); }
+}
+// ---- regional fame: each region has its own opinion of the guild
+const regionFame = id => ((G.regions[id] || {}).fame || 0);
+const fameMul = id => 1 + regionFame(id) / 400;
+// ---- the rival guild's leader: a four-step story ending in an alliance or a war
+const LEADERS = ['Captain Veyra', 'Master Dorn', 'Lady Halcyon', 'Old Brannoch'];
+const rivalLeader = () => { const r = G.flags.rival; if (!r) return 'The rival'; return r.leader || (r.leader = pick(LEADERS)); };
+const rivalEnd = () => (G.flags.rival && G.flags.rival.end) || null;
+EVENTS.rival0 = { icon: '🗡', title: () => `${rivalLeader()} challenges you`, text: () => `${rivalLeader()}, leader of ${rivalName()}, challenges your best hero to a public duel for the town’s respect.`, ch: [
+  { label: 'Accept the duel with your strongest hero', ok: () => freeHeroes().length > 0, fx: () => { const h = freeHeroes().sort((a, b) => heroPower(b, 'combat') - heroPower(a, 'combat'))[0], win = Math.random() < Math.min(0.85, 0.2 + heroPower(h, 'combat') / 14), r = G.flags.rival; if (win) { r.respect = (r.respect || 0) + 2; r.fame = Math.max(0, r.fame - 8); G.renown += 2; diary(h, `Beat ${rivalLeader()} in a duel.`); toast(`🗡 ${h.name} wins the duel! The town cheers.`); } else { r.respect = (r.respect || 0) + 1; r.fame += 6; h.happy = Math.max(0, h.happy - 15); toast(`🗡 ${h.name} loses, but earns ${rivalLeader()}’s respect.`); } r.ch = 1; } },
+  { label: 'Decline politely', fx: () => { G.flags.rival.ch = 1; repGain(-2); toast('🗡 The town murmurs. You declined the duel.'); } } ] };
+EVENTS.rival1 = { icon: '🐺', title: 'A common enemy', text: () => `A monster pack threatens both ${rivalName()} and your guild. ${rivalLeader()} proposes to fight it together.`, ch: [
+  { label: 'Fight together (−150g)', ok: () => G.gold >= 150, fx: () => { G.gold -= 150; const r = G.flags.rival; r.respect = (r.respect || 0) + 2; G.renown += 2; repGain(4); r.ch = 2; toast('🐺 Side by side, the guilds drive the pack away.'); } },
+  { label: 'Let them fight, then claim the glory', fx: () => { const r = G.flags.rival; r.respect = (r.respect || 0) - 2; G.gold += 300; G.renown += 1; r.ch = 2; toast('🐺 You took the credit. +300g, but the rival remembers.'); } } ] };
+EVENTS.rival2 = { icon: '⚖', title: () => `${rivalLeader()}’s proposal`, text: () => `${rivalLeader()} offers to end the feud once and for all: an alliance, or a final contest to decide who leads the region.`, ch: [
+  { label: 'Form an alliance (needs mutual respect)', ok: () => (G.flags.rival.respect || 0) >= 2, fx: () => { const r = G.flags.rival; r.end = 'ally'; r.ch = 3; r.truce = 1e9; G.renown += 5; chron(`🤝 The guild allied with ${rivalName()}.`); toast('🤝 The rival guild is now your ally! Quest gold +8%.'); sfx('goal'); } },
+  { label: 'Declare a final rivalry', fx: () => { const r = G.flags.rival; r.end = 'war'; r.ch = 3; chron(`⚔ The guild declared war on ${rivalName()}.`); toast('⚔ The feud is on! Raids are harder, but raid loot is +50%.'); sfx('raid'); } } ] };
+EVENTS.rival2.ch[0].label = 'Form an alliance (needs mutual respect)';
+function tickRivalArc() {
+  const r = G.flags.rival; if (!r || r.end || evq().some(x => x.startsWith('rival'))) return; r.ch = r.ch || 0; r.arcT = (r.arcT ?? 480) - 6; if (r.arcT > 0) return; r.arcT = 420 + Math.random() * 240;
+  if (r.ch <= 2) pushEvent('rival' + r.ch);
+}
+// ---- epilogue: when the legend is complete, the guild's story is summed up in one of several endings
+const ENDINGS = {
+  beloved: { icon: '💖', name: 'The Beloved Guild', text: 'The town sings your name. Children play at being heroes, and every door in the region opens to your guild.', score: () => (G.flags.rep ?? 10) + 30 * (G.flags.rival && G.flags.rival.end === 'ally' ? 1 : 0) },
+  feared: { icon: '🔥', name: 'The Iron Guild', text: 'Your enemies speak your guild’s name in whispers. Where your banner flies, monsters do not.', score: () => 10 * codexN('bosses') + (G.flags.rival && G.flags.rival.end === 'war' ? 30 : 0) + G.stats.raidsWon * 2 },
+  rich: { icon: '💰', name: 'The Golden Guild', text: 'Caravans, markets and workshops make your guild the richest in the realm. Even the king asks for a loan.', score: () => G.buildings.length * 2 + Math.floor(G.gold / 2000) + (first('trophy') ? 10 : 0) },
+  family: { icon: '🏡', name: 'The Guild Family', text: 'Veterans retire to the hearth, children grow into heroes, and the hall rings with laughter. This is more than a guild.', score: () => 8 * retired().length + 10 * (G.flags.born || 0) + 2 * Object.values(G.heroes).reduce((n, h) => n + Object.keys(h.bonds || {}).length, 0) },
+};
+function epilogue() {
+  const best = Object.entries(ENDINGS).sort((a, b) => b[1].score() - a[1].score())[0][0]; G.flags.ending = best; (G.flags.endingsSeen ||= {})[best] = 1; return best;
+}
 // ---- hero diary: a few lines per hero about what happened to them
 const diary = (h, text) => { if (!h) return; const d = (h.diary ||= []); d.push({ d: Math.floor(G.time / 60) + 1, t: text }); if (d.length > 8) d.shift(); };
 // ---- 3D companions and disaster visuals
@@ -2157,7 +2217,7 @@ function renderWeekly() {
 }
 function inboxItems() {
   const out = [], st = STORIES.find(x => x.id === G.flags.pending); if (G.flags.login && G.flags.login.pending) out.push({ icon: '🎁', title: 'Daily reward', sub: `Day ${G.flags.login.streak} of 7 is waiting.`, act: 'dailyopen' });
-  for (const id of evq()) out.push({ icon: EVENTS[id].icon, title: EVENTS[id].title, sub: 'A decision awaits.', act: 'eventopen' });
+  for (const id of evq()) out.push({ icon: EVENTS[id].icon, title: evStr(EVENTS[id], 'title'), sub: 'A decision awaits.', act: 'eventopen' });
   if (st) out.push({ icon: '📖', title: st.title, sub: 'A decision awaits.', act: 'openStory' });
   for (const h of G.heroes) { const ch = storyChapter(h); if (ch && h.level >= ch.lv && h.state !== 'quest') out.push({ icon: '🗣', title: `${h.name}: ${ARCS[h.arc.id].title}`, sub: `Chapter ${h.arc.ch + 1} is ready.`, act: 'hstoryopen', id: h.id }); }
   if (G.flags.festPending !== undefined && G.flags.festPending !== null) out.push({ icon: FEST[seasonIdx()].icon, title: FEST[seasonIdx()].name, sub: 'The villagers are waiting for your answer.', act: 'festinbox' });
@@ -2215,7 +2275,7 @@ function legendTick() {
 }
 function legendWon(q) {
   G.flags.legend = q.legend; chron(`🐉 ${q.name} — done.`);
-  if (q.legend >= 3) { G.gold += 5000; G.renown += 20; G.rare.mythril += 3; G.flags.legendDone = 1; chron('🏆 The Ember Colossus fell. The guild became a legend.'); sfx('goal'); openModal('legend'); }
+  if (q.legend >= 3) { G.gold += 5000; G.renown += 20; G.rare.mythril += 3; G.flags.legendDone = 1; chron('🏆 The Ember Colossus fell. The guild became a legend.'); sfx('goal'); openModal('legend'); setTimeout(() => { if (!G.flags.endingShown) { G.flags.endingShown = 1; epilogue(); openModal('ending'); } }, 9000); }
   else toast(`🐉 The legend deepens… (${q.legend}/3)`);
 }
 function rankUp() {
@@ -2398,6 +2458,10 @@ function modalContent() {
       const row = (i, t, s2) => `<div class="row"><div style="font-size:26px">${i}</div><div class="grow"><div class="t">${t}</div><div class="s">${s2}</div></div></div>`;
       return ['📅 Calendar', row('🗓', `Day ${d}`, `${SEASONS[sIdx].icon} ${SEASONS[sIdx].name} · ${Math.max(0, Math.round((SEASON_LEN - into) / 60))} min until the season changes`) + row(W[0], `Weather: ${W[1]}`, W[2]) + row('🛍', 'Market day', `${marketDay() ? 'Today! ' : ''}Every 5th day: sell prices +15%. Next: day ${d + (5 - d % 5) % 5 || d + 5}.`) + row('🏆', 'Guild tournament', `Every 10th day: enter a hero. Next: day ${d + (10 - d % 10) % 10 || d + 10}.`) + row('🎁', 'Daily reward', G.flags.login && G.flags.login.pending ? 'Waiting for you!' : 'Claimed today.') + row('🎟', 'Monthly pass', `Tier ${passTier()}/10`) + (calEvent() ? row(calEvent().icon, calEvent().name, calEvent().desc) : '') + row('📅', 'Weekly challenge', `${weekRule().icon} ${weekRule().name}`)];
     }
+    case 'ending': {
+      const k = G.flags.ending || epilogue(), E = ENDINGS[k];
+      return ['📖 Epilogue', `<div style="font-size:44px;text-align:center">${E.icon}</div><div class="t" style="text-align:center;font-size:18px">${E.name}</div><div style="line-height:1.6;margin:8px 0">${E.text}</div><div class="s">Endings found: ${Object.keys(G.flags.endingsSeen || {}).length}/${Object.keys(ENDINGS).length}. The story continues — keep playing, or start a new legacy to see another ending.</div><button class="act" data-act="close" style="margin-top:10px">Continue</button>`];
+    }
     case 'inv': {
       const l = inv().slice().sort((a, b) => b.rar - a.rar);
       return ['🎒 Pack', `<div class="s">${l.length}/30 items. Items drop from expeditions (bosses always drop one). Equip them from a hero's Gear tab, or sell what you don't need.</div><div style="display:flex;gap:6px;margin:6px 0"><button class="act red" data-act="sellcommon">Sell all Common</button></div>` + (l.map(it => `<div class="row"><div class="grow"><div class="t">${itemTag(it)} <span class="tag">${RARITY[it.rar][0]}</span></div><div class="s">${itemText(it)}</div></div><button class="act red" data-act="sellitem" data-i="${it.id}">Sell ${itemValue(it)}g</button></div>`).join('') || '<div class="s">The pack is empty.</div>')];
@@ -2425,7 +2489,8 @@ function modalContent() {
     }
     case 'event': {
       const E = EVENTS[evq()[0]]; if (!E) { return ['📬 Event', '<div class="s">Nothing to decide.</div>']; }
-      return [E.icon + ' ' + E.title, (ROOM_KINDS.includes(evq()[0]) ? `<div id="roomHold" data-kind="${evq()[0]}"></div>` : '') + `<div class="s" style="line-height:1.5;margin-bottom:8px">${E.text}</div>` + E.ch.map((c, i) => `<div class="row"><div class="grow"><div class="t">${c.label}</div></div><button class="act" data-act="eventchoose" data-i="${i}" ${c.ok && !c.ok() ? 'disabled' : ''}>Choose</button></div>`).join('')];
+      const ET = evStr(E, 'title'), EX = evStr(E, 'text');
+      return [E.icon + ' ' + ET, (ROOM_KINDS.includes(evq()[0]) ? `<div id="roomHold" data-kind="${evq()[0]}"></div>` : '') + `<div class="s" style="line-height:1.5;margin-bottom:8px">${EX}</div>` + E.ch.map((c, i) => `<div class="row"><div class="grow"><div class="t">${evStr(c, 'label')}</div></div><button class="act" data-act="eventchoose" data-i="${i}" ${c.ok && !c.ok() ? 'disabled' : ''}>Choose</button></div>`).join('')];
     }
     case 'shop': {
       let h = '<div class="s">An optional one-time purchase that supports the game. Nothing here is needed to play.</div>';
@@ -2524,6 +2589,7 @@ function modalContent() {
       for (const [id, R] of Object.entries(REGIONS)) {
         const open = R.unlock(), act = G.region === id, rec = G.regions[id] || { done: 0 }, lvl = regionLevel(id);
         h += `<div class="row" style="${act ? 'border-color:#ffd24a;background:#ffd24a18' : ''}"><div style="font-size:32px">${R.icon}</div><div class="grow"><div class="t">${R.name} ${act ? '<span class="tag">✔ Active</span>' : ''}<span class="tag">Mastery ${lvl}/5</span></div><div class="s">${R.desc}</div><div class="s">${R.summary}</div><div class="bar"><i style="width:${lvl >= 5 ? 100 : (rec.done % 8) / 8 * 100}%"></i></div><div class="s">Quests done here: ${rec.done}${lvl < 5 ? ` · next level at ${(lvl + 1) * 8}` : ''}<br>Mastery bonus: ${R.perk}</div></div><button class="act" data-act="region" data-r="${id}" ${open && !act ? '' : 'disabled'}>${open ? (act ? 'Active' : 'Travel here') : '🔒 ' + R.need}</button></div>`;
+        h += `<div class="s" style="margin:-4px 0 6px 6px">🌟 Regional fame: ${Math.round(rec.fame || 0)}/100 · quest gold here +${((rec.fame || 0) / 4).toFixed(0)}%</div>`;
       }
       return ['🗺 World Map', h];
     }
@@ -3383,4 +3449,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__renderer = renderer; window.__scene = scene; window.__api = { weather, tickCalendar, dayNo, tierDecor, whyFailed, tickAutoManage, rollItem, dropLoot, equipItem, inv, maybeFork, smiteGoblin, tickFlash, cardAdd, tickVisitors, districts, fullKit, ROLES, missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__renderer = renderer; window.__scene = scene; window.__api = { epilogue, ENDINGS, tickScenes, tickRivalArc, weather, tickCalendar, dayNo, tierDecor, whyFailed, tickAutoManage, rollItem, dropLoot, equipItem, inv, maybeFork, smiteGoblin, tickFlash, cardAdd, tickVisitors, districts, fullKit, ROLES, missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
