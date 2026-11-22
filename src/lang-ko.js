@@ -274,6 +274,10 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^🕵 (.+) left for the rival guild\.$/, n => `🕵 ${n}이(가) 라이벌 길드로 떠났습니다.`],
+    [/^🕵 (.+) joined the rival guild\.$/, n => `🕵 ${n}이(가) 라이벌 길드에 합류했습니다.`],
+    [/^Day (\d+): Turned down the rival guild’s offer\.$/, d => `${d}일째: 라이벌 길드의 제안을 거절했습니다.`],
+    [/^Day (\d+): Came of age in the guild \((.+)\)\.$/, (d, w) => `${d}일째: 길드에서 성인이 되었습니다 (${({ 'followed their parents': '부모의 길을 따름', 'chose their own path': '자기만의 길을 선택', 'trained by the veterans': '베테랑에게 훈련받음' })[w] || w}).`],
     [/^📅 Weekly: (\S+) (.+) \(best (\d+)( ✔)?\)$/, (i, n, b, c) => `📅 주간: ${i} ${f(n)} (최고 ${b}${c || ''})`],
     [/^📅 Weekly challenge cleared! \+(\d+)g( and 2 Mythril)?$/, (g, m) => `📅 주간 챌린지 클리어! +${g}골드${m ? '와 미스릴 2' : ''}`],
     [/^📅 Weekly challenge: floor (\d+)\.$/, n => `📅 주간 챌린지: ${n}층.`],

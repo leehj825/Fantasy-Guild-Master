@@ -1223,7 +1223,7 @@ function updateEconomy(dt) {
   // quests
   t.quest -= dt;
   if (t.quest <= 0) { t.quest = 14; if (G.quests.filter(q => q.state === 'open').length < boardSlots()) genQuest(); legendTick(); }
-  townTick(dt); tickPeople(dt); tickDisaster(dt); tickFamily(dt); tickTrade(); tickKingdom(dt);
+  townTick(dt); tickPeople(dt); tickDisaster(dt); tickFamily(dt); tickTrade(); tickKingdom(dt); tickRivalEvents(dt);
   for (const q of [...G.quests]) if (q.state === 'active') { if (q.dive) diveTick(q, dt); else { q.t -= dt; if (q.t <= 0 || q.dur - q.t >= questEnd(q)) (q.defense ? resolveDefense(q) : resolveQuest(q)); } }
   // events
   t.merchant -= dt; if (t.merchant <= 0) { t.merchant = rnd(150, 220); if (G.renown >= 2 && !G.merchant) startMerchant(); }
@@ -1490,6 +1490,22 @@ const EVENTS = {
     { label: 'Send supplies (−300g, −20 ore): +30 favor', ok: () => G.gold >= 300 && G.ore >= 20, fx: () => { G.gold -= 300; G.ore -= 20; kingdomFavor(30); } },
     { label: 'Send a party (heroes tire, +300g): +50 favor', ok: () => readyHeroes().length >= 2, fx: () => { readyHeroes().slice(0, 3).forEach(h => { h.stamina = Math.max(10, h.stamina - 40); gainXp(h, 2); }); G.gold += 300; kingdomFavor(50); } },
     { label: 'Decline: −5 favor', fx: () => kingdomFavor(-5) } ] },
+  heir: { icon: '🌱', title: 'A child comes of age', text: 'One of the guild’s children has grown up and must choose a path.', ch: [
+    { label: 'Follow in their parents’ footsteps (same class, devoted)', ok: () => G.heroes.length < popCap(), fx: () => { makeHeir('follow'); } },
+    { label: 'Choose their own path (new class, a new trait)', ok: () => G.heroes.length < popCap(), fx: () => { makeHeir('own'); } },
+    { label: 'Train under the retired veterans (starts at level 4)', ok: () => G.heroes.length < popCap() && retired().length > 0, fx: () => { makeHeir('train'); } },
+    { label: 'Not yet (ask again in a few minutes)', fx: () => { const k = kids().find(x => x.ready); if (k) k.wait = G.time + 240; } } ] },
+  poach: { icon: '🕵', title: 'A rival makes an offer', text: 'Agents of the rival guild are whispering to one of your veterans, offering more gold to switch sides.', ch: [
+    { label: 'Counter-offer (−250g, the hero stays and is more loyal)', ok: () => G.gold >= 250, fx: () => { G.gold -= 250; const h = poachTarget(); if (h) { h.loy = Math.min(100, (h.loy ?? 60) + 25); h.happy = Math.min(100, h.happy + 15); diary(h, 'Turned down the rival guild’s offer.'); } toast('🕵 The hero stays — and is touched by your offer.'); } },
+    { label: 'Let them go', fx: () => { const h = poachTarget(); if (h && G.heroes.length > 2) { removeHero(h, `🕵 ${h.name} left for the rival guild.`); chron(`🕵 ${h.name} joined the rival guild.`); if (G.flags.rival) G.flags.rival.fame += 8; } } },
+    { label: 'Expose the agents (−5 reputation, +fame)', fx: () => { repGain(-5); G.renown += 1; toast('🕵 The agents are run out of town. +1⭐'); } } ] },
+  jointhunt: { icon: '🤝', title: 'A joint hunt', text: 'The rival guild proposes a joint hunt against a dangerous beast. Share the spoils and call a truce for a while?', ch: [
+    { label: 'Accept (+400g, truce for a while)', fx: () => { G.gold += 400; if (G.flags.rival) { G.flags.rival.truce = 600; G.flags.rival.fame += 4; } repGain(3); toast('🤝 The hunt was a success. +400g and a truce.'); } },
+    { label: 'Refuse politely', fx: () => { } } ] },
+  sabotage: { icon: '🧨', title: 'Sabotage!', text: 'Someone tampered with the forge’s stock. The rival guild is the obvious suspect, but there is no proof.', ch: [
+    { label: 'Pay for repairs quietly (−200g)', ok: () => G.gold >= 200, fx: () => { G.gold -= 200; toast('🧨 Repairs done.'); } },
+    { label: 'Retaliate with a smear campaign (+rival hostility, +fame)', fx: () => { if (G.flags.rival) G.flags.rival.fame = Math.max(0, G.flags.rival.fame - 10); G.renown += 1; repGain(-3); toast('🧨 The rival loses face, but the town frowns on the feud.'); } },
+    { label: 'Shrug it off', fx: () => { ofType('forge').forEach(b => { b.stock = Math.floor(b.stock * 0.5); }); toast('🧨 Half the forge’s stock was ruined.'); } } ] },
   rest: { icon: '🛏', title: 'A quiet room', text: 'On the dive you found a safe, dry chamber with a few cots.', ch: [
     { label: 'Rest here (heroes recover stamina)', fx: () => { G.heroes.forEach(h => { h.stamina = Math.min(100, h.stamina + 30); }); toast('🛏 Everyone feels rested.'); } },
     { label: 'Move on', fx: () => { G.gold += 40; toast('🛏 You pressed on. +40g.'); } } ] },
@@ -1515,6 +1531,13 @@ function kingdomFavor(n) {
   if (kingdomLv() > before) { const lv = kingdomLv(); G.gold += 500 * lv; G.renown += 2; toast(`👑 The Crown honours the guild: level ${lv}! +${500 * lv}g, +2⭐`); chron(`👑 Crown favor reached level ${lv}.`); sfx('goal'); }
 }
 function tickKingdom(dt) { if (!G.flags.legendDone) return; const k = kingdom(); k.t -= dt; if (k.t <= 0) { k.t = 480 + Math.random() * 240; pushEvent('warcall'); } }
+const poachTarget = () => G.heroes.filter(h => h.state !== 'quest' && !h.vip).sort((a, b) => b.level - a.level)[0] || null;
+let rivalEvT = 600;
+function tickRivalEvents(dt) {
+  if (!G.flags.rival) return; rivalEvT -= dt; if (rivalEvT > 0) return; rivalEvT = 540 + Math.random() * 420;
+  const r = G.flags.rival; if (r.truce > 0) return pushEvent('jointhunt');
+  const ids = ['jointhunt', 'sabotage']; if (G.heroes.length > 3) ids.push('poach'); pushEvent(pick(ids));
+}
 let disasterT = 420;
 function tickDisaster(dt) {
   disasterT -= dt; if (disasterT > 0) return; disasterT = 420 + Math.random() * 360;
@@ -1534,6 +1557,16 @@ function retireHero(h, role) {
   chron(`${RETIRE[role][0]} ${h.name} retired and became the guild's ${RETIRE[role][1].toLowerCase()}.`); G.renown += 1;
   removeHero(h, `${RETIRE[role][0]} ${h.name} retired as ${RETIRE[role][1]}.`); sfx('goal'); closeModal();
 }
+function makeHeir(mode) {
+  const k = kids().find(x => x.ready); if (!k) return; if (G.heroes.length >= popCap()) { toast('🌱 No free bed for the young hero yet — make room first.'); return false; }
+  kids().splice(kids().indexOf(k), 1);
+  const cls = mode === 'own' ? pick(Object.keys(CLASSES).filter(c => c !== k.cls && (!usesLab(c) || first('alchemy')))) : k.cls, lvl = mode === 'train' ? 4 : mode === 'own' ? 2 : 3;
+  const p = new THREE.Vector3(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1.2)), h = createHero({ cls, variant: Math.floor(Math.random() * 3), name: k.name, x: p.x, z: p.z, level: lvl + Math.floor(legacyLvl('recruits') / 2) });
+  const tags = (k.tags || []).filter(t => TAGS[t]); if (mode === 'own') { const t2 = pick(Object.keys(TAGS).filter(t => !tags.includes(t))); h.tags = [tags[0], t2].filter(Boolean); } else h.tags = tags.length ? tags : h.tags;
+  h.tags.forEach(t => codexAdd('tags', t)); h.bio = [h.bio ? h.bio[0] : 'Raised in the guild.', `Child of ${k.parents[0]} and ${k.parents[1]}.`]; h.loy = mode === 'follow' ? 90 : 75;
+  diary(h, `Came of age in the guild (${{ follow: 'followed their parents', own: 'chose their own path', train: 'trained by the veterans' }[mode]}).`);
+  toast(`🌱 ${k.name}, child of ${k.parents[0]} and ${k.parents[1]}, has grown up and joined the guild!`); chron(`🌱 ${k.name} grew up and joined the guild.`); sfx('goal');
+}
 function tickFamily(dt) {
   const f = G.flags; f.famT = (f.famT ?? 360) - dt;
   if (f.famT <= 0) {
@@ -1547,13 +1580,7 @@ function tickFamily(dt) {
       }
     }
   }
-  for (const k of kids().slice()) if (G.time >= k.grow && G.heroes.length < popCap()) {
-    kids().splice(kids().indexOf(k), 1);
-    const p = new THREE.Vector3(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1.2)), h = createHero({ cls: k.cls, variant: Math.floor(Math.random() * 3), name: k.name, x: p.x, z: p.z, level: 2 + Math.floor(legacyLvl('recruits') / 2) });
-    if (k.tags && TAGS[k.tags[0]]) { h.tags = k.tags.filter(t => TAGS[t]); h.tags.forEach(t => codexAdd('tags', t)); }
-    h.bio = [h.bio ? h.bio[0] : 'Raised in the guild.', `Child of ${k.parents[0]} and ${k.parents[1]}.`]; h.loy = 80;
-    toast(`🌱 ${k.name}, child of ${k.parents[0]} and ${k.parents[1]}, has grown up and joined the guild!`); chron(`🌱 ${k.name} grew up and joined the guild.`); sfx('goal');
-  }
+  for (const k of kids()) if (G.time >= k.grow && (!k.wait || G.time >= k.wait) && !evq().includes('heir')) { k.ready = 1; k.wait = 0; pushEvent('heir'); }
 }
 // ---- challenge dives: a daily seeded dive, Boss Rush (a boss every floor, double pay) and Hardcore (no rescue, +50% gold)
 // weekly challenge: one seeded dive per week with a special rule; the first run that reaches floor 5 pays out
@@ -2758,6 +2785,13 @@ function boostQuest(q, amt) {
 // Hero skills during a watched fight: one per class, once per expedition (a dive: once per 5 floors). They give a small boost to the odds
 // (a dive: a ward or a heal) and play a showy effect on the stage.
 const SKILLS = { knight: { icon: '🛡', name: 'Shield Wall', kind: 'wall', boost: 0.06 }, ranger: { icon: '🏹', name: 'Volley', kind: 'volley', boost: 0.05 }, wizard: { icon: '🔥', name: 'Nova', kind: 'nova', boost: 0.05 }, rogue: { icon: '🗡', name: 'Backstab', kind: 'stab', boost: 0.05 }, cleric: { icon: '🙏', name: 'Blessing', kind: 'bless', boost: 0.03, heal: 0.25 }, alchemist: { icon: '⚗️', name: 'Elixir', kind: 'elixir', boost: 0.03, heal: 0.2 } };
+SKILLS.bond = { icon: '💞', name: 'Bond Strike', kind: 'nova', boost: 0.08, heal: 0.15 };
+// two bonded heroes in the same party can fight as one: a combined strike that also heals the party
+function bondPair(q) {
+  const S = q.script, T = nowT(watching), alive = q.party.map((p, i) => ({ p, i })).filter(({ i }) => !(S.heroes[i].dies && T >= S.heroes[i].D));
+  for (const a of alive) { const ha = G.heroes.find(h => h.id === a.p.id); if (!ha) continue; for (const b of alive) if (a.i < b.i && ha.bonds && ha.bonds[b.p.id]) return [a.i, b.i, ha.bonds[b.p.id]]; }
+  return null;
+}
 const SKILL_CD = 25, SKILL_CAP = 0.12;   // seconds between uses (a dive: floors), and the most the skills can add to one quest's odds
 function skillLeft(q, cls) {
   const T = nowT(watching), S = q.script, used = ((q.dive ? q.skillsUsed : q.skillT) || {})[cls]; if (used === undefined) return 0;
@@ -2765,6 +2799,7 @@ function skillLeft(q, cls) {
 }
 function skillReady(q, cls) {
   const sk = SKILLS[cls], T = nowT(watching), S = q.script; if (!sk || !canIntervene(q)) return false;
+  if (cls === 'bond') return !!bondPair(q) && skillLeft(q, cls) <= 0;
   const h = q.party.findIndex((p, i) => p.cls === cls && !(S.heroes[i].dies && T >= S.heroes[i].D)); if (h < 0) return false;
   return skillLeft(q, cls) <= 0;
 }
@@ -2782,7 +2817,8 @@ function watchTap(e) {
 function watchSkill(cls) {
   const w = watching, q = w?.q, sk = SKILLS[cls]; if (!q || !sk) return;
   if (!skillReady(q, cls)) return toast('That skill is not ready.');
-  const T = nowT(w), S = q.script, h = q.party.findIndex((p, i) => p.cls === cls && !(S.heroes[i].dies && T >= S.heroes[i].D));
+  const T = nowT(w), S = q.script, bp = cls === 'bond' ? bondPair(q) : null, h = bp ? bp[0] : q.party.findIndex((p, i) => p.cls === cls && !(S.heroes[i].dies && T >= S.heroes[i].D));
+  if (bp) { for (const id of [q.party[bp[0]].id, q.party[bp[1]].id]) { const x = G.heroes.find(y => y.id === id); if (x) { x.happy = Math.min(100, x.happy + 10); } } const a = G.heroes.find(y => y.id === q.party[bp[0]].id), b2 = G.heroes.find(y => y.id === q.party[bp[1]].id); if (a && b2) addAff(a, b2, 3, true); }
   (q.casts ||= []).push({ t: T, kind: sk.kind, h });
   if (q.dive) (q.skillsUsed ||= {})[cls] = diveFloorIndex(S, T); else (q.skillT ||= {})[cls] = T;
   if (q.dive) {
@@ -2832,7 +2868,7 @@ function updateWatchHUD() {
   $('watchBar').classList.toggle('dive', dv);
   $('wParty').innerHTML = trHtml(q.party.map((p, h) => { const hp = heroHp(q, S, h, T), dead = S.heroes[h].dies && T >= S.heroes[h].D; return `<div class="chip ${dead ? 'dead' : ''}"><span>${dead ? '☠' : CLASSES[p.cls].icon} ${p.name}</span><b><i style="width:${hp * 100}%;background:${hp > 0.5 ? '#5be35b' : hp > 0.25 ? '#f0c040' : '#e0503a'}"></i></b></div>`; }).join(''));
   const ci = canIntervene(q), lab = first('alchemy');
-  $('wSkills').innerHTML = trHtml(q.party.map(p => p.cls).filter((c, i, a) => a.indexOf(c) === i && SKILLS[c]).map(c => `<button class="act ${skillReady(q, c) ? '' : 'off'}" data-skill="${c}" ${skillReady(q, c) ? '' : 'disabled'}>${SKILLS[c].icon} ${SKILLS[c].name}${skillLeft(q, c) > 0 ? ' · ' + Math.ceil(skillLeft(q, c)) + (q.dive ? 'f' : 's') : ''}</button>`).join(''));
+  $('wSkills').innerHTML = trHtml([...q.party.map(p => p.cls).filter((c, i, a) => a.indexOf(c) === i && SKILLS[c]), ...(bondPair(q) ? ['bond'] : [])].map(c => `<button class="act ${skillReady(q, c) ? '' : 'off'}" data-skill="${c}" ${skillReady(q, c) ? '' : 'disabled'}>${SKILLS[c].icon} ${SKILLS[c].name}${skillLeft(q, c) > 0 ? ' · ' + Math.ceil(skillLeft(q, c)) + (q.dive ? 'f' : 's') : ''}</button>`).join(''));
   $('wRecall').classList.toggle('hidden', !!q.defense);
   const potions = ofType('alchemy').reduce((n, b) => n + b.stock, 0), nextF = dv ? diveFloorIndex(S, T) + 1 : 0, warded = dv && (q.enchants || []).some(x => x.floor + 3 > nextF);
   $('wEnchant').disabled = !ci || G.mana < 5 || (dv ? warded : !!(q.enchant || q.enchantedMid)); $('wEnchant').textContent = tr(dv ? (warded ? '✨ Ward active' : '✨ Ward (5)') : `✨ Enchant (5) · ${Math.round(q.chance * 100)}%`);
