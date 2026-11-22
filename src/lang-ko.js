@@ -274,6 +274,10 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^📋 “(.+)” failed: (.+)\. Next time: (.+)\.$/, (n, w, x) => {
+      const P = { 'no hero was strong against the boss': '보스에게 강한 영웅이 없었음', 'some heroes were tired': '일부 영웅이 지쳐 있었음', 'some heroes had no gear': '일부 영웅에게 장비가 없었음', 'bad luck — even good odds can fail': '운이 나빴음 — 승산이 높아도 실패할 수 있습니다', 'pick a stronger party or an easier quest': '더 강한 파티를 꾸리거나 쉬운 퀘스트를 고르세요', 'use the boss preparations': '보스 준비를 사용하세요', 'let them rest first': '먼저 쉬게 하세요', 'equip them at the forge': '대장간에서 장비를 갖추게 하세요', 'a cleric lowers casualties': '성직자가 있으면 사상자가 줄어듭니다', 'try again': '다시 도전하세요' };
+      const t = s => s.split('; ').map(x => P[x] || x.replace(/^the odds were only (\d+)%$/, '승률이 $1%뿐이었음').replace(/^bring a (.+)$/, (m, c) => `${c.split(' or ').map(v => f(v)).join(' 또는 ')}을(를) 데려가세요`)).join('; ');
+      return `📋 “${f(n)}” 실패: ${t(w)}. 다음에는: ${t(x)}.`; }],
     [/^(\d+) raiders( led by a warchief)? are at the gates\. Choose up to three heroes.*$/, (n, w) => `습격자 ${n}명${w ? '(대장군이 이끎)' : ''}이 성문 앞에 있습니다. 성벽을 맡을 영웅을 최대 3명 고르고, 바리케이드를 세운 뒤 경종을 울리세요. 마을의 습격자를 탭해 직접 쓰러뜨릴 수도 있습니다.`],
     [/^Barricades: (\d)\/3 \(\+2 defense each\)$/, n => `바리케이드: ${n}/3 (각 방어 +2)`],
     [/^(.+\.) · (\d+)g$/, (a, n) => `${f(a)} · ${n}골드`],

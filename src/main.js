@@ -372,6 +372,7 @@ function floatText(pos, text, color) {
   floaters.push({ el, pos: pos.clone(), t: 0 });
 }
 function toast(msg) {
+  try { notifyLog.push({ t: Math.floor(G.time / 60) + 1 + 'm', m: tr(msg) }); if (notifyLog.length > 60) notifyLog.shift(); } catch (e) { /* log not ready yet */ }
   const el = document.createElement('div'); el.className = 'toast'; el.textContent = tr(msg); if (/^(Not enough|Cannot|No |You cannot|Use up|Too late|This party is already|Nothing in stock|A party is already|The dive needs|Build a Waystone|Requirements for)/.test(msg)) sfx('deny');
   $('toasts').appendChild(el); setTimeout(() => el.remove(), 4000);
   while ($('toasts').children.length > 4) $('toasts').firstChild.remove();
@@ -881,7 +882,7 @@ function notify(title, body) {
 }
 function resolveQuest(q) {
   const ok = q.ok; sfx(ok ? 'win' : 'lose'); notify(ok ? '🏆 Quest complete' : '☠ Quest failed', q.name);
-  onQuestEnd(q, ok); maybeQuestEvent(q);
+  onQuestEnd(q, ok); maybeQuestEvent(q); if (!ok && !q.defense) { try { whyFailed(q); } catch (e) { logError('why: ' + e.message); } }
   const hp = new THREE.Vector3(HALL.cx + 2.5, 0, HALL.cz + 5);
   q.state = 'done'; G.quests.splice(G.quests.indexOf(q), 1);
   const alive = [];
@@ -1257,7 +1258,7 @@ function updateEconomy(dt) {
   // quests
   t.quest -= dt;
   if (t.quest <= 0) { t.quest = 14; if (G.quests.filter(q => q.state === 'open').length < boardSlots()) genQuest(); legendTick(); }
-  townTick(dt); tickPeople(dt); tickDisaster(dt); tickFamily(dt); tickTrade(); tickKingdom(dt); tickRivalEvents(dt); tickVisitors(dt); tickFlash(dt);
+  townTick(dt); tickPeople(dt); tickDisaster(dt); tickFamily(dt); tickTrade(); tickKingdom(dt); tickRivalEvents(dt); tickVisitors(dt); tickFlash(dt); tickAutoManage(dt);
   for (const q of [...G.quests]) if (q.state === 'active') { if (q.dive) diveTick(q, dt); else { q.t -= dt; maybeFork(q); if (q.t <= 0 || q.dur - q.t >= questEnd(q)) (q.defense ? resolveDefense(q) : resolveQuest(q)); } }
   // events
   t.merchant -= dt; if (t.merchant <= 0) { t.merchant = rnd(150, 220); if (G.renown >= 2 && !G.merchant) startMerchant(); }
@@ -1822,6 +1823,45 @@ function dropLoot(q, ok) {
 }
 function equipItem(h, id) { const i = inv().findIndex(x => x.id === id); if (i < 0) return; const it = inv()[i]; h.eq = h.eq || {}; const old = h.eq[it.slot]; inv().splice(i, 1); if (old) inv().push(old); h.eq[it.slot] = it; sfx('build'); }
 function unequipItem(h, slot) { if (!h.eq || !h.eq[slot] || inv().length >= 30) return; inv().push(h.eq[slot]); h.eq[slot] = null; }
+// ---- compare two heroes side by side
+let cmpSel = [];
+function compareRows(a, b) {
+  const ma = heroMods(a), mb = heroMods(b), rows = [
+    ['Class', heroLabel(a), heroLabel(b)], ['Level', a.level, b.level], ['Combat power', heroPower(a, 'combat').toFixed(1), heroPower(b, 'combat').toFixed(1)], ['Gather power', heroPower(a, 'gather').toFixed(1), heroPower(b, 'gather').toFixed(1)], ['Arcane power', heroPower(a, 'arcane').toFixed(1), heroPower(b, 'arcane').toFixed(1)],
+    ['Survival bonus', Math.round(ma.survive * 100) + '%', Math.round(mb.survive * 100) + '%'], ['Loot bonus', Math.round(ma.loot * 100) + '%', Math.round(mb.loot * 100) + '%'], ['Stamina', Math.round(a.stamina), Math.round(b.stamina)], ['Happiness', Math.round(a.happy), Math.round(b.happy)],
+    ['Gear +', (a.plus || 0), (b.plus || 0)], ['Role', a.role ? ROLES[a.role][1] : '—', b.role ? ROLES[b.role][1] : '—'], ['Weapon', a.wep ? LEGWEP[a.wep].name : '—', b.wep ? LEGWEP[b.wep].name : '—'], ['Charm', a.charm ? CHARMS[a.charm].name : '—', b.charm ? CHARMS[b.charm].name : '—'],
+    ['Mastery ranks', Object.values(a.sk || {}).reduce((x, y) => x + y, 0), Object.values(b.sk || {}).reduce((x, y) => x + y, 0)], ['Loyalty', Math.round(a.loy ?? 60), Math.round(b.loy ?? 60)]];
+  return rows;
+}
+// ---- auto-manager: rules the guild follows on its own every few seconds
+const AUTO_OPTS = { trainLv: [0, 3, 5, 8], reinf: [0, 1, 2, 3, 5], reserve: [0, 300, 600, 1200] };
+const autoRules = () => (G.flags.am ||= { trainLv: 0, reinf: 0, reserve: 300, sell: 0, equip: 0 });
+let amT = 6;
+const itemScore = it => Object.entries(it.aff).reduce((n, [k, v]) => n + Math.abs(v) * ({ pw: 3, survive: 2, loot: 1, decay: 1, succ: 2 }[k] || 1), 0);
+function tickAutoManage(dt) {
+  amT -= dt; if (amT > 0) return; amT = 6; const A = autoRules();
+  if (A.sell) { let g = 0; G.flags.inv = inv().filter(it => { if (it.rar === 0) { g += itemValue(it); return false; } return true; }); if (g) G.gold += g; }
+  if (A.equip) for (const h of G.heroes) for (const sl of ['armor', 'trinket']) { const cur = h.eq && h.eq[sl], best = inv().filter(it => it.slot === sl).sort((a, b) => itemScore(b) - itemScore(a))[0]; if (best && (!cur || itemScore(best) > itemScore(cur) * 1.15)) equipItem(h, best.id); }
+  if (A.trainLv && first('training')) for (const h of G.heroes) { if (h.level >= A.trainLv || h.state === 'quest' || h.train > 0) continue; const c = trainCost(h); if (G.gold - c < A.reserve) break; G.gold -= c; h.train = 80; missionTick('upgrade'); }
+  if (A.reinf && first('forge')) for (const h of G.heroes) { if ((h.plus || 0) >= Math.min(A.reinf, maxPlus())) continue; const c = plusCost(h); if (G.gold - c.gold < A.reserve || G.ore < c.ore || G.ingots < c.ing) continue; G.gold -= c.gold; G.ore -= c.ore; G.ingots -= c.ing; h.plus = (h.plus || 0) + 1; missionTick('upgrade'); }
+}
+// ---- after a failed expedition, a short report on the likely causes and what to try next
+function whyFailed(q) {
+  const hs = q.heroes.filter(Boolean), why = [], fix = [], pct = Math.round((q.chance || 0) * 100), B = q.boss ? BOSS[q.boss] : null;
+  if (pct < 55) { why.push(`the odds were only ${pct}%`); fix.push('pick a stronger party or an easier quest'); }
+  if (B && !hs.some(h => B.weak.includes(h.cls))) { why.push('no hero was strong against the boss'); fix.push(`bring a ${B.weak.map(c => CLASSES[c].label).join(' or ')}`); }
+  if (B && !(q.prep || []).length) fix.push('use the boss preparations');
+  if (hs.some(h => h.stamina < 45)) { why.push('some heroes were tired'); fix.push('let them rest first'); }
+  if (hs.some(h => !h.gear)) { why.push('some heroes had no gear'); fix.push('equip them at the forge'); }
+  if (!hs.some(h => h.cls === 'cleric') && hs.length >= 3) fix.push('a cleric lowers casualties');
+  if (q.mods && q.mods.length && !why.length) why.push(`the quest was ${q.mods.map(k => MODS[k].label || k).join(' and ').toLowerCase()}`);
+  if (!why.length) why.push('bad luck — even good odds can fail');
+  const t = `📋 “${q.name}” failed: ${why.join('; ')}. Next time: ${fix.slice(0, 3).join('; ') || 'try again'}.`; chron(t); toast(t);
+}
+// ---- quest board filters and sort
+let qFilter = 'all', qSort = 'reward';
+// ---- notification center: everything the toasts said, newest first
+const notifyLog = [];
 // ---- hero diary: a few lines per hero about what happened to them
 const diary = (h, text) => { if (!h) return; const d = (h.diary ||= []); d.push({ d: Math.floor(G.time / 60) + 1, t: text }); if (d.length > 8) d.shift(); };
 // ---- 3D companions and disaster visuals
@@ -2246,7 +2286,10 @@ function modalContent() {
       h += '<div class="sec">Active Expeditions</div>' + (act.map(q => q.dive
         ? `<div class="row"><div class="grow"><div class="t">🌀 Endless Dive — floor ${diveFloorIndex(q.script, q.elapsed) + 1}</div><div class="s">${q.heroes.map(x => x.name).join(', ')} · at risk: ${rewardText(q.pending)}</div><div class="bar"><i style="width:${diveProg(q)}%"></i></div></div><div style="text-align:center"><button class="act" data-act="watch" data-q="${q.id}">👁 Watch</button></div></div>`
         : `<div class="row"><div class="grow"><div class="t">${q.name}</div><div class="s">${(q.party || q.heroes).map(x => x.name).join(', ')} · success ${Math.round(q.chance * 100)}%</div><div class="bar"><i style="width:${100 - q.t / q.dur * 100}%"></i></div></div><div style="text-align:center">${Math.ceil(q.t)}s<br><button class="act" data-act="watch" data-q="${q.id}">👁 Watch</button></div></div>`).join('') || '<div class="s">None.</div>');
-      h += '<div class="sec">Quest Board</div>' + (open.map(q => {
+      const qf = { all: 'All', combat: '⚔ Combat', gather: '🌿 Gather', arcane: '✨ Arcane', win: '✔ Winnable', special: '⭐ Special' }, qs = { reward: 'Reward', danger: 'Danger', time: 'Fastest' };
+      const winP = q => { const p = bestParty(q); return p.length >= q.minH ? chanceFor(q, p, { potion: false }) : 0; };
+      const openF = open.filter(q => qFilter === 'all' || (qFilter === 'win' ? winP(q) >= 0.7 : qFilter === 'special' ? (q.special || q.boss || q.contested || q.flashBy) : q.type === qFilter)).sort({ reward: (a, b) => b.gold - a.gold, danger: (a, b) => a.diff - b.diff, time: (a, b) => a.dur - b.dur }[qSort]);
+      h += '<div class="sec">Quest Board</div><div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px">' + Object.entries(qf).map(([k, n]) => `<button class="act ${qFilter === k ? '' : 'red'}" style="padding:2px 8px" data-act="qfilter" data-k="${k}">${n}</button>`).join('') + '</div><div style="display:flex;gap:4px;margin-bottom:6px"><span class="s" style="align-self:center">Sort:</span>' + Object.entries(qs).map(([k, n]) => `<button class="act ${qSort === k ? '' : 'red'}" style="padding:2px 8px" data-act="qsort" data-k="${k}">${n}</button>`).join('') + '</div>' + (openF.map(q => {
         const party = bestParty(q), ok = party.length >= q.minH, c = Math.round(chanceFor(q, party, { potion: false }) * 100), notes = ok ? modPenalty(q, party)[1] : [];
         const loot = Object.entries(q.loot).map(([k, v]) => ({ ore: '⛏️', herbs: '🌿', wood: '🪵', arcane: '✨' }[k]) + v).join(' ');
         return `<div class="row" ${q.special ? 'style="border-color:#ff9a4a"' : ''}><div class="grow"><div class="t">${q.special ? '📖 ' : ''}${q.name} <span class="tag">${q.type}</span> ${modTags(q)}</div>
@@ -2303,6 +2346,16 @@ function modalContent() {
       h += `<div class="sec">Export / import</div><textarea id="saveText" rows="4" style="width:100%;box-sizing:border-box;font:11px monospace" placeholder="Press Export, or paste a save here and press Import">${saveBuf}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="act" data-act="exportsave">Export</button><button class="act red" data-act="importsave">Import (replaces your guild)</button></div>`;
       return ['💾 Save slots', h];
     }
+    case 'compare': {
+      const [a, b] = cmpSel.map(id => G.heroes.find(h => h.id === id)); if (!a || !b) return ['⚖ Compare', '<div class="s">Pick two heroes from the Heroes screen (⚖ button).</div>'];
+      const rows = compareRows(a, b), better = (x, y) => { const nx = parseFloat(x), ny = parseFloat(y); return isNaN(nx) || isNaN(ny) ? 0 : nx > ny ? 1 : nx < ny ? -1 : 0; };
+      return ['⚖ Compare', `<table style="width:100%;border-collapse:collapse;font-size:13px"><tr><th></th><th>${a.name}</th><th>${b.name}</th></tr>` + rows.map(([n, x, y]) => `<tr style="border-top:1px solid #fff2"><td class="s">${n}</td><td style="text-align:center;${better(x, y) > 0 ? 'color:#9bff9b;font-weight:700' : ''}">${x}</td><td style="text-align:center;${better(x, y) < 0 ? 'color:#9bff9b;font-weight:700' : ''}">${y}</td></tr>`).join('') + `</table><button class="act red" data-act="heroes" style="margin-top:8px">◀ Back</button>`];
+    }
+    case 'auto': {
+      const A = autoRules(), row = (t, d, k, label) => `<div class="row"><div class="grow"><div class="t">${t}</div><div class="s">${d}</div></div><button class="act ${A[k] ? '' : 'red'}" data-act="autocycle" data-k="${k}">${label}</button></div>`;
+      return ['⚙ Auto-manager', `<div class="s">The guild follows these rules by itself, keeping a gold reserve.</div>` + row('🏋 Train heroes', 'Send idle heroes to train until they reach this level.', 'trainLv', A.trainLv ? 'Up to Lv ' + A.trainLv : 'Off') + row('⚒ Reinforce gear', 'Reinforce everyone’s gear up to this step.', 'reinf', A.reinf ? 'Up to +' + A.reinf : 'Off') + row('💰 Gold reserve', 'Never spend below this amount.', 'reserve', A.reserve + 'g') + row('🎒 Sell common loot', 'Automatically sell Common items.', 'sell', A.sell ? 'On' : 'Off') + row('🛡 Auto-equip best loot', 'Equip clearly better items.', 'equip', A.equip ? 'On' : 'Off')];
+    }
+    case 'log': return ['🔔 Notifications', (notifyLog.slice().reverse().map(n => `<div class="s">${n.t} · ${n.m}</div>`).join('')) || '<div class="s">Nothing yet.</div>'];
     case 'inv': {
       const l = inv().slice().sort((a, b) => b.rar - a.rar);
       return ['🎒 Pack', `<div class="s">${l.length}/30 items. Items drop from expeditions (bosses always drop one). Equip them from a hero's Gear tab, or sell what you don't need.</div><div style="display:flex;gap:6px;margin:6px 0"><button class="act red" data-act="sellcommon">Sell all Common</button></div>` + (l.map(it => `<div class="row"><div class="grow"><div class="t">${itemTag(it)} <span class="tag">${RARITY[it.rar][0]}</span></div><div class="s">${itemText(it)}</div></div><button class="act red" data-act="sellitem" data-i="${it.id}">Sell ${itemValue(it)}g</button></div>`).join('') || '<div class="s">The pack is empty.</div>')];
@@ -2323,9 +2376,9 @@ function modalContent() {
     }
     case 'heroes': {
       const list = heroList(), todo = todoCount();
-      let h = `<div class="s">${G.heroes.length} heroes · ${todo} need attention <button class="act red" data-act="inv" style="float:right;margin-left:4px">🎒 Pack (${inv().length})</button><button class="act red" data-act="album" style="float:right">🃏 Album</button></div><div style="display:flex;gap:5px;flex-wrap:wrap;margin:6px 0">` + Object.entries(FILTERS).map(([k, n]) => `<button class="act ${heroFilter === k ? '' : 'red'}" data-act="hfilter" data-k="${k}">${n}</button>`).join('') + `</div><div style="display:flex;gap:5px;flex-wrap:wrap;margin:0 0 6px"><span class="s" style="align-self:center">Sort:</span>` + Object.entries(SORTS).map(([k, n]) => `<button class="act ${heroSort === k ? '' : 'red'}" data-act="hsort" data-k="${k}">${n}</button>`).join('') + `</div>`;
+      let h = `<div class="s">${G.heroes.length} heroes · ${todo} need attention <button class="act red" data-act="auto" style="float:right;margin-left:4px">⚙ Auto</button><button class="act red" data-act="inv" style="float:right;margin-left:4px">🎒 Pack (${inv().length})</button><button class="act red" data-act="album" style="float:right">🃏 Album</button></div><div style="display:flex;gap:5px;flex-wrap:wrap;margin:6px 0">` + Object.entries(FILTERS).map(([k, n]) => `<button class="act ${heroFilter === k ? '' : 'red'}" data-act="hfilter" data-k="${k}">${n}</button>`).join('') + `</div><div style="display:flex;gap:5px;flex-wrap:wrap;margin:0 0 6px"><span class="s" style="align-self:center">Sort:</span>` + Object.entries(SORTS).map(([k, n]) => `<button class="act ${heroSort === k ? '' : 'red'}" data-act="hsort" data-k="${k}">${n}</button>`).join('') + `</div>`;
       h += `<div style="display:flex;gap:5px;flex-wrap:wrap;margin:0 0 6px"><button class="act" data-act="bulktrain" ${first('training') ? '' : 'disabled'}>🏋 Train all idle</button><button class="act" data-act="bulkreinforce" ${first('forge') ? '' : 'disabled'}>⚒ Reinforce all</button></div>`;
-      h += list.map(x => { const tds = heroTodo(x), cl = x.promo ? promoOf(x).icon : CLASSES[x.cls].icon; return `<div class="row" data-act="hero" data-id="${x.id}" style="cursor:pointer;${tds.length ? 'border-color:#8fd4ff' : ''}"><div style="font-size:30px">${cl}</div><div class="grow"><div class="t">${x.vip ? '⭐ ' : ''}${x.name} <span class="tag">Lv ${x.level}</span> <span class="tag">${heroLabel(x)}</span>${x.wep ? ' ' + LEGWEP[x.wep].icon : ''}${x.charm ? ' ' + CHARMS[x.charm].icon : ''}</div><div class="bar" title="Stamina"><i style="width:${Math.round(x.stamina)}%;background:${x.stamina < 45 ? '#e0503a' : '#5be35b'}"></i></div><div class="bar" title="Happiness"><i style="width:${Math.round(x.happy)}%;background:${x.happy < 30 ? '#e0503a' : '#f0c040'}"></i></div><div class="s">${{ idle: 'Idle', walking: 'Walking', busy: 'Busy', waiting: 'Waiting around', quest: 'On an expedition', leaving: 'Leaving the guild' }[x.state] || x.state}${tds.length ? ' · ' + tds.map(t => t[0] + ' ' + t[1]).join(' · ') : ''}</div></div></div>`; }).join('') || '<div class="s">No heroes match.</div>';
+      h += list.map(x => { const tds = heroTodo(x), cl = x.promo ? promoOf(x).icon : CLASSES[x.cls].icon; return `<div class="row" data-act="hero" data-id="${x.id}" style="cursor:pointer;${tds.length ? 'border-color:#8fd4ff' : ''}"><div style="font-size:30px">${cl}</div><div class="grow"><div class="t">${x.vip ? '⭐ ' : ''}${x.name} <span class="tag">Lv ${x.level}</span> <span class="tag">${heroLabel(x)}</span>${x.wep ? ' ' + LEGWEP[x.wep].icon : ''}${x.charm ? ' ' + CHARMS[x.charm].icon : ''}</div><div class="bar" title="Stamina"><i style="width:${Math.round(x.stamina)}%;background:${x.stamina < 45 ? '#e0503a' : '#5be35b'}"></i></div><div class="bar" title="Happiness"><i style="width:${Math.round(x.happy)}%;background:${x.happy < 30 ? '#e0503a' : '#f0c040'}"></i></div><button class="act red" data-act="cmp" data-id="${x.id}" style="float:right;margin-top:-30px;padding:2px 8px">${cmpSel.includes(x.id) ? '⚖✔' : '⚖'}</button><div class="s">${{ idle: 'Idle', walking: 'Walking', busy: 'Busy', waiting: 'Waiting around', quest: 'On an expedition', leaving: 'Leaving the guild' }[x.state] || x.state}${tds.length ? ' · ' + tds.map(t => t[0] + ' ' + t[1]).join(' · ') : ''}</div></div></div>`; }).join('') || '<div class="s">No heroes match.</div>';
       return ['👥 Heroes', h];
     }
     case 'event': {
@@ -2576,6 +2629,11 @@ const ACT = {
   role(d) { const h = G.heroes.find(x => x.id === +d.id), R = ROLES[d.k]; if (!h || !R || h.level < 3 || G.gold < roleCost(h)) return; G.gold -= roleCost(h); h.role = d.k; diary(h, `Took up the role of ${R[1].toLowerCase()}.`); toast(`${R[0]} ${h.name} is now a ${R[1].toLowerCase()}.`); sfx('goal'); },
   heroes() { openModal('heroes'); },
   album() { openModal('album'); },
+  auto() { openModal('auto'); },
+  autocycle(d) { const A = autoRules(), k = d.k; if (k === 'sell' || k === 'equip') A[k] = A[k] ? 0 : 1; else { const o = AUTO_OPTS[k]; A[k] = o[(o.indexOf(A[k]) + 1) % o.length]; } },
+  cmp(d) { const id = +d.id; if (cmpSel.includes(id)) cmpSel = cmpSel.filter(x => x !== id); else { cmpSel.push(id); if (cmpSel.length > 2) cmpSel.shift(); } if (cmpSel.length === 2) openModal('compare'); },
+  qfilter(d) { qFilter = d.k; },
+  qsort(d) { qSort = d.k; },
   postsopen() { openModal('posts'); },
   postsel(d) { const id = +d.id, a = (G.flags.postSel ||= []); if (a.includes(id)) G.flags.postSel = a.filter(x => x !== id); else if (a.length < 3) a.push(id); else toast('At most 3 heroes man the walls.'); },
   barricade() { const q = raidQuest(); if (!q || (q.barricade || 0) >= 3 || G.gold < 60) return; G.gold -= 60; q.barricade = (q.barricade || 0) + 1; q.chance = Math.max(0.05, Math.min(0.97, defense(false) / raidThreat(q))); sfx('build'); toast('🪵 A barricade goes up at the gate.'); },
@@ -3280,4 +3338,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__renderer = renderer; window.__scene = scene; window.__api = { rollItem, dropLoot, equipItem, inv, maybeFork, smiteGoblin, tickFlash, cardAdd, tickVisitors, districts, fullKit, ROLES, missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__renderer = renderer; window.__scene = scene; window.__api = { whyFailed, tickAutoManage, rollItem, dropLoot, equipItem, inv, maybeFork, smiteGoblin, tickFlash, cardAdd, tickVisitors, districts, fullKit, ROLES, missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
