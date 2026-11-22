@@ -1862,6 +1862,17 @@ function whyFailed(q) {
 let qFilter = 'all', qSort = 'reward';
 // ---- notification center: everything the toasts said, newest first
 const notifyLog = [];
+// ---- building tiers: from level 3 and 5 a building gets visible upgrades (lanterns, banners, gold trim)
+function tierDecor(b) {
+  if (b.tierGroup) { b.group.remove(b.tierGroup); b.tierGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); }); b.tierGroup = null; }
+  if (b.level < 3 || BUILDINGS[b.type].decor || BUILDINGS[b.type].walkable) return;
+  const g = new THREE.Group(), hw = b.w / 2 + 0.1, hd = b.d / 2 + 0.1, top = ({ tavern: 3.4, forge: 3.0, alchemy: 3.2, warehouse: 2.4, smelter: 2.6, lumber: 2.0, farm: 1.2, bakery: 2.2, portal: 3.2, market: 2.2, tower: 3.4, training: 1.8, tent: 1.2 })[b.type] || 2.4;
+  const col = b.level >= 5 ? 0xe8c04a : 0xc0392b;
+  for (const [x, z] of [[-hw, hd], [hw, hd]]) { g.add(vox(0.08, 1.7, 0.08, 0x6b4a2b, x, 0, z)); g.add(vox(0.45, 0.6, 0.05, col, x + (x > 0 ? -0.26 : 0.26), 1.0, z)); g.add(vox(0.18, 0.18, 0.18, 0xffb040, x, 1.7, z, 0xffa030, 1)); }
+  if (b.level >= 5) { g.add(vox(b.w * 0.8, 0.12, 0.12, 0xe8c04a, 0, top, hd - 0.4, 0xffc040, 0.5)); g.add(sphG(0.16, 0xffe080, 0, top + 0.2, 0)); for (const x of [-hw, hw]) g.add(vox(0.14, 0.14, 0.14, 0xffe080, x, 1.9, hd, 0xffd060, 0.8)); }
+  b.tierGroup = g; b.group.add(g);
+}
+const sphG = (r, c, x, y, z) => { const m = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), new THREE.MeshLambertMaterial({ color: c, emissive: c, emissiveIntensity: 0.6 })); m.position.set(x, y, z); return m; };
 // ---- hero diary: a few lines per hero about what happened to them
 const diary = (h, text) => { if (!h) return; const d = (h.diary ||= []); d.push({ d: Math.floor(G.time / 60) + 1, t: text }); if (d.length > 8) d.shift(); };
 // ---- 3D companions and disaster visuals
@@ -2731,7 +2742,7 @@ const ACT = {
   sell(d) { const k = d.k; if (k === 'ingots') { if (G.ingots >= 5) { G.ingots -= 5; G.gold += 5 * 14; } return; } if (G[k] >= 5) { G.gold += sellPrice(k); G[k] -= 5; } },
   promote(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h || h.promo || G.rank < 1 || h.level < 5 || G.gold < 500) return; G.gold -= 500; h.promo = d.k === 'b' ? 'b' : true; G.stats.promoted++; cardAdd(h); addPromoGear(h); floatText(h.pos, `${promoOf(h).icon} ${promoOf(h).name}!`, '#ffd24a'); toast(`${promoOf(h).icon} ${h.name} is promoted to ${promoOf(h).name}!`); },
   talent(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h || (h.talents || []).length >= talentSlots(h)) return; const tier = TALENTS[h.cls][(h.talents || []).length]; if (!tier.some(t => t[0] === d.t)) return; (h.talents = h.talents || []).push(d.t); toast(`✨ ${h.name} learns ${talentDef(h.cls, d.t)[1]}!`); },
-  upBuilding(d) { const b = G.buildings.find(x => x.id === +d.id), c = 150 * b.level + 100; if (b && b.level < maxLevel() && G.gold >= c && G.wood >= 5 * b.level && hasRare(upReq(b))) { G.gold -= c; G.wood -= 5 * b.level; spendRare(upReq(b)); b.level++; b.pop = 0.6; toast(`${BUILDINGS[b.type].name} upgraded to level ${b.level}!`); } },
+  upBuilding(d) { const b = G.buildings.find(x => x.id === +d.id), c = 150 * b.level + 100; if (b && b.level < maxLevel() && G.gold >= c && G.wood >= 5 * b.level && hasRare(upReq(b))) { G.gold -= c; G.wood -= 5 * b.level; spendRare(upReq(b)); b.level++; b.pop = 0.6; tierDecor(b); toast(`${BUILDINGS[b.type].name} upgraded to level ${b.level}!`); } },
   open(d) { openModal(d.k); },
   buy(d) { const p = buyPrice(d.k); if (G.gold >= p) { G.gold -= p; G[d.k] += 5; } },
   mbuy(d) {
@@ -3021,7 +3032,7 @@ function loadGame() {
     const nextId = G.nextId;
     d.buildings.forEach(sb => {
       if (sb.type === 'hall') { G.buildings[0].level = sb.level; return; }
-      const b = addBuilding(sb.type, sb.cx, sb.cz, sb.rot || 0); b.level = sb.level; b.stock = sb.stock; b.progress = sb.progress; if (sb.spec) b.spec = sb.spec; b.pop = 1; b.group.scale.setScalar(1);
+      const b = addBuilding(sb.type, sb.cx, sb.cz, sb.rot || 0); b.level = sb.level; tierDecor(b); b.stock = sb.stock; b.progress = sb.progress; if (sb.spec) b.spec = sb.spec; b.pop = 1; b.group.scale.setScalar(1);
     });
     G.nextId = Math.max(G.nextId, nextId);
     d.heroes.forEach(sh => { const h = createHero(sh); if (sh.onQuest) { h.state = 'quest'; h.mesh.visible = false; } });
@@ -3338,4 +3349,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__renderer = renderer; window.__scene = scene; window.__api = { whyFailed, tickAutoManage, rollItem, dropLoot, equipItem, inv, maybeFork, smiteGoblin, tickFlash, cardAdd, tickVisitors, districts, fullKit, ROLES, missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__renderer = renderer; window.__scene = scene; window.__api = { tierDecor, whyFailed, tickAutoManage, rollItem, dropLoot, equipItem, inv, maybeFork, smiteGoblin, tickFlash, cardAdd, tickVisitors, districts, fullKit, ROLES, missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
