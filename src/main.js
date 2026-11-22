@@ -3,6 +3,7 @@ import { mergeStatic, buildChar, factionDecor, BUILDINGS, buildBuilding, buildHe
 import { makeRigChar, makeRigGolem, makeRigOgre, autoAnim } from './rigchar.js';
 import { createTutorial } from './tutorial.js';
 import { Ads } from './ads.js';
+import { IAP, PRODUCTS } from './iap.js';
 import { TAGS, makeProfile, tagMods, SEASON_NAMES, RESIDENTS, residentHome, ARCS, pickArc } from './people.js';
 import { sfx, unlock, setPref, getPrefs, setMusicMood, audioState } from './audio.js';
 import { tr, trHtml, initLang, setLang, getLang, onLangChange, translateStatic, LANGS } from './i18n.js';
@@ -1226,6 +1227,11 @@ const GOALS = [
   ['Reach 100 renown', () => G.renown >= 100, { gold: 4000 }],
 ];
 const rewardTags = r => Object.entries(r).map(([k, v]) => k === 'gold' ? `💰${v}` : k === 'renown' ? `⭐${v}` : Object.entries(v).map(([rk, rv]) => `${RARE[rk].icon}${rv}`).join('')).join(' ');
+// ---- purchases: what each product gives (checked again on start so a restored purchase is never lost)
+function grantPurchase(id) {
+  if (id === 'starter_pack' && !G.flags.starter) { G.flags.starter = 1; G.gold += 2500; G.rare.mythril += 2; G.ore += 30; G.wood += 30; G.herbs += 20; sfx('goal'); toast('🎁 Starter pack: +2500g, +2 Mythril and materials. Thank you!'); chron('🎁 The guild received a starter pack.'); }
+  if (id === 'remove_ads') { toast('🚫 Banner ads removed. Thank you for supporting the game!'); }
+}
 // ---- daily login: a 7-day track of small rewards (claimed from a window that opens once a day)
 const DAILY = [{ gold: 150 }, { gold: 200, ore: 10 }, { gold: 250, herbs: 10 }, { gold: 300, wood: 15 }, { gold: 400, mana: 10 }, { gold: 500, ore: 20, herbs: 10 }, { gold: 800, mythril: 1 }];
 const dayKey = (d = new Date()) => d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
@@ -1692,6 +1698,7 @@ function modalContent() {
     case 'settings': return ['⚙ Settings & Save', `
       <div class="row"><div class="grow"><div class="t">🔊 Sound</div><div class="s">Procedural sound effects and music (no downloads).</div></div><button class="act ${getPrefs().sfx ? '' : 'red'}" data-act="sfxtoggle">Effects: ${getPrefs().sfx ? 'On' : 'Off'}</button><button class="act ${getPrefs().music ? '' : 'red'}" data-act="musictoggle">Music: ${getPrefs().music ? 'On' : 'Off'}</button></div>
       <div class="row"><div class="grow"><div class="t">🌐 Language</div><div class="s">English / 한국어</div></div>${Object.entries(LANGS).map(([k, n]) => `<button class="act ${getLang() === k ? '' : 'red'}" style="${getLang() === k ? 'outline:2px solid #fff8' : ''}" data-act="lang" data-l="${k}">${n}</button>`).join('')}</div>
+      ${IAP.available ? `<div class="row"><div class="grow"><div class="t">🛒 Shop</div><div class="s">Remove the banner, or a one-time starter pack.</div></div><button class="act" data-act="shop">Open</button></div>` : ''}
       <div class="row"><div class="grow"><div class="t">📺 Rewarded ads</div><div class="s">Optional offers: double a quest's loot, rest tired heroes, rescue a wiped dive. Never forced.</div></div><button class="act ${Ads.enabled ? '' : 'red'}" data-act="adstoggle">${Ads.enabled ? 'On' : 'Off'}</button></div>
       <div class="row"><div class="grow"><div class="t">🎚 Graphics</div><div class="s">Auto lowers the resolution when the game runs slowly. Low turns shadows off for the smoothest play.</div></div><button class="act red" data-act="gfxcycle">${{ auto: 'Auto', high: 'High', low: 'Low' }[gfx]}</button></div>
       <div class="row"><div class="grow"><div class="t">🛤 Auto paths</div><div class="s">Link every new building to the street network with a short cobble path (a few coins).</div></div><button class="act ${G.flags.noAutoRoad ? 'red' : ''}" data-act="autoroadtoggle">${G.flags.noAutoRoad ? 'Off' : 'On'}</button></div>
@@ -1712,6 +1719,12 @@ function modalContent() {
       for (const n of [1, 2, 3]) h += `<div class="row"><div class="grow"><div class="t">Slot ${n}</div><div class="s">${slot(n)}</div></div><button class="act" data-act="slotsave" data-n="${n}">Save here</button><button class="act red" data-act="slotload" data-n="${n}">Load</button></div>`;
       h += `<div class="sec">Export / import</div><textarea id="saveText" rows="4" style="width:100%;box-sizing:border-box;font:11px monospace" placeholder="Press Export, or paste a save here and press Import">${saveBuf}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="act" data-act="exportsave">Export</button><button class="act red" data-act="importsave">Import (replaces your guild)</button></div>`;
       return ['💾 Save slots', h];
+    }
+    case 'shop': {
+      let h = '<div class="s">Optional purchases that support the game. Nothing here is needed to play, and none of it makes the game easier to win.</div>';
+      h += Object.entries(PRODUCTS).map(([id, P]) => { const have = IAP.owned(id), gone = id === 'starter_pack' && G.flags.starter; return `<div class="row"><div style="font-size:30px">${P.icon}</div><div class="grow"><div class="t">${P.name}</div><div class="s">${P.desc}</div></div>${have || gone ? '<span class="tag">✔ Owned</span>' : `<button class="act" data-act="iapbuy" data-id="${id}" ${IAP.available ? '' : 'disabled'}>${IAP.price(id)}</button>`}</div>`; }).join('');
+      h += IAP.available ? '' : '<div class="s">Purchases are not available right now (they need the Android app and a connection).</div>';
+      return ['🛒 Shop', h];
     }
     case 'daily': {
       const L = G.flags.login || { streak: 1, pending: 0 };
@@ -1920,6 +1933,8 @@ const ACT = {
   chron() { openModal('chronicle'); },
   relmap() { openModal('relmap'); },
   dailyopen() { openModal('daily'); },
+  shop() { openModal('shop'); },
+  async iapbuy(d) { const ok = await IAP.buy(d.id); if (!ok) return toast('The purchase was not completed.'); grantPurchase(d.id); renderModal(true); },
   dailyclaim() { const L = G.flags.login; if (!L || !L.pending) return; const r = dailyReward(L.streak - 1); G.gold += r.gold; G.ore += r.ore || 0; G.herbs += r.herbs || 0; G.wood += r.wood || 0; G.mana += r.mana || 0; G.rare.mythril += r.mythril || 0; L.pending = 0; sfx('goal'); toast(`🎁 Daily reward claimed: +${r.gold}g${r.mythril ? ' +1 Mythril' : ''}`); chron(`🎁 Day ${L.streak} reward`); },
   async adrest() { const ok = await Ads.show('restGuild'); if (!ok) return toast('The ad was not completed — no reward.'); let n = 0; for (const h of G.heroes) if (h.state !== 'quest' && h.state !== 'leaving' && h.stamina < 100) { h.stamina = 100; n++; floatText(h.pos, '✨', '#9bff9b'); } sfx('goal'); toast(`✨ ${n} heroes are rested and ready.`); renderModal(true); },
   adstoggle() { Ads.setEnabled(!Ads.enabled); },
@@ -2517,7 +2532,7 @@ function frame() {
  * ------------------------------------------------------------------ */
 initLang();
 resize();
-const loaded = loadGame(); checkDaily(); setTimeout(() => { if (G.flags.login && G.flags.login.pending && (G.flags.tutDone || G.questsDone > 0)) openModal('daily'); }, 2500); loadedOnce = true; try { buildLandmarks(false); } catch (e) { /* decoration */ }
+const loaded = loadGame(); setTimeout(() => { try { if (IAP.owned('starter_pack') && !G.flags.starter) grantPurchase('starter_pack'); } catch (e) { /* offline */ } }, 5000); checkDaily(); setTimeout(() => { if (G.flags.login && G.flags.login.pending && (G.flags.tutDone || G.questsDone > 0)) openModal('daily'); }, 2500); loadedOnce = true; try { buildLandmarks(false); } catch (e) { /* decoration */ }
 if (!loaded) {
   G.gold += 300 * legacyLvl('purse'); G.renown += 2 * legacyLvl('name'); G.flags.gen = LEGACY.gen + 1; if (LEGACY.gen) chron(`🏛 Generation ${LEGACY.gen + 1} of the guild begins.`);
   spawnHero('knight', true); spawnHero('ranger', true);
