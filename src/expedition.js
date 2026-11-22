@@ -222,7 +222,7 @@ export function relicOffer(q, k) {
   return out;
 }
 export function floorReward(q, k) {
-  const r = mulberry(q.seed * 57 + k * 977 + 3), boss = k % 5 === 4, rm = relicMods(q, k);
+  const r = mulberry(q.seed * 57 + k * 977 + 3), boss = !!q.rush || k % 5 === 4, rm = relicMods(q, k);
   const rw = { gold: Math.round((14 + 9 * k) * (boss ? 2 : 1) * (0.9 + 0.2 * r()) * rm.gold), ore: Math.floor(1 + r() * 2.5), wood: r() < 0.5 ? 1 : 0, herbs: Math.floor(r() * 2.5), mana: (boss ? 5 : 0) + rm.mana, mythril: 0, scale: 0, feather: 0, renown: boss ? 1 : 0 };
   if (k >= 6 && r() < (boss ? 0.5 : 0.12) * rm.rare) rw.mythril = 1 + (boss && k >= 14 ? 1 : 0);
   if (boss && k >= 9 && r() < 0.55 * rm.rare) rw.scale = 1;
@@ -287,7 +287,7 @@ function genFloorEvents(q, S, f, fromT) {
 }
 function genFloor(q, S) {
   const k = S.floors.length, prev = S.floors[k - 1], party = q.party;
-  const r = mulberry(q.seed * 31 + k * 7919 + 11), boss = k % 5 === 4, len = k === 0 ? 17 : (boss ? 18 : 13);
+  const r = mulberry(q.seed * 31 + k * 7919 + 11), boss = !!q.rush || k % 5 === 4, len = k === 0 ? 17 : (boss ? 18 : 13);
   const s = prev ? prev.e : 0, e = s + len, a = s + (k === 0 ? 6.5 : 0.2 * len), b = e - 0.12 * len;
   const alive = party.map((_, h) => !S.heroes[h].dies);
   const rm = relicMods(q, k);

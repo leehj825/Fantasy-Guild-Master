@@ -350,7 +350,7 @@ const boardSlots = () => 3 + G.boardLvl + (G.rank >= 2 ? 1 : 0) + (G.rank >= 3 ?
 const craftSpeed = () => (1 + 0.25 * G.staff.smith) * (G.research.forging ? 1.3 : 1) * (G.research.mythril ? 1.4 : 1) * (1 + 0.1 * regionPerk('stonepeak')) * (G.flags.faction === 'vanguard' ? 1.15 : 1) * (G.flags.smithTaught ? 1.1 : 1);
 const alchSpeed = () => (1 + 0.25 * G.staff.alch) * (G.research.forging ? 1.15 : 1) * (1 + 0.1 * regionPerk('ashen')) * (G.flags.faction === 'arcane' ? 1.15 : 1);
 const mealGold = tav => { tav = tav || first('tavern'); return (tav && tav.spec === 'feast' ? 1.25 : 1) * (G.flags.fest ? 1.5 : 1) * (seasonIdx() === 3 ? 1.25 : 1) * 9 * (1 + 0.15 * G.staff.cook) * (1 + 0.3 * ((tav?.level || 1) - 1)) * (tav ? adj(tav).meal : 1); };
-const questGoldMul = () => (1 + 0.04 * Math.min(3, retireN('quartermaster'))) * (G.research.charter ? 1.25 : 1) * (seasonIdx() === 1 ? 1.1 : 1) * (1 + 0.002 * (G.flags.rep ?? 10)) * (first('monument') ? 1.05 : 1) * (1 + 0.03 * squares()) * (1 + 0.05 * regionPerk('dunes')) * (1 + 0.03 * legacyLvl('trade'));
+const questGoldMul = () => (calEvent() ? calEvent().mul : 1) * (1 + 0.04 * Math.min(3, retireN('quartermaster'))) * (G.research.charter ? 1.25 : 1) * (seasonIdx() === 1 ? 1.1 : 1) * (1 + 0.002 * (G.flags.rep ?? 10)) * (first('monument') ? 1.05 : 1) * (1 + 0.03 * squares()) * (1 + 0.05 * regionPerk('dunes')) * (1 + 0.03 * legacyLvl('trade'));
 const trickleMul = () => (1 + 0.5 * G.staff.porter);
 const warehouseBonus = () => ofType('warehouse').reduce((s, w) => s + 6 + 4 * (w.level - 1), 0);
 const stockCap = b => 4 + 2 * b.level + warehouseBonus();
@@ -964,12 +964,12 @@ const newPending = () => ({ gold: 0, ore: 0, wood: 0, herbs: 0, mana: 0, mythril
 const heroSnap = h => ({ id: h.id, name: h.name, cls: h.cls, level: h.level, variant: h.variant || 0, trait: traitOf(h), vip: !!h.vip, power: heroPower(h, 'combat') });
 const diveFloor = q => q.script.floors[diveFloorIndex(q.script, q.elapsed)];
 const diveProg = q => { const f = diveFloor(q); return f ? Math.min(100, Math.max(0, (q.elapsed - f.s) / (f.e - f.s) * 100)) : 0; };
-function dispatchDive() {
+function dispatchDive(mode) {
   if (!first('portal')) return toast('Build a Waystone Portal first.');
   if (G.quests.some(q => q.dive)) return toast('A party is already inside the dungeon.');
   const r = readyHeroes().sort((a, b) => heroPower(b, 'combat') - heroPower(a, 'combat')).slice(0, 4);
   if (r.length < 2) return toast('The dive needs at least 2 geared, rested heroes.');
-  const q = { id: G.nextId++, name: 'Endless Dive', type: 'dive', dive: true, state: 'active', heroes: r, party: r.map(heroSnap), seed: (Math.random() * 1e9) | 0, heals: [], enchants: [], relics: [], offer: null, elapsed: 0, cleared: 0, pending: newPending(), dur: 1e9, t: 1e9, chance: 0.5, minH: 2, maxH: 4, diff: 0, loot: {}, enchant: false, gold: 0, renown: 0 };
+  const q = { id: G.nextId++, name: { daily: 'Daily Dive', rush: 'Boss Rush', hard: 'Hardcore Dive' }[mode] || 'Endless Dive', mode: mode || null, rush: mode === 'rush', hard: mode === 'hard', type: 'dive', dive: true, state: 'active', heroes: r, party: r.map(heroSnap), seed: mode === 'daily' ? dailySeed() : (Math.random() * 1e9) | 0, heals: [], enchants: [], relics: [], offer: null, elapsed: 0, cleared: 0, pending: newPending(), dur: 1e9, t: 1e9, chance: 0.5, minH: 2, maxH: 4, diff: 0, loot: {}, enchant: false, gold: 0, renown: 0 };
   q.script = newDiveScript(q); ensureFloors(q, 0); G.quests.push(q);
   r.forEach(h => { h.state = 'quest'; h.mesh.visible = false; setMood(h, null); h.onDone = null; });
   sfx('horn'); toast(`🌀 ${r.length} heroes step through the portal… Recall to bank your loot!`); renderModal(true);
@@ -981,7 +981,7 @@ function pickRelic(q, i, auto) {
 }
 function bankPending(q) {
   const p = q.pending, pm = G.research.prospect ? 1.5 : 1, txt = rewardText(p);
-  G.gold += Math.round(p.gold * questGoldMul()); G.ore += Math.round(p.ore * pm); G.wood += p.wood; G.herbs += p.herbs; G.mana += p.mana;
+  G.gold += Math.round(p.gold * questGoldMul() * (q.hard ? 1.5 : 1)); G.ore += Math.round(p.ore * pm); G.wood += p.wood; G.herbs += p.herbs; G.mana += p.mana;
   G.rare.mythril += p.mythril; G.rare.scale += p.scale; G.rare.feather += p.feather; G.renown += p.renown; q.pending = newPending();
   return txt;
 }
@@ -989,7 +989,7 @@ function diveTick(q, dt) {
   q.elapsed += dt; q.t = q.dur - q.elapsed; const S = q.script; ensureFloors(q, q.elapsed);
   while (q.cleared < S.floors.length && S.floors[q.cleared].e <= q.elapsed && !S.floors[q.cleared].lost) {
     const f = S.floors[q.cleared]; for (const k of Object.keys(q.pending)) q.pending[k] += f.reward[k] || 0;
-    q.cleared++; G.diveBest = Math.max(G.diveBest, q.cleared);
+    q.cleared++; if (!q.mode) G.diveBest = Math.max(G.diveBest, q.cleared);
     if (diveCheckpoint(f.k)) {
       toast(`🏁 Checkpoint — floor ${f.k + 1}! Banked: ${bankPending(q)}`);
       if (q.offer) pickRelic(q, 0, true);   // an unchosen offer is taken automatically
@@ -1001,6 +1001,7 @@ function diveTick(q, dt) {
 }
 // On a wipe-out the dive waits a few seconds so the player can accept a rescue offer: keep half of the unbanked loot and save the hero with the most XP.
 function diveRescueHold(q) {
+  if (q.hard) return false;   // no safety net in a hardcore dive
   const p = q.pending, worth = (p.gold || 0) + (p.ore || 0) * 3 + (p.mythril + p.scale + p.feather) * 150;
   if (q.rescue === undefined) {
     q.rescue = { until: G.time + 10, done: false }; const gold = Math.round((p.gold || 0) / 2);
@@ -1019,7 +1020,7 @@ function resolveDive(q, mode) {
   const S = q.script, T = q.elapsed; let text;
   if (mode === 'recalled') text = `🏁 Banked & left after floor ${q.cleared} · ${bankPending(q)}`;
   else text = q.rescued ? `🛟 Wiped out on floor ${S.floors.length}, but rescued: half the loot was kept.` : `☠ Wiped out on floor ${S.floors.length}. Lost unbanked loot: ${rewardText(q.pending)}`;
-  q.endText = text; G.diveBest = Math.max(G.diveBest, q.cleared);
+  q.endText = text; if (!q.mode) G.diveBest = Math.max(G.diveBest, q.cleared); else challengeDone(q);
   onQuestEnd(q, mode === 'recalled'); maybeDiveEvent(q);
   q.state = 'done'; G.quests.splice(G.quests.indexOf(q), 1);
   q.heroes.forEach(h => {
@@ -1506,6 +1507,28 @@ function tickFamily(dt) {
     toast(`🌱 ${k.name}, child of ${k.parents[0]} and ${k.parents[1]}, has grown up and joined the guild!`); chron(`🌱 ${k.name} grew up and joined the guild.`); sfx('goal');
   }
 }
+// ---- challenge dives: a daily seeded dive, Boss Rush (a boss every floor, double pay) and Hardcore (no rescue, +50% gold)
+const dailySeed = () => { let h = 7; for (const c of dayKey()) h = (h * 31 + c.charCodeAt(0)) % 1000003; return h * 977 + 13; };
+function challengeDone(q) {
+  const f = G.flags, C = (f.chal ||= { daily: {}, rush: 0, hard: 0 }), n = q.cleared, key = dayKey();
+  if (q.mode === 'rush') { C.rush = Math.max(C.rush, n); }
+  else if (q.mode === 'hard') { C.hard = Math.max(C.hard, n); }
+  else if (q.mode === 'daily') {
+    const D = C.daily; if (D.key !== key) { C.daily = { key, best: 0, claimed: false }; }
+    C.daily.best = Math.max(C.daily.best, n);
+    if (!C.daily.claimed && n >= 3) { C.daily.claimed = true; const g = 80 * n; G.gold += g; if (n >= 10) G.rare.mythril += 1; toast(`📅 Daily Dive bonus: +${g}g${n >= 10 ? ' and a Mythril shard' : ''}!`); chron(`📅 Daily Dive: reached floor ${n}.`); }
+  }
+  if (q.mode !== 'daily' && n >= 5) { const g = (q.rush ? 60 : 40) * n; G.gold += g; toast(`🏅 ${q.name} reward: +${g}g (floor ${n}).`); }
+}
+// limited-time calendar events (real dates): a small bonus while they last
+const CAL = [
+  { id: 'spring', icon: '🌸', name: 'Spring Fair', desc: 'Quest gold +10%.', m: 4, d1: 1, d2: 14, mul: 1.1 },
+  { id: 'summer', icon: '🏖', name: 'Summer Games', desc: 'Quest gold +10%.', m: 7, d1: 1, d2: 14, mul: 1.1 },
+  { id: 'harvest', icon: '🎃', name: 'Harvest Night', desc: 'Quest gold +15%.', m: 10, d1: 24, d2: 31, mul: 1.15 },
+  { id: 'winter', icon: '🎄', name: 'Winter Festival', desc: 'Quest gold +15%.', m: 12, d1: 18, d2: 31, mul: 1.15 },
+  { id: 'newyear', icon: '🎆', name: 'New Year', desc: 'Quest gold +15%.', m: 1, d1: 1, d2: 7, mul: 1.15 },
+];
+const calEvent = () => { const d = new Date(), m = d.getMonth() + 1, dd = d.getDate(); return CAL.find(c => c.m === m && dd >= c.d1 && dd <= c.d2) || null; };
 // ---- festivals: once per season the villagers offer to hold one; it costs gold and pays back in town reputation and mood
 const festCost = lavish => Math.round((lavish ? 300 : 100) * (1 + 0.5 * G.rank));
 const FEST = [{ name: 'Blossom Fair', icon: '🌸' }, { name: 'Midsummer Games', icon: '🏅' }, { name: 'Harvest Feast', icon: '🍂' }, { name: 'Lantern Night', icon: '🏮' }];
@@ -1768,6 +1791,9 @@ function modalContent() {
       if (first('portal')) {
         const dq = G.quests.find(q => q.dive);
         h += `<div class="sec">Waystone Portal</div><div class="row" style="border-color:#b070ff"><div style="font-size:30px">🌀</div><div class="grow"><div class="t">Endless Dive</div><div class="s">Send 2–4 geared heroes through the portal. Floors get harder forever: <b>recall to bank your loot</b> or fight on for rare materials (💎 🐉 🪶). Loot is banked automatically every 5 floors; a wipe-out loses what is unbanked. Best: floor ${G.diveBest}.</div></div><button class="act" data-act="dive" ${dq || rd.length < 2 ? 'disabled' : ''}>${dq ? 'In progress' : (rd.length < 2 ? 'Need 2 ready' : 'Dive!')}</button></div>`;
+        { const C = G.flags.chal || { daily: {}, rush: 0, hard: 0 }, dd = C.daily.key === dayKey() ? C.daily : { best: 0, claimed: false }, off = dq || rd.length < 2 ? 'disabled' : '', ce = calEvent();
+          h += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0"><button class="act red" data-act="dive" data-m="daily" ${off}>📅 Daily Dive (best ${dd.best}${dd.claimed ? ' ✔' : ''})</button><button class="act red" data-act="dive" data-m="rush" ${off}>👹 Boss Rush (best ${C.rush})</button><button class="act red" data-act="dive" data-m="hard" ${off}>💀 Hardcore (best ${C.hard})</button></div><div class="s">Daily: the same dungeon for everyone today; first run to floor 3+ earns a bonus. Boss Rush: a boss every floor, double pay. Hardcore: no rescue, +50% gold.</div>`;
+          if (ce) h += `<div class="s" style="color:#ffd24a">${ce.icon} ${ce.name}: ${ce.desc}</div>`; }
       }
       h += '<div class="sec">Active Expeditions</div>' + (act.map(q => q.dive
         ? `<div class="row"><div class="grow"><div class="t">🌀 Endless Dive — floor ${diveFloorIndex(q.script, q.elapsed) + 1}</div><div class="s">${q.heroes.map(x => x.name).join(', ')} · at risk: ${rewardText(q.pending)}</div><div class="bar"><i style="width:${diveProg(q)}%"></i></div></div><div style="text-align:center"><button class="act" data-act="watch" data-q="${q.id}">👁 Watch</button></div></div>`
@@ -2029,7 +2055,7 @@ const ACT = {
   pgo() { const st = modalArg, party = st.sel.map(id => G.heroes.find(x => x.id === id)).filter(Boolean); dispatch(st.qid, st.enchant, party, { approach: st.approach, potion: st.potion, formation: st.formation || 'line' }); if (!G.quests.find(x => x.id === st.qid && x.state === 'open')) openModal('quests'); },
   openStory() { openModal('story'); },
   storychoice(d) { chooseStory(+d.i); },
-  dive() { dispatchDive(); },
+  dive(d) { dispatchDive(d && d.m); },
   hero(d) { openModal('hero', +d.id); },
   save() { saveGame(false); renderModal(true); },
   tutorial() { tutorial.restart(); closeModal(); },
@@ -2660,4 +2686,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__renderer = renderer; window.__scene = scene; window.__api = { spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__renderer = renderer; window.__scene = scene; window.__api = { calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };

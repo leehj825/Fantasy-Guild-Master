@@ -274,6 +274,12 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^📅 Daily Dive \(best (\d+)( ✔)?\)$/, (n, c) => `📅 일일 다이브 (최고 ${n}${c || ''})`],
+    [/^👹 Boss Rush \(best (\d+)\)$/, n => `👹 보스 러시 (최고 ${n})`],
+    [/^💀 Hardcore \(best (\d+)\)$/, n => `💀 하드코어 (최고 ${n})`],
+    [/^📅 Daily Dive bonus: \+(\d+)g( and a Mythril shard)?!$/, (g, m) => `📅 일일 다이브 보너스: +${g}g${m ? '와 미스릴 조각' : ''}!`],
+    [/^🏅 (.+) reward: \+(\d+)g \(floor (\d+)\)\.$/, (n, g, fl) => `🏅 ${f(n)} 보상: +${g}g (${fl}층).`],
+    [/^(\S+) (Spring Fair|Summer Games|Harvest Night|Winter Festival|New Year): (.+)$/, (i, n, d) => `${i} ${f(n)}: ${f(d)}`],
     [/^(\S+) (.+) retired as (.+)\.$/, (i, n, role) => `${i} ${n}이(가) ${f(role)}(으)로 은퇴했습니다.`],
     [/^👶 (.+) and (.+) had a child: (.+)!$/, (a, b, c) => `👶 ${a}와(과) ${b}에게 아이가 태어났습니다: ${c}!`],
     [/^🌱 (.+), child of (.+) and (.+), has grown up and joined the guild!$/, (c, a, b) => `🌱 ${a}와(과) ${b}의 아이 ${c}이(가) 자라 길드에 합류했습니다!`],
