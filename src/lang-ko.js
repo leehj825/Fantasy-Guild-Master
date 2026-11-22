@@ -274,6 +274,7 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^(\d+) recorded on this device\.$/, n => `이 기기에 ${n}건 기록됨.`],
     [/^🔮 Charm(?:: (.+))?$/, n => n ? `🔮 부적: ${f(n)}` : '🔮 부적'],
     [/^🐪 A caravan leaves with (\d+)g of goods\. It will be back in 2–3 minutes\.$/, n => `🐪 카라반이 ${n}골드어치 물건을 싣고 떠났습니다. 2~3분 뒤 돌아옵니다.`],
     [/^🐪 The caravan returned with (\d+)g!$/, n => `🐪 카라반이 ${n}골드를 벌어 돌아왔습니다!`],

@@ -5,7 +5,7 @@ import { createTutorial } from './tutorial.js';
 import { Ads } from './ads.js';
 import { IAP, PRODUCTS } from './iap.js';
 import { TAGS, makeProfile, tagMods, SEASON_NAMES, RESIDENTS, residentHome, ARCS, pickArc } from './people.js';
-import { sfx, unlock, setPref, getPrefs, setMusicMood, audioState } from './audio.js';
+import { sfx, unlock, setPref, getPrefs, setMusicMood, setMusicStyle, audioState } from './audio.js';
 import { tr, trHtml, initLang, setLang, getLang, onLangChange, translateStatic, LANGS } from './i18n.js';
 import { Expedition, REGION_BOSS, BOSS, questEnd, setBigMakers, genScript, STAGE_X, heroHp, phaseText, newDiveScript, ensureFloors, rebuildDive, diveFloorIndex, diveCheckpoint, rewardText, RELICS, relicMods, relicOffer } from './expedition.js';
 
@@ -1375,7 +1375,7 @@ const SEASON_LEN = 240, seasonIdx = () => Math.floor((G.flags.sT || 0) / SEASON_
 let seasonShown = -1, seasonAcc = 0;
 function tickSeason(dt) {
   G.flags.sT = (G.flags.sT || 0) + dt; const i = seasonIdx();
-  if (seasonShown !== i) { if (seasonShown >= 0) { toast(`${SEASONS[i].icon} ${SEASONS[i].name} has come. ${SEASONS[i].desc}`); chron(`${SEASONS[i].icon} ${SEASONS[i].name} began.`); } seasonShown = i; }
+  if (seasonShown !== i) { setMusicStyle(i); if (seasonShown >= 0) { toast(`${SEASONS[i].icon} ${SEASONS[i].name} has come. ${SEASONS[i].desc}`); chron(`${SEASONS[i].icon} ${SEASONS[i].name} began.`); } seasonShown = i; }
   seasonAcc += dt; if (seasonAcc >= 12) { seasonAcc = 0; if (i === 0 && Math.random() < 0.6) G.herbs++; if (i === 2) { if (Math.random() < 0.4) G.ore++; if (Math.random() < 0.3) G.wood++; } }
 }
 const snow = (() => {   // falling petals / leaves / snow that follow the camera
@@ -1550,6 +1550,23 @@ function tickTrade() {
   else { const g = Math.round(t.amt * 0.3); G.gold += g; toast(`🐪 The caravan was ambushed. Only ${g}g was saved.`); chron('🐪 A trade caravan was ambushed.'); }
   sfx(ok ? 'goal' : 'lose');
 }
+// ---- accessibility, photo mode and a local error log
+const A11Y_KEY = 'fantasy-guild-master-a11y', ERR_KEY = 'fantasy-guild-master-errors';
+const a11y = (() => { try { return Object.assign({ text: 0, cb: 0 }, JSON.parse(localStorage.getItem(A11Y_KEY) || '{}')); } catch (e) { return { text: 0, cb: 0 }; } })();
+function applyA11y() {
+  document.documentElement.style.setProperty('--ui-zoom', [1, 1.15, 1.3][a11y.text] || 1);
+  document.body.classList.toggle('bigtext', a11y.text > 0); document.body.classList.toggle('cb', !!a11y.cb);
+  try { localStorage.setItem(A11Y_KEY, JSON.stringify(a11y)); } catch (e) { /* ignore */ }
+}
+const readErrs = () => { try { return JSON.parse(localStorage.getItem(ERR_KEY) || '[]'); } catch (e) { return []; } };
+function logError(msg) {
+  try { const l = readErrs(); l.push(new Date().toISOString().slice(0, 19).replace('T', ' ') + '  ' + String(msg).slice(0, 300)); while (l.length > 25) l.shift(); localStorage.setItem(ERR_KEY, JSON.stringify(l)); } catch (e) { /* ignore */ }
+}
+window.addEventListener('error', e => logError(`${e.message} @ ${(e.filename || '').split('/').pop()}:${e.lineno}`));
+window.addEventListener('unhandledrejection', e => logError('Promise: ' + (e.reason && e.reason.message || e.reason)));
+function setPhoto(on) { document.body.classList.toggle('photo', on); if (on) { closeModal(); toast('📷 Photo mode — tap anywhere to leave.'); } }
+document.addEventListener('pointerup', () => { if (document.body.classList.contains('photo') && performance.now() - photoT > 800) setPhoto(false); });
+let photoT = 0;
 // ---- festivals: once per season the villagers offer to hold one; it costs gold and pays back in town reputation and mood
 const festCost = lavish => Math.round((lavish ? 300 : 100) * (1 + 0.5 * G.rank));
 const FEST = [{ name: 'Blossom Fair', icon: '🌸' }, { name: 'Midsummer Games', icon: '🏅' }, { name: 'Harvest Feast', icon: '🍂' }, { name: 'Lantern Night', icon: '🏮' }];
@@ -1843,9 +1860,13 @@ function modalContent() {
     }
     case 'research': return ['⚗️ Research', Object.entries(TECHS).map(([k, [n, d, c, req]]) => `<div class="row"><div class="grow"><div class="t">${n}</div><div class="s">${d}</div>${cost(c)}${rareTags(req)}</div>
         ${G.research[k] ? '<span class="tag">✔ Researched</span>' : `<button class="act" data-act="research" data-k="${k}" ${G.gold < c || !hasRare(req) ? 'disabled' : ''}>Research</button>`}</div>`).join('')];
+    case 'errlog': { const l = readErrs(); return ['🧾 Error log', `<div class="s">Problems the game noticed on this device (nothing is sent anywhere). If something broke, copy this and share it with the developer.</div><textarea readonly style="width:100%;height:150px;margin:6px 0;font-size:11px">${l.length ? l.join('\n').replace(/</g, '&lt;') : 'No errors recorded.'}</textarea><div style="display:flex;gap:6px"><button class="act" data-act="errcopy">Copy</button><button class="act red" data-act="errclear">Clear</button></div>`]; }
     case 'settings': return ['⚙ Settings & Save', `
       <div class="row"><div class="grow"><div class="t">🔊 Sound</div><div class="s">Procedural sound effects and music (no downloads).</div></div><button class="act ${getPrefs().sfx ? '' : 'red'}" data-act="sfxtoggle">Effects: ${getPrefs().sfx ? 'On' : 'Off'}</button><button class="act ${getPrefs().music ? '' : 'red'}" data-act="musictoggle">Music: ${getPrefs().music ? 'On' : 'Off'}</button></div>
-      <div class="row"><div class="grow"><div class="t">🌐 Language</div><div class="s">English / 한국어</div></div>${Object.entries(LANGS).map(([k, n]) => `<button class="act ${getLang() === k ? '' : 'red'}" style="${getLang() === k ? 'outline:2px solid #fff8' : ''}" data-act="lang" data-l="${k}">${n}</button>`).join('')}</div>
+      <div class="row"><div class="grow"><div class="t">♿ Accessibility</div><div class="s">Text size and a colour-blind-friendly palette.</div></div><div style="display:flex;gap:4px"><button class="act" data-act="textsize">Text size: ${['Normal', 'Large', 'Largest'][a11y.text]}</button><button class="act ${a11y.cb ? '' : 'red'}" data-act="cbmode">Colour-blind mode: ${a11y.cb ? 'On' : 'Off'}</button></div></div>
+      <div class="row"><div class="grow"><div class="t">📷 Photo mode</div><div class="s">Hides the interface so you can look at your town. Tap to leave.</div></div><button class="act" data-act="photo">Start</button></div>
+      <div class="row"><div class="grow"><div class="t">🧾 Error log</div><div class="s">${readErrs().length} recorded on this device.</div></div><button class="act red" data-act="errlog">Open</button></div>
+      <div class="row"><div class="grow"><div class="t">🌐 Language</div><div class="s">English / 한국어 / 日本語</div></div>${Object.entries(LANGS).map(([k, n]) => `<button class="act ${getLang() === k ? '' : 'red'}" style="${getLang() === k ? 'outline:2px solid #fff8' : ''}" data-act="lang" data-l="${k}">${n}</button>`).join('')}</div>
       ${IAP.available ? `<div class="row"><div class="grow"><div class="t">🛒 Shop</div><div class="s">Remove the banner, or a one-time starter pack.</div></div><button class="act" data-act="shop">Open</button></div>` : ''}
       <div class="row"><div class="grow"><div class="t">📺 Rewarded ads</div><div class="s">Optional offers: double a quest's loot, rest tired heroes, rescue a wiped dive. Never forced.</div></div><button class="act ${Ads.enabled ? '' : 'red'}" data-act="adstoggle">${Ads.enabled ? 'On' : 'Off'}</button></div>
       <div class="row"><div class="grow"><div class="t">🎚 Graphics</div><div class="s">Auto lowers the resolution when the game runs slowly. Low turns shadows off for the smoothest play.</div></div><button class="act red" data-act="gfxcycle">${{ auto: 'Auto', high: 'High', low: 'Low' }[gfx]}</button></div>
@@ -2104,6 +2125,12 @@ const ACT = {
   charm(d) { const h = G.heroes.find(x => x.id === +d.id), C = CHARMS[d.k]; if (!h || !C || G.gold < C.gold || G.ore < C.ore) return; G.gold -= C.gold; G.ore -= C.ore; h.charm = d.k; toast(`${C.icon} ${h.name} wears the ${C.name}.`); sfx('goal'); },
   trade(d) { chooseTrade(+d.n); },
   theme(d) { const T = THEMES[d.k]; if (!T) return; const own = (G.flags.themes ||= ['crimson']); if (!own.includes(d.k)) { if (G.gold < T[2]) return; G.gold -= T[2]; own.push(d.k); } G.flags.theme = d.k; applyTheme(); toast(`🎨 The hall now flies ${T[0]} banners.`); },
+  textsize() { a11y.text = (a11y.text + 1) % 3; applyA11y(); },
+  cbmode() { a11y.cb = a11y.cb ? 0 : 1; applyA11y(); },
+  photo() { photoT = performance.now(); setPhoto(true); },
+  errlog() { openModal('errlog'); },
+  errcopy() { const t = readErrs().join('\n'); try { navigator.clipboard.writeText(t).then(() => toast('🧾 Copied.'), () => toast('🧾 Could not copy; select the text instead.')); } catch (e) { toast('🧾 Could not copy; select the text instead.'); } },
+  errclear() { try { localStorage.removeItem(ERR_KEY); } catch (e) { /* ignore */ } toast('🧾 Cleared.'); },
   eventopen() { openModal('event'); },
   eventchoose(d) { chooseEvent(+d.i); },
   async iapbuy(d) { const ok = await IAP.buy(d.id); if (!ok) return toast('The purchase was not completed.'); grantPurchase(d.id); renderModal(true); },
@@ -2704,7 +2731,7 @@ function frame() {
  * ------------------------------------------------------------------ */
 initLang();
 resize();
-const loaded = loadGame(); try { applyTheme(); } catch (e) { /* cosmetic */ } setTimeout(() => { try { if (IAP.owned('starter_pack') && !G.flags.starter) grantPurchase('starter_pack'); } catch (e) { /* offline */ } }, 5000); checkDaily(); setTimeout(() => { if (G.flags.login && G.flags.login.pending && (G.flags.tutDone || G.questsDone > 0)) openModal('daily'); }, 2500); loadedOnce = true; try { buildLandmarks(false); } catch (e) { /* decoration */ }
+const loaded = loadGame(); applyA11y(); try { applyTheme(); } catch (e) { /* cosmetic */ } setTimeout(() => { try { if (IAP.owned('starter_pack') && !G.flags.starter) grantPurchase('starter_pack'); } catch (e) { /* offline */ } }, 5000); checkDaily(); setTimeout(() => { if (G.flags.login && G.flags.login.pending && (G.flags.tutDone || G.questsDone > 0)) openModal('daily'); }, 2500); loadedOnce = true; try { buildLandmarks(false); } catch (e) { /* decoration */ }
 if (!loaded) {
   G.gold += 300 * legacyLvl('purse'); G.renown += 2 * legacyLvl('name'); G.flags.gen = LEGACY.gen + 1; if (LEGACY.gen) chron(`🏛 Generation ${LEGACY.gen + 1} of the guild begins.`);
   spawnHero('knight', true); spawnHero('ranger', true);
@@ -2715,4 +2742,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__renderer = renderer; window.__scene = scene; window.__api = { applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__renderer = renderer; window.__scene = scene; window.__api = { logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
