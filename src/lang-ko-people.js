@@ -772,5 +772,13 @@ export const KO_PEOPLE = {
   'Share a meal and send them off': '식사를 대접하고 보낸다',
   'Arrived from far away, drawn by the guild’s fame.': '길드의 명성에 이끌려 먼 곳에서 왔습니다.',
   '✔ Set': '✔ 완성',
+  '⚔ The tide turns! Your guild holds the line.': '⚔ 전세가 뒤집혔습니다! 길드가 전선을 지켜 냅니다.',
+  '🛡 The last raider is down!': '🛡 마지막 약탈자가 쓰러졌습니다!',
+  'A crossroads': '갈림길',
+  'Your expedition has reached a fork in the road. The scouts wait for your word.': '원정대가 갈림길에 도착했습니다. 척후병들이 지시를 기다립니다.',
+  'Take the safe road (+10% success, −10% reward)': '안전한 길로 간다 (성공률 +10%, 보상 −10%)',
+  'Take the shortcut (−10% success, +40% reward)': '지름길로 간다 (성공률 −10%, 보상 +40%)',
+  'Send a scout ahead (needs a rogue or ranger; +6% success, no penalty)': '척후를 먼저 보낸다 (도적 또는 레인저 필요, 성공률 +6%, 불이익 없음)',
+  'Leave it to the party': '파티에 맡긴다',
   'hearty stew': '푸짐한 스튜', 'roast boar': '멧돼지 구이', 'honey bread': '꿀빵', 'mushroom pie': '버섯 파이', 'herbal tea': '약초차',
 };

@@ -798,8 +798,9 @@ function makeQuest(o = {}) {
 const genQuest = () => makeQuest();
 const bossTag = q => { const B = BOSS[q.boss]; return B ? `<span class="tag" style="border-color:#ff9a4a" title="${B.note}">👑 ${ENEMY_NAME[q.boss]} · weak: ${B.weak.map(c => CLASSES[c].icon).join('')}</span>` : ''; };
 const ENEMY_NAME = { frostgiant: 'Frost Giant', duneking: 'Dune Warlord', lich: 'Bone Lich' };
-const modTags = q => (q.contested ? `<span class="tag" style="border-color:#ff6a6a" title="A rival guild is after this job. Finish before the timer runs out!">⚔ ${Math.max(0, Math.ceil((q.expire || 0) - G.time))}s</span>` : '') + bossTag(q) + (q.town ? `<span class="tag" title="A small favour for the town: low pay, but the villagers will remember it.">🏘 ${q.who}</span>` : '') + (q.region && q.region !== 'greenwood' && REGIONS[q.region] ? `<span class="tag">${REGIONS[q.region].icon} ${REGIONS[q.region].name}</span>` : '') + (q.mods || []).map(k => `<span class="tag" title="${MODS[k].desc}">${MODS[k].icon} ${MODS[k].label}</span>`).join('');
-const questPay = q => Math.round(q.gold * questGoldMul() * (q.approachGold || 1));
+const modTags = q => (q.flashBy ? `<span class="tag" style="border-color:#ffd24a">⚡ Flash ×2 · ${Math.max(0, Math.ceil(q.flashBy - G.time))}s</span>` : '') + (q.contested ? `<span class="tag" style="border-color:#ff6a6a" title="A rival guild is after this job. Finish before the timer runs out!">⚔ ${Math.max(0, Math.ceil((q.expire || 0) - G.time))}s</span>` : '') + bossTag(q) + (q.town ? `<span class="tag" title="A small favour for the town: low pay, but the villagers will remember it.">🏘 ${q.who}</span>` : '') + (q.region && q.region !== 'greenwood' && REGIONS[q.region] ? `<span class="tag">${REGIONS[q.region].icon} ${REGIONS[q.region].name}</span>` : '') + (q.mods || []).map(k => `<span class="tag" title="${MODS[k].desc}">${MODS[k].icon} ${MODS[k].label}</span>`).join('');
+const flashOn = q => !!(q.flashBy && G.time <= q.flashBy);
+const questPay = q => Math.round(q.gold * questGoldMul() * (q.approachGold || 1) * (flashOn(q) ? 2 : 1));
 const readyHeroes = () => G.heroes.filter(h => h.gear && !(h.train > 0) && h.stamina >= 45 && h.state !== 'quest' && h.state !== 'leaving');
 function bestParty(q) {
   const r = readyHeroes().sort((a, b) => heroPower(b, q.type) - heroPower(a, q.type));
@@ -1111,6 +1112,13 @@ function resolveDefense(q) {
   q.heroes.forEach(h => { if (!G.heroes.includes(h)) return; h.state = 'idle'; h.cool = 0; h.target = null; h.mesh.visible = true; h.pos.set(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1)); h.stamina = Math.max(20, h.stamina - 12); });
   G.goblins.forEach(g => scene.remove(g.mesh)); G.goblins = []; G.alarm = false; hideBanner('raid'); toast(q.endText); renderModal(true);
 }
+// tapping a raider in town strikes it down: each one lowers the threat, and a lost fight can turn around
+function smiteGoblin(g) {
+  const q = raidQuest(); if (!q) return false; scene.remove(g.mesh); G.goblins.splice(G.goblins.indexOf(g), 1);
+  floatText(g.mesh.position, '💥', '#ffd24a'); sfx('hit'); q.smites = (q.smites || 0) + 1; q.chance = Math.min(0.97, q.chance + 0.04);
+  if (!q.ok && Math.random() < 0.2 + 0.05 * q.smites) { q.ok = true; q.script = genScript(q); toast('⚔ The tide turns! Your guild holds the line.'); }
+  if (!G.goblins.length) toast('🛡 The last raider is down!'); return true;
+}
 function updateGoblins(dt) {
   if (!G.goblins.length) return;
   const target = new THREE.Vector3(HALL.cx + 2.5, 0, HALL.cz + 2);
@@ -1229,8 +1237,8 @@ function updateEconomy(dt) {
   // quests
   t.quest -= dt;
   if (t.quest <= 0) { t.quest = 14; if (G.quests.filter(q => q.state === 'open').length < boardSlots()) genQuest(); legendTick(); }
-  townTick(dt); tickPeople(dt); tickDisaster(dt); tickFamily(dt); tickTrade(); tickKingdom(dt); tickRivalEvents(dt); tickVisitors(dt);
-  for (const q of [...G.quests]) if (q.state === 'active') { if (q.dive) diveTick(q, dt); else { q.t -= dt; if (q.t <= 0 || q.dur - q.t >= questEnd(q)) (q.defense ? resolveDefense(q) : resolveQuest(q)); } }
+  townTick(dt); tickPeople(dt); tickDisaster(dt); tickFamily(dt); tickTrade(); tickKingdom(dt); tickRivalEvents(dt); tickVisitors(dt); tickFlash(dt);
+  for (const q of [...G.quests]) if (q.state === 'active') { if (q.dive) diveTick(q, dt); else { q.t -= dt; maybeFork(q); if (q.t <= 0 || q.dur - q.t >= questEnd(q)) (q.defense ? resolveDefense(q) : resolveQuest(q)); } }
   // events
   t.merchant -= dt; if (t.merchant <= 0) { t.merchant = rnd(150, 220); if (G.renown >= 2 && !G.merchant) startMerchant(); }
   if (G.merchant) { G.merchant.t -= dt; if (G.merchant.t <= 0) endMerchant(); }
@@ -1512,6 +1520,11 @@ const EVENTS = {
     { label: 'Pay for repairs quietly (−200g)', ok: () => G.gold >= 200, fx: () => { G.gold -= 200; toast('🧨 Repairs done.'); } },
     { label: 'Retaliate with a smear campaign (+rival hostility, +fame)', fx: () => { if (G.flags.rival) G.flags.rival.fame = Math.max(0, G.flags.rival.fame - 10); G.renown += 1; repGain(-3); toast('🧨 The rival loses face, but the town frowns on the feud.'); } },
     { label: 'Shrug it off', fx: () => { ofType('forge').forEach(b => { b.stock = Math.floor(b.stock * 0.5); }); toast('🧨 Half the forge’s stock was ruined.'); } } ] },
+  fork: { icon: '🧭', title: 'A crossroads', text: 'Your expedition has reached a fork in the road. The scouts wait for your word.', ch: [
+    { label: 'Take the safe road (+10% success, −10% reward)', ok: () => !!forkQ(), fx: () => { const q = forkQ(); if (q) { q.gold = Math.round(q.gold * 0.9); boostQuest(q, 0.1); toast(`🧭 “${q.name}” takes the safe road.`); } } },
+    { label: 'Take the shortcut (−10% success, +40% reward)', ok: () => !!forkQ(), fx: () => { const q = forkQ(); if (q) { q.gold = Math.round(q.gold * 1.4); q.chance = Math.max(0.05, q.chance - 0.1); if (q.ok && Math.random() < 0.12) { q.ok = false; q.script = genScript(q); } toast(`🧭 “${q.name}” risks the shortcut!`); } } },
+    { label: 'Send a scout ahead (needs a rogue or ranger; +6% success, no penalty)', ok: () => { const q = forkQ(); return !!q && q.heroes.some(h => h.cls === 'rogue' || h.cls === 'ranger'); }, fx: () => { const q = forkQ(); if (q) { boostQuest(q, 0.06); toast(`🧭 The scouts found a safer way for “${q.name}”.`); } } },
+    { label: 'Leave it to the party', fx: () => { } } ] },
   rest: { icon: '🛏', title: 'A quiet room', text: 'On the dive you found a safe, dry chamber with a few cots.', ch: [
     { label: 'Rest here (heroes recover stamina)', fx: () => { G.heroes.forEach(h => { h.stamina = Math.min(100, h.stamina + 30); }); toast('🛏 Everyone feels rested.'); } },
     { label: 'Move on', fx: () => { G.gold += 40; toast('🛏 You pressed on. +40g.'); } } ] },
@@ -1701,6 +1714,13 @@ function tickVisitors(dt) {
   const seen = (G.flags.visitSeen ||= {}), si = seasonIdx();
   const opts = Object.entries(VISITORS).filter(([id, V]) => !seen[id] && V.season === si && G.heroes.some(h => h.cls === V.need && h.level >= 3));
   if (opts.length && Math.random() < 0.6) { const [id] = pick(opts); seen[id] = 1; pushEvent('visit_' + id); }
+}
+let flashT = 360;
+function tickFlash(dt) {
+  flashT -= dt; if (flashT > 0) return; flashT = 420 + Math.random() * 300;
+  if (G.quests.some(q => q.flashBy && G.time <= q.flashBy && q.state !== 'done')) return;
+  const c = G.quests.filter(q => q.state === 'open' && !q.special && !q.contested && !q.town && !q.flashBy); if (!c.length || G.buildings.length < 4) return;
+  const q = pick(c); q.flashBy = G.time + 180; toast(`⚡ Flash bounty: “${q.name}” pays double if finished in 3 minutes!`); sfx('chime');
 }
 // ---- today's three missions, and a one-line suggestion for what to do next
 const MISSIONS = [
@@ -2735,6 +2755,7 @@ canvas.addEventListener('pointerup', e => {
   if (d.btn === 1 || (d.mode === 'pan' && e.pointerType !== 'touch')) return;
   if (placing) { const p = groundAt(e.clientX, e.clientY); if (p) { const [cx, cz] = cellFor(p.x, p.z); moveGhost(cx, cz); } return; }
   if (watching) return watchTap(e);
+  if (G.goblins.length) { ptr.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ptr, camera); const gh = ray.intersectObjects(G.goblins.map(g => g.mesh), true)[0]; if (gh) { const g = G.goblins.find(x => { let o = gh.object; while (o) { if (o === x.mesh) return true; o = o.parent; } return false; }); if (g && smiteGoblin(g)) return; } }
   ptr.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ptr, camera);
   const rh = ray.intersectObjects(residentGroup.children, true)[0];
   if (rh) { let o = rh.object; while (o && o.userData.rid === undefined) o = o.parent; if (o) return openModal('resident', o.userData.rid); }
@@ -2946,6 +2967,12 @@ function onQuestEnd(q, ok) {
   updateWatchHUD();
 }
 // --- in-fight actions (only before the finale begins)
+// mid-expedition forks: a running expedition sometimes reaches a crossroads and asks the guild master to decide
+const forkQ = () => G.quests.find(x => x.id === G.flags.forkQ && x.state === 'active') || null;
+function maybeFork(q) {
+  if (q.forkDone || q.defense || q.dive || q.town || q.dur < 35 || q.dur - q.t < q.dur * 0.45 || evq().includes('fork')) return;
+  q.forkDone = true; if (Math.random() > 0.35) return; G.flags.forkQ = q.id; pushEvent('fork');
+}
 function boostQuest(q, amt) {
   const c0 = q.chance; q.chance = Math.min(0.97, c0 + amt);
   if (!q.ok && Math.random() < (q.chance - c0) / (1 - c0)) { q.ok = true; q.deaths = []; q.script = genScript(q); }
@@ -3177,4 +3204,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__renderer = renderer; window.__scene = scene; window.__api = { cardAdd, tickVisitors, districts, fullKit, ROLES, missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__renderer = renderer; window.__scene = scene; window.__api = { maybeFork, smiteGoblin, tickFlash, cardAdd, tickVisitors, districts, fullKit, ROLES, missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };

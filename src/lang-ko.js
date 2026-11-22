@@ -274,6 +274,11 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^🧭 “(.+)” takes the safe road\.$/, n => `🧭 “${f(n)}” 원정대가 안전한 길을 택합니다.`],
+    [/^🧭 “(.+)” risks the shortcut!$/, n => `🧭 “${f(n)}” 원정대가 지름길에 도전합니다!`],
+    [/^🧭 The scouts found a safer way for “(.+)”\.$/, n => `🧭 척후병이 “${f(n)}”을(를) 위한 더 안전한 길을 찾았습니다.`],
+    [/^⚡ Flash ×2 · (\d+)s$/, n => `⚡ 번개 의뢰 ×2 · ${n}초`],
+    [/^⚡ Flash bounty: “(.+)” pays double if finished in 3 minutes!$/, n => `⚡ 번개 의뢰: “${f(n)}”을(를) 3분 안에 끝내면 보상이 두 배입니다!`],
     [/^🃏 New card: (\S+) (.+)$/, (i, n) => `🃏 새 카드: ${i} ${f(n)}`],
     [/^🃏 (.+) set complete! \+500g, \+1 💎$/, n => `🃏 ${f(n)} 세트 완성! +500골드, +1 💎`],
     [/^🃏 The album is complete! \+3 💎, \+1 🐉, \+5⭐$/, () => '🃏 도감을 완성했습니다! +3 💎, +1 🐉, +5⭐'],
