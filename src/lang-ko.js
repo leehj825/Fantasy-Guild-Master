@@ -274,6 +274,10 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^Day (\d+) of 7 is waiting\.$/, n => `7일 중 ${n}일째 보상이 기다리고 있습니다.`],
+    [/^Day (\d+)$/, n => `${n}일째`],
+    [/^🎁 Claim day (\d+)$/, n => `🎁 ${n}일째 보상 받기`],
+    [/^🎁 Daily reward claimed: \+(\d+)g(?: \+1 Mythril)?$/, g => `🎁 일일 보상 수령: +${g}골드`],
     [/^▶ Watch an ad: double the loot \(\+(\d+)g(.*)\)$/, (g, rest) => `▶ 광고 보기: 전리품 두 배 (+${g}골드${rest.replace(/ ore/, ' 광석').replace(/ herbs/, ' 약초').replace(/ wood/, ' 목재')})`],
     [/^▶ Watch an ad: rescue! Keep half the loot \(\+(\d+)g\) and save a hero$/, g => `▶ 광고 보기: 구출! 전리품 절반(+${g}골드)을 지키고 영웅 한 명을 살립니다`],
     [/^🎁 Bonus loot: \+(\d+)g(?: \+(\d+) ore)?$/, (g, o) => `🎁 보너스 전리품: +${g}골드${o ? ' +' + o + ' 광석' : ''}`],

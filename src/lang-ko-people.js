@@ -407,5 +407,13 @@ export const KO_PEOPLE = {
   'Optional offers: double a quest\'s loot, rest tired heroes, rescue a wiped dive. Never forced.': '선택형 제안: 퀘스트 전리품 두 배, 지친 영웅 휴식, 전멸한 던전 구출. 절대 강제하지 않습니다.',
   'Watch a short ad to rest them all to full stamina.': '짧은 광고를 보면 모두 스태미나가 가득 찹니다.',
   '▶ Rest everyone': '▶ 모두 쉬게 하기',
+  'Memorial Garden': '추모 정원',
+  'A quiet garden with a stone for every fallen hero (up to 12): heroes grieve less and are a bit happier (+3% mood).': '쓰러진 영웅마다 비석이 하나씩 서는 조용한 정원(최대 12개): 영웅들이 덜 슬퍼하고 기분이 조금 좋아집니다(+3%).',
+  'In memory': '기억하며',
+  'No one has fallen yet.': '아직 쓰러진 영웅이 없습니다.',
+  '🎁 Daily reward': '🎁 일일 보상',
+  'Daily reward': '일일 보상',
+  'Come back every day for a bigger reward. Missing a day starts the track over.': '매일 접속할수록 보상이 커집니다. 하루를 빠뜨리면 처음부터 다시 시작합니다.',
+  'Today\'s reward is already claimed. See you tomorrow!': '오늘의 보상은 이미 받았습니다. 내일 또 만나요!',
   'hearty stew': '푸짐한 스튜', 'roast boar': '멧돼지 구이', 'honey bread': '꿀빵', 'mushroom pie': '버섯 파이', 'herbal tea': '약초차',
 };
