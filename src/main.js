@@ -1,5 +1,5 @@
 import * as THREE from '../vendor/three.module.js';
-import { mergeStatic, buildChar, factionDecor, BUILDINGS, buildBuilding, buildHero, buildStaff, buildGoblin, buildMerchantCart, vox, mat, PROPS, setCharMaker } from './models.js';
+import { mergeStatic, TROPHY, buildChar, factionDecor, BUILDINGS, buildBuilding, buildHero, buildStaff, buildGoblin, buildMerchantCart, vox, mat, PROPS, setCharMaker } from './models.js';
 import { makeRigChar, makeRigGolem, makeRigOgre, autoAnim } from './rigchar.js';
 import { createTutorial } from './tutorial.js';
 import { Ads } from './ads.js';
@@ -1272,7 +1272,16 @@ function checkDaily() {
 const dailyReward = i => { const r = DAILY[i], k = 1 + 0.25 * G.rank, out = {}; for (const [a, v] of Object.entries(r)) out[a] = a === 'mythril' ? v : Math.round(v * k); return out; };
 // ---- memorial garden: one stone per fallen hero; it refreshes when the list grows
 let memoT = 0;
+const REGION_COLOR = { greenwood: 0x3a9a4a, stonepeak: 0x8a8f98, frostpeak: 0x7ac0ff, dunes: 0xd8a84a, hollow: 0x7a5a9a, ruins: 0x9a8a6a, ashen: 0x6a8a6a };
+let trophyKey = '';
+function tickTrophy() {
+  const bosses = Object.keys((G.flags.codex || {}).bosses || {}), weps = Object.keys(armory()).length, dive = G.diveBest, champs = Object.entries(G.regions).filter(([, r]) => (r.trial || 0) >= 3).map(([id]) => REGION_COLOR[id] || 0xcccccc);
+  const key = [bosses.join(), weps, Math.floor(dive / 5), champs.join()].join('|'); if (key === trophyKey) return; trophyKey = key;
+  Object.assign(TROPHY, { bosses, weps, dive, champs });
+  for (const b of ofType('trophy')) { while (b.group.children.length) { const c = b.group.children[0]; b.group.remove(c); if (c.geometry) c.geometry.dispose(); } const fresh = mergeStatic(buildBuilding('trophy', 0)); [...fresh.children].forEach(c => b.group.add(c)); }
+}
 function tickMemorial(dt) {
+  tickTrophy();
   memoT -= dt; if (memoT > 0) return; memoT = 8;
   for (const b of ofType('memorial')) { const n = Math.min(12, G.fallen.length); if (b.nF === n) continue; b.nF = n; while (b.group.children.length) { const c = b.group.children[0]; b.group.remove(c); if (c.geometry) c.geometry.dispose(); } const fresh = mergeStatic(buildBuilding('memorial', n)); [...fresh.children].forEach(c => b.group.add(c)); }
 }
@@ -1861,7 +1870,7 @@ const forgeLv = () => ofType('forge').reduce((m, b) => Math.max(m, b.level), 0);
 const maxPlus = () => Math.min(5, forgeLv() + 1);
 const plusCost = h => ({ gold: Math.round(100 * Math.pow(1.7, h.plus || 0)), ore: 4 * ((h.plus || 0) + 1), ing: (h.plus || 0) >= 3 ? (h.plus || 0) - 2 : 0 });
 const trainCost = h => 100 + 50 * h.level;
-const decorBonus = () => Math.min(0.55, (hasPet('cat') ? 0.02 : 0) + (first('memorial') ? 0.03 : 0) + landmarkGroup.children.length * 0.01 + Math.min(3, ofType('hill').length) * 0.02 + squares() * 0.02 + Math.min(3, ofType('pond').length) * 0.05 + 0.01 * Math.min(10, ofType('flowers').length + ofType('sapling').length) + (first('monument') ? 0.1 : 0) + 0.02 * Math.min(3, ofType('well').length) + 0.05 * (ofType('fountain').length + ofType('banner').length + ofType('statue').length) + 0.01 * Math.min(10, ofType('lamp').length + ofType('campfire').length));
+const decorBonus = () => Math.min(0.55, (hasPet('cat') ? 0.02 : 0) + (first('memorial') ? 0.03 : 0) + (first('trophy') ? 0.03 : 0) + landmarkGroup.children.length * 0.01 + Math.min(3, ofType('hill').length) * 0.02 + squares() * 0.02 + Math.min(3, ofType('pond').length) * 0.05 + 0.01 * Math.min(10, ofType('flowers').length + ofType('sapling').length) + (first('monument') ? 0.1 : 0) + 0.02 * Math.min(3, ofType('well').length) + 0.05 * (ofType('fountain').length + ofType('banner').length + ofType('statue').length) + 0.01 * Math.min(10, ofType('lamp').length + ofType('campfire').length));
 function tickChat(dt) {
   chatT -= dt; if (chatT > 0) return; chatT = 40 + Math.random() * 50;
   const c = G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving' && h.mesh.visible); if (!c.length) return; const h = pick(c);

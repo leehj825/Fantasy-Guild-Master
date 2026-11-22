@@ -283,6 +283,7 @@ export const BUILDINGS = {
   hill:    { name: 'Grassy Hill',             w: 3, d: 3, cost: 120, renown: 0, icon: '⛰️', desc: 'A raised mound with a view: Guard Towers within 5 tiles gain +3 defense and the heroes like the scenery (+2% mood, up to 3 hills).', decor: true },
   farm:    { name: 'Farm',                    w: 3, d: 3, cost: 180, renown: 0, icon: '🌾', desc: 'Fields of wheat: +1 grain every 9 s (faster with levels). Feed it to a Bakery.' },
   bakery:  { name: 'Bakery',                  w: 3, d: 2, cost: 220, renown: 1, icon: '🥖', desc: 'Bakes 2 grain into 1 loaf of bread every 12 s. Tavern meals eaten with bread pay 40% more and cheer the hero up.' },
+  trophy:  { name: 'Trophy Hall', w: 4, d: 2, cost: 400, renown: 2, icon: '🏆', desc: 'Displays your deeds: a plinth for every boss defeated, golden swords for forged legendary weapons, a pillar for your deepest dive and banners for each region you are Champion of. +3% happiness upkeep.', decor: true },
   well:    { name: 'Well',                    w: 2, d: 2, cost: 140, renown: 1, icon: '🪣', desc: 'A village well. Cuts the damage of fires, floods and sickness by two thirds. +2% happiness upkeep.', decor: true },
   pond:    { name: 'Pond',                    w: 3, d: 2, cost: 90,  renown: 0, icon: '🪷', desc: 'A little pond with lily pads: +5% happiness upkeep (up to 3 count).', decor: true },
   flowers: { name: 'Flower Bed',              w: 1, d: 1, cost: 20,  renown: 0, icon: '🌷', desc: 'Flowers you can walk through: +1% happiness upkeep each (10 flowers and trees count).', decor: true, walkable: true },
@@ -533,6 +534,7 @@ export function factionDecor(kind) {
 
 // Draw-call saver for finished buildings: every plain mesh that shares a material is baked into one (a tavern is ~150 boxes). Anything animated by
 // the game (listed in some userData: flames, swirls, lids...), glowing, transparent or instanced is left alone so it still moves and glows.
+export const TROPHY = { bosses: [], weps: 0, dive: 0, champs: [] };
 export function mergeStatic(root) {
   root.updateMatrixWorld(true); const keep = new Set();
   const protect = o => { if (o && o.isObject3D) o.traverse(c => keep.add(c)); };
@@ -571,6 +573,13 @@ export function buildBuilding(type, variant = 0) {
     case 'hill': { const g = new THREE.Group(); g.add(cyl(1.45, 1.5, 0.3, 0x58a846, 0, 0, 0, 14), cyl(1.1, 1.35, 0.3, 0x5fb04c, 0, 0.3, 0, 14), cyl(0.7, 0.95, 0.3, 0x68ba54, 0, 0.6, 0, 12), cyl(0.3, 0.5, 0.2, 0x72c45c, 0, 0.9, 0, 10), vox(0.4, 0.3, 0.35, 0x8a8f98, 0.9, 0.05, 0.6), vox(0.3, 0.22, 0.3, 0x7a7f87, -1.0, 0.05, -0.5)); g.add(at(cone(0.3, 0.7, 0x3f8a3a, 0, 0, 0, 7), 0.15, 1.1, 0.1)); return g; }
     case 'farm': { const g = new THREE.Group(); for (let i = 0; i < 4; i++) { g.add(vox(2.6, 0.08, 0.45, 0x6b4a2a, 0, 0, -1.0 + i * 0.66)); for (let j = 0; j < 8; j++) g.add(vox(0.12, 0.35, 0.12, 0xe0c24a, -1.2 + j * 0.34, 0.08, -1.0 + i * 0.66)); } g.add(vox(0.9, 0.7, 0.8, 0xb04a3a, 1.9, 0, -0.9), vox(1.0, 0.25, 0.9, 0x8a3a2a, 1.9, 0.7, -0.9)); return g; }
     case 'bakery': { const g = new THREE.Group(); g.add(vox(2.2, 0.9, 1.5, 0xd8b88a, 0, 0, 0), vox(2.5, 0.35, 1.8, 0xb04a3a, 0, 0.9, 0), vox(0.35, 1.0, 0.35, 0x8a8f98, 0.7, 0.9, -0.3), vox(0.5, 0.5, 0.06, 0xffd890, -0.5, 0.25, 0.78, 0xffc060, 0.5)); return g; }
+    case 'trophy': { const T = TROPHY, g = new THREE.Group(); g.add(vox(4.2, 0.12, 2.2, 0x6a6a74, 0, 0, 0), vox(4.2, 1.8, 0.2, 0x7a5a3a, 0, 0.12, -1), vox(4.4, 0.15, 0.4, 0x5a3a1a, 0, 1.9, -1));
+      const BC = { ogre: 0x6a9a3a, chief: 0xb04a3a, golem: 0x8a8f98, frostgiant: 0x7ac0ff, duneking: 0xd8a84a, lich: 0x9a6ad0 };
+      T.bosses.slice(0, 6).forEach((k, i) => { const x = -1.6 + i * 0.64; g.add(vox(0.4, 0.5, 0.4, 0x8a8f98, x, 0.12, -0.45), cyl(0.0, 0.2, 0.4, BC[k] || 0xcccccc, x, 0.62, -0.45, 6), sph(0.14, BC[k] || 0xcccccc, x, 1.05, -0.45)); });
+      for (let i = 0; i < Math.min(7, T.weps); i++) g.add(rot(vox(0.08, 0.7, 0.06, 0xe8c04a, -1.8 + i * 0.6, 1.0, -0.88, 0xffc040, 0.6), 0, 0, 0.5 * (i % 2 ? 1 : -1)));
+      if (T.dive > 0) { const hh = Math.min(1.6, 0.3 + T.dive * 0.05); g.add(vox(0.4, hh, 0.4, 0xe8c04a, 1.8, 0.12, 0.5, 0xffc040, 0.4), sph(0.2, 0xffe080, 1.8, 0.12 + hh + 0.2, 0.5, 0xffd060, 0.8)); }
+      T.champs.slice(0, 4).forEach((c, i) => g.add(vox(0.35, 0.7, 0.04, c, -1.5 + i * 0.5, 1.15, 0.1), vox(0.04, 0.9, 0.04, 0x6b4a2b, -1.5 + i * 0.5, 1.1, 0.1)));
+      return g; }
     case 'well': { const g = new THREE.Group(); g.add(cyl(0.7, 0.75, 0.6, 0x9aa0a8, 0, 0, 0, 12), cyl(0.5, 0.5, 0.05, 0x1d5fa8, 0, 0.58, 0, 12, 0x1d5fa8, 0.4), vox(0.08, 1.2, 0.08, 0x6b4a2b, -0.6, 0.3, 0), vox(0.08, 1.2, 0.08, 0x6b4a2b, 0.6, 0.3, 0), vox(1.6, 0.12, 0.9, 0xb04a3a, 0, 1.5, 0)); return g; }
     case 'pond': { const g = new THREE.Group(); g.add(cyl(1.5, 1.55, 0.14, 0x8a8f98, 0, 0, 0, 20), cyl(1.38, 1.38, 0.08, 0x3b8fd8, 0, 0.1, 0, 20, 0x1d5fa8, 0.5), sph(0.2, 0x5aa03a, -0.6, 0.12, 0.2, 0, 0, 6), sph(0.16, 0x6bbf4a, 0.5, 0.12, -0.3, 0, 0, 6), sph(0.08, 0xffc0e0, 0.5, 0.2, -0.3, 0, 0, 6)); g.scale.set(1, 1, 0.66); return g; }
     case 'flowers': { const g = new THREE.Group(); const C = [0xff6a8a, 0xffd24a, 0xffffff, 0xb070ff, 0xff9a4a]; g.add(vox(0.9, 0.05, 0.9, 0x5aa03a, 0, 0, 0)); for (let i = 0; i < 7; i++) g.add(sph(0.07, C[i % 5], -0.32 + (i % 3) * 0.32, 0.05, -0.3 + Math.floor(i / 3) * 0.3, 0, 0, 5)); return g; }

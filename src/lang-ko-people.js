@@ -623,5 +623,7 @@ export const KO_PEOPLE = {
   '· blueprints drop from bosses and every 10th dive floor': '· 설계도는 보스와 다이브 10층마다 나옵니다',
   'Forge': '제작',
   '✔ Forged': '✔ 제작됨',
+  'Trophy Hall': '전리품 전시관',
+  'Displays your deeds: a plinth for every boss defeated, golden swords for forged legendary weapons, a pillar for your deepest dive and banners for each region you are Champion of. +3% happiness upkeep.': '업적을 전시합니다: 쓰러뜨린 보스마다 받침대, 제작한 전설 무기마다 황금 검, 가장 깊은 다이브를 나타내는 기둥, 챔피언이 된 지역마다 깃발. 행복도 유지 +3%.',
   'hearty stew': '푸짐한 스튜', 'roast boar': '멧돼지 구이', 'honey bread': '꿀빵', 'mushroom pie': '버섯 파이', 'herbal tea': '약초차',
 };
