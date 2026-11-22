@@ -274,6 +274,8 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^(\d+) raiders( led by a warchief)? are at the gates\. Choose up to three heroes.*$/, (n, w) => `습격자 ${n}명${w ? '(대장군이 이끎)' : ''}이 성문 앞에 있습니다. 성벽을 맡을 영웅을 최대 3명 고르고, 바리케이드를 세운 뒤 경종을 울리세요. 마을의 습격자를 탭해 직접 쓰러뜨릴 수도 있습니다.`],
+    [/^Barricades: (\d)\/3 \(\+2 defense each\)$/, n => `바리케이드: ${n}/3 (각 방어 +2)`],
     [/^(.+\.) · (\d+)g$/, (a, n) => `${f(a)} · ${n}골드`],
     [/^🎒 Loot: (.+) \((.+)\)$/, (n, r2) => `🎒 전리품: ${n} (${f(r2)})`],
     [/^🎒 Pack full — sold (.+) for (\d+)g\.$/, (n, g) => `🎒 가방이 가득 차 ${n}을(를) ${g}골드에 팔았습니다.`],

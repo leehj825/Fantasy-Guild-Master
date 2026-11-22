@@ -1072,12 +1072,18 @@ function resolveDive(q, mode) {
  * ------------------------------------------------------------------ */
 const DEFENDER_NAMES = ['Guard', 'Sentry', 'Warden', 'Lookout'];
 function raidThreat(q) { return q.raidCount * 3.5 * (1 + 0.1 * G.rank) * (q.bossRaid ? 1.8 : 1); }
+// defense posts: you pick up to three free heroes to man the walls (the best ones are taken automatically if you pick nobody)
+const freeHeroes = () => G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving');
+function postHeroes() {
+  const sel = (G.flags.postSel || []).map(id => G.heroes.find(h => h.id === id)).filter(h => h && h.state !== 'quest' && h.state !== 'leaving').slice(0, 3);
+  return sel.length ? sel : freeHeroes().sort((a, b) => heroPower(b, 'combat') - heroPower(a, 'combat')).slice(0, 3);
+}
 function defenderParty(muster) {
   const p = [], guards = G.staff.guard, towers = ofType('tower').length;
   for (let i = 0; i < Math.min(2, guards); i++) p.push({ id: -(i + 1), name: `${DEFENDER_NAMES[i]}`, cls: 'knight', level: 1 + G.walls, variant: 0, power: 3 * (G.research.scales ? 2 : 1), trait: null, vip: false });
   for (let i = 0; i < Math.min(2, towers); i++) p.push({ id: -(10 + i), name: 'Tower Archer', cls: 'ranger', level: 2, variant: 1, power: 4, trait: null, vip: false });
   if (!p.length) p.push({ id: -99, name: 'Militia', cls: 'knight', level: 1, variant: 2, power: 1.5, trait: null, vip: false });
-  const heroes = muster ? G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving').sort((a, b) => heroPower(b, 'combat') - heroPower(a, 'combat')).slice(0, 3) : [];
+  const heroes = muster ? postHeroes() : [];
   return { party: [...p, ...heroes.map(heroSnap)], heroes };
 }
 function raidQuest() { return G.quests.find(q => q.defense); }
@@ -1093,12 +1099,13 @@ function startRaid() {
   const { party } = defenderParty(false);
   const q = { id: G.nextId++, name: bossRaid ? 'Warchief Raid at the Gates' : 'Raid at the Gates', type: 'defense', defense: true, state: 'active', heroes: [], party, raidCount: count, bossRaid, minH: Math.max(1, Math.min(3, count - 1)), maxH: 4, dur: 28, t: 28, gold: 0, renown: 0, loot: {}, mods: [], heals: [], deaths: [], enchant: false, seed: (Math.random() * 1e9) | 0, special: true };
   q.chance = Math.max(0.05, Math.min(0.97, defense(false) / raidThreat(q))); q.ok = Math.random() < q.chance; q.script = genScript(q); G.quests.push(q); G.alarm = false;
-  sfx('raid'); notify('👹 Raid!', 'Raiders are at the gates of your guild.'); showBanner('raid', `👹 ${bossRaid ? 'WARCHIEF RAID' : 'Raid'}! ${count} raiders at the gates — odds ${Math.round(q.chance * 100)}%`, [['Muster heroes', 'alarm', 'red'], ['Watch', 'watchRaid', '']]);
+  sfx('raid'); notify('👹 Raid!', 'Raiders are at the gates of your guild.'); showBanner('raid', `👹 ${bossRaid ? 'WARCHIEF RAID' : 'Raid'}! ${count} raiders at the gates — odds ${Math.round(q.chance * 100)}%`, [['Defense posts', 'postsopen', 'red'], ['Watch', 'watchRaid', '']]);
   toast(bossRaid ? '🐗 A warchief leads the raiders!' : 'Raiders at the perimeter!');
 }
 function defense(muster) {
   let d = ofType('tower').reduce((n, t) => n + (ofType('hill').some(h => Math.hypot(h.cx + 1.5 - t.cx - t.w / 2, h.cz + 1.5 - t.cz - t.d / 2) <= 5.5) ? 3 : 0), 0) + Math.min(8, ofType('palisade').length) * 2 + G.staff.guard * (G.research.scales ? 8 : 4) + G.walls * 3 + (G.research.scales ? 6 : 0) + ofType('tower').length * 6;
-  if (muster) d += G.heroes.filter(h => h.state !== 'quest' && h.state !== 'leaving').sort((a, b) => heroPower(b, 'combat') - heroPower(a, 'combat')).slice(0, 3).reduce((s, h) => s + CLASSES[h.cls].base * (h.gear ? 1 : 0.6) * 1.1, 0);
+  d += 2 * ((raidQuest() || {}).barricade || 0);
+  if (muster) d += postHeroes().reduce((s, h) => s + CLASSES[h.cls].base * (h.gear ? 1 : 0.6) * 1.1 * (1 + 0.03 * (h.level - 1)), 0);
   return d;
 }
 function musterHeroes() {
@@ -1123,7 +1130,7 @@ function resolveDefense(q) {
   }
   onQuestEnd(q, ok); q.state = 'done'; G.quests.splice(G.quests.indexOf(q), 1);
   q.heroes.forEach(h => { if (!G.heroes.includes(h)) return; h.state = 'idle'; h.cool = 0; h.target = null; h.mesh.visible = true; h.pos.set(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1)); h.stamina = Math.max(20, h.stamina - 12); });
-  G.goblins.forEach(g => scene.remove(g.mesh)); G.goblins = []; G.alarm = false; hideBanner('raid'); toast(q.endText); renderModal(true);
+  G.goblins.forEach(g => scene.remove(g.mesh)); G.goblins = []; G.alarm = false; G.flags.postSel = []; hideBanner('raid'); toast(q.endText); renderModal(true);
 }
 // tapping a raider in town strikes it down: each one lowers the threat, and a lost fight can turn around
 function smiteGoblin(g) {
@@ -2300,6 +2307,14 @@ function modalContent() {
       const l = inv().slice().sort((a, b) => b.rar - a.rar);
       return ['🎒 Pack', `<div class="s">${l.length}/30 items. Items drop from expeditions (bosses always drop one). Equip them from a hero's Gear tab, or sell what you don't need.</div><div style="display:flex;gap:6px;margin:6px 0"><button class="act red" data-act="sellcommon">Sell all Common</button></div>` + (l.map(it => `<div class="row"><div class="grow"><div class="t">${itemTag(it)} <span class="tag">${RARITY[it.rar][0]}</span></div><div class="s">${itemText(it)}</div></div><button class="act red" data-act="sellitem" data-i="${it.id}">Sell ${itemValue(it)}g</button></div>`).join('') || '<div class="s">The pack is empty.</div>')];
     }
+    case 'posts': {
+      const q = raidQuest(); if (!q) return ['🛡 Defense posts', '<div class="s">No raid right now.</div>'];
+      const sel = postHeroes(), odds = Math.round(Math.max(0.05, Math.min(0.97, defense(true) / raidThreat(q))) * 100);
+      let h = `<div class="s">${q.raidCount} raiders${q.bossRaid ? ' led by a warchief' : ''} are at the gates. Choose up to three heroes to hold the walls, raise barricades, then sound the alarm. Tap raiders in town to strike them down too.</div><div class="row" style="border-color:#ffd24a"><div class="grow"><div class="t">Odds with this defense: <b>${odds}%</b></div><div class="s">Barricades: ${q.barricade || 0}/3 (+2 defense each)</div></div><button class="act" data-act="barricade" ${G.gold >= 60 && (q.barricade || 0) < 3 ? '' : 'disabled'}>🪵 Barricade 60g</button></div>`;
+      h += freeHeroes().sort((a, b) => heroPower(b, 'combat') - heroPower(a, 'combat')).map(x => `<div class="row" data-act="postsel" data-id="${x.id}" style="cursor:pointer;${sel.includes(x) ? 'border-color:#ffd24a;background:#ffd24a22' : ''}"><div style="font-size:24px">${sel.includes(x) ? '☑' : '☐'}</div><div class="grow"><div class="t">${x.name} <span class="tag">Lv ${x.level}</span></div><div class="s">${heroLabel(x)} · power ${heroPower(x, 'combat').toFixed(1)}${x.gear ? '' : ' · no gear'}</div></div></div>`).join('') || '<div class="s">No free heroes.</div>';
+      h += q.mustered ? '<div class="s">The heroes are already fighting!</div>' : `<button class="act" data-act="alarm" style="margin-top:8px">🔔 Sound the alarm</button>`;
+      return ['🛡 Defense posts', h];
+    }
     case 'album': {
       const c = G.flags.cards || {}, rew = G.flags.cardRew || {}, forms = [['base', 'Base'], ['a', 'Promotion A'], ['b', 'Promotion B']];
       let h = `<div class="s">Recruit each class and promote it both ways to complete its set. A finished set pays 500g and a Mythril shard; the full album pays much more. Rare visitors: ${Object.keys(G.flags.rareJoined || {}).length}/${Object.keys(VISITORS).length}.</div>`;
@@ -2561,6 +2576,9 @@ const ACT = {
   role(d) { const h = G.heroes.find(x => x.id === +d.id), R = ROLES[d.k]; if (!h || !R || h.level < 3 || G.gold < roleCost(h)) return; G.gold -= roleCost(h); h.role = d.k; diary(h, `Took up the role of ${R[1].toLowerCase()}.`); toast(`${R[0]} ${h.name} is now a ${R[1].toLowerCase()}.`); sfx('goal'); },
   heroes() { openModal('heroes'); },
   album() { openModal('album'); },
+  postsopen() { openModal('posts'); },
+  postsel(d) { const id = +d.id, a = (G.flags.postSel ||= []); if (a.includes(id)) G.flags.postSel = a.filter(x => x !== id); else if (a.length < 3) a.push(id); else toast('At most 3 heroes man the walls.'); },
+  barricade() { const q = raidQuest(); if (!q || (q.barricade || 0) >= 3 || G.gold < 60) return; G.gold -= 60; q.barricade = (q.barricade || 0) + 1; q.chance = Math.max(0.05, Math.min(0.97, defense(false) / raidThreat(q))); sfx('build'); toast('🪵 A barricade goes up at the gate.'); },
   inv() { openModal('inv'); },
   equipitem(d) { const h = G.heroes.find(x => x.id === +d.id); if (h) equipItem(h, +d.i); },
   unequip(d) { const h = G.heroes.find(x => x.id === +d.id); if (h) unequipItem(h, d.k); },
