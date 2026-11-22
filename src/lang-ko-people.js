@@ -694,5 +694,9 @@ export const KO_PEOPLE = {
   '🧨 The rival loses face, but the town frowns on the feud.': '🧨 라이벌은 체면을 잃었지만, 마을은 불화를 달갑게 여기지 않습니다.',
   '🧨 Half the forge’s stock was ruined.': '🧨 대장간 재고의 절반이 망가졌습니다.',
   'Turned down the rival guild’s offer.': '라이벌 길드의 제안을 거절했습니다.',
+  '👆 Touch controls': '👆 터치 조작',
+  'Pan mode: one finger drags the view, two fingers pinch to zoom and twist to rotate. Orbit mode: one finger rotates. Double-tap empty ground to reset the view.': '이동 모드: 한 손가락으로 화면을 끌고, 두 손가락으로 확대·축소하며 비틀어 회전합니다. 회전 모드: 한 손가락으로 회전합니다. 빈 땅을 두 번 탭하면 시점이 초기화됩니다.',
+  'Pan': '이동',
+  'Orbit': '회전',
   'hearty stew': '푸짐한 스튜', 'roast boar': '멧돼지 구이', 'honey bread': '꿀빵', 'mushroom pie': '버섯 파이', 'herbal tea': '약초차',
 };

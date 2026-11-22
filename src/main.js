@@ -2096,6 +2096,7 @@ function modalContent() {
       ${window.AndroidNotify ? `<div class="row"><div class="grow"><div class="t">🔔 Reminders</div><div class="s">A note when a party returns, or when the guild misses you.</div></div><button class="act ${notifyOn() ? '' : 'red'}" data-act="notifytoggle">${notifyOn() ? 'On' : 'Off'}</button></div>` : ''}
       <div class="row"><div class="grow"><div class="t">📈 Performance</div><div class="s">Frame time ${frameEma.toFixed(0)} ms (about ${Math.round(1000 / Math.max(8, frameEma))} fps)${slowT >= 5 ? ' · slow: decorations paused' : ''}. When it stays slow the game pauses pets and disaster effects, and Auto graphics lowers the resolution.</div></div></div>
       ${G.flags.legendDone ? `<div class="row"><div class="grow"><div class="t">👑 Crown favor</div><div class="s">Level ${kingdomLv()}/10 · ${kingdom().fame % KW_PER}/${KW_PER} toward the next. Each level: +2% quest gold. The Crown calls for aid every few minutes.</div></div></div>` : ''}
+      <div class="row"><div class="grow"><div class="t">👆 Touch controls</div><div class="s">Pan mode: one finger drags the view, two fingers pinch to zoom and twist to rotate. Orbit mode: one finger rotates. Double-tap empty ground to reset the view.</div></div><button class="act" data-act="touchscheme">${touchScheme() === 'pan' ? 'Pan' : 'Orbit'}</button></div>
       <div class="row"><div class="grow"><div class="t">📷 Photo mode</div><div class="s">Hides the interface so you can look at your town. Tap to leave.</div></div><button class="act" data-act="photo">Start</button></div>
       <div class="row"><div class="grow"><div class="t">🧾 Error log</div><div class="s">${readErrs().length} recorded on this device.</div></div><button class="act red" data-act="errlog">Open</button></div>
       <div class="row"><div class="grow"><div class="t">🌐 Language</div><div class="s">English / 한국어 / 日本語</div></div>${Object.entries(LANGS).map(([k, n]) => `<button class="act ${getLang() === k ? '' : 'red'}" style="${getLang() === k ? 'outline:2px solid #fff8' : ''}" data-act="lang" data-l="${k}">${n}</button>`).join('')}</div>
@@ -2365,6 +2366,7 @@ const ACT = {
   charm(d) { const h = G.heroes.find(x => x.id === +d.id), C = CHARMS[d.k]; if (!h || !C || G.gold < C.gold || G.ore < C.ore) return; G.gold -= C.gold; G.ore -= C.ore; h.charm = d.k; toast(`${C.icon} ${h.name} wears the ${C.name}.`); sfx('goal'); },
   trade(d) { chooseTrade(+d.n); },
   theme(d) { const T = THEMES[d.k]; if (!T) return; const own = (G.flags.themes ||= ['crimson']); if (!own.includes(d.k)) { if (G.gold < T[2]) return; G.gold -= T[2]; own.push(d.k); } G.flags.theme = d.k; applyTheme(); toast(`🎨 The hall now flies ${T[0]} banners and a matching roof.`); },
+  touchscheme() { try { localStorage.setItem(TOUCH_KEY, touchScheme() === 'pan' ? 'orbit' : 'pan'); } catch (e) { /* ignore */ } },
   notifytoggle() { try { localStorage.setItem(NOTIFY_KEY, notifyOn() ? '0' : '1'); } catch (e) { /* ignore */ } },
   textsize() { a11y.text = (a11y.text + 1) % 3; applyA11y(); },
   cbmode() { a11y.cb = a11y.cb ? 0 : 1; applyA11y(); },
@@ -2528,18 +2530,21 @@ function groundAt(cx, cy) {
 // Touch/mouse scheme: ONE finger (or left mouse) = rotate (sideways) and tilt (up/down); TWO fingers (or right mouse / Shift) = pan, pinch = zoom.
 // While placing a building, dragging the golden plot moves it; tapping the ground moves it there.
 let drag = null;
-const pts = new Map(); let two = null;
+const pts = new Map(); let two = null, lastTap = null;
+const TOUCH_KEY = 'fantasy-guild-master-touch';
+const touchScheme = () => { try { return localStorage.getItem(TOUCH_KEY) === 'orbit' ? 'orbit' : 'pan'; } catch (e) { return 'pan'; } };   // touch default: one finger pans, two fingers pinch/twist
 const cellFor = (x, z) => { const [w, d] = footprint(placing, ghostRot); return [Math.floor(x - w / 2 + 0.5), Math.floor(z - d / 2 + 0.5)]; };
 canvas.addEventListener('pointerdown', e => {
   pts.set(e.pointerId, [e.clientX, e.clientY]);
   if (pts.size === 1) {
-    drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, btn: e.button, mode: (e.button === 2 || e.button === 1 || e.shiftKey || e.ctrlKey) ? 'pan' : 'orbit' };
-    if (placing && drag.mode === 'orbit') {
+    drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, btn: e.button, mode: (e.button === 2 || e.button === 1 || e.shiftKey || e.ctrlKey || (e.pointerType === 'touch' && touchScheme() === 'pan')) ? 'pan' : 'orbit' };
+    if (e.pointerType === 'touch') drag.slop = 10;
+    if (placing && (drag.mode === 'orbit' || (e.pointerType === 'touch' && drag.mode === 'pan'))) {
       const p = groundAt(e.clientX, e.clientY), [w, d] = footprint(placing, ghostRot);
       if (p && (BUILDINGS[placing].walkable || (Math.abs(p.x - ghost.position.x) < w / 2 + 0.8 && Math.abs(p.z - ghost.position.z) < d / 2 + 0.8))) { drag.mode = 'ghost'; drag.off = [p.x - ghost.position.x, p.z - ghost.position.z]; }
     }
   } else if (pts.size === 2) {
-    const [a, b] = [...pts.values()]; two = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), mx: (a[0] + b[0]) / 2, my: (a[1] + b[1]) / 2 };
+    const [a, b] = [...pts.values()]; two = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), mx: (a[0] + b[0]) / 2, my: (a[1] + b[1]) / 2, ang: Math.atan2(b[1] - a[1], b[0] - a[0]) };
     if (drag) { drag.moved = true; drag.mode = 'none'; }
   }
   canvas.setPointerCapture(e.pointerId);
@@ -2548,10 +2553,11 @@ canvas.addEventListener('pointermove', e => {
   if (pts.has(e.pointerId)) pts.set(e.pointerId, [e.clientX, e.clientY]);
   if (pts.size === 2 && two) {   // two fingers: pan with the midpoint, zoom with the pinch
     const [a, b] = [...pts.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
-    viewS *= two.d / d; panBy(mx - two.mx, my - two.my); two = { d, mx, my }; return;
+    let ang = Math.atan2(b[1] - a[1], b[0] - a[0]), da = ang - two.ang; if (da > Math.PI) da -= 2 * Math.PI; if (da < -Math.PI) da += 2 * Math.PI;
+    viewS *= two.d / d; panBy(mx - two.mx, my - two.my); if (e.pointerType === 'touch' && Math.abs(da) < 1) rotateBy(da, 0); two = { d, mx, my, ang }; return;
   }
   if (!drag || drag.mode === 'none') return;
-  if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 6) drag.moved = true;
+  if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > (drag.slop || 6)) drag.moved = true;
   if (drag.moved) {
     const dx = e.clientX - drag.lx, dy = e.clientY - drag.ly;
     if (drag.mode === 'orbit') rotateBy(-dx * 0.008, dy * 0.005);
@@ -2566,7 +2572,7 @@ canvas.addEventListener('pointerup', e => {
   endPtr(e);
   const d = drag; if (pts.size === 0) drag = null; if (!d || d.moved || pts.size > 0) return;
   if (d.btn === 2) return cancelPlacement();
-  if (d.btn === 1 || d.mode === 'pan') return;
+  if (d.btn === 1 || (d.mode === 'pan' && e.pointerType !== 'touch')) return;
   if (placing) { const p = groundAt(e.clientX, e.clientY); if (p) { const [cx, cz] = cellFor(p.x, p.z); moveGhost(cx, cz); } return; }
   if (watching) return watchTap(e);
   ptr.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ptr, camera);
@@ -2574,7 +2580,9 @@ canvas.addEventListener('pointerup', e => {
   if (rh) { let o = rh.object; while (o && o.userData.rid === undefined) o = o.parent; if (o) return openModal('resident', o.userData.rid); }
   const hit = ray.intersectObjects(bGroup.children, true)[0], hh = ray.intersectObjects(heroGroup.children.filter(m => m.visible), true)[0];
   if (hh && (!hit || hh.distance < hit.distance + 1.5)) { let o = hh.object; while (o && o.userData.hid === undefined) o = o.parent; if (o) return openModal('hero', o.userData.hid); }
-  if (hit) { let o = hit.object; while (o && o.userData.bid === undefined) o = o.parent; if (o) openModal('building', o.userData.bid); }
+  if (hit) { let o = hit.object; while (o && o.userData.bid === undefined) o = o.parent; if (o) openModal('building', o.userData.bid); return; }
+  const now = performance.now();   // double-tap on empty ground resets the view
+  if (lastTap && now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) { lastTap = null; resetView(); } else lastTap = { t: now, x: e.clientX, y: e.clientY };
 });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('wheel', e => { e.preventDefault(); if (e.shiftKey || e.ctrlKey) rotateBy(-e.deltaX * 0.004 - e.deltaY * 0.004, 0); else zoomBy(1 + Math.sign(e.deltaY) * 0.1); }, { passive: false });
