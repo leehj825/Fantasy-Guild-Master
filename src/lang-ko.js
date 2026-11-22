@@ -274,6 +274,10 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^Day (\d+): Returned victorious from “(.+)”\.$/, (d, q) => `${d}일째: “${f(q)}”에서 승리하고 돌아왔습니다.`],
+    [/^Day (\d+): Limped home from “(.+)”\.$/, (d, q) => `${d}일째: “${f(q)}”에서 지쳐 돌아왔습니다.`],
+    [/^Day (\d+): Reached level (\d+)\.$/, (d, l) => `${d}일째: 레벨 ${l}에 도달했습니다.`],
+    [/^Day (\d+): Welcomed a child, (.+), with (.+)\.$/, (d, c, p) => `${d}일째: ${p}와(과) 아이 ${c}을(를) 맞이했습니다.`],
     [/^🗺 (.+) trial (\d)\/3 passed! \+(\d+)g(.*)$/, (n, st, g, x) => `🗺 ${f(n)} 시련 ${st}/3 통과! +${g}골드${x}`],
     [/^🏅 Champion of (.+)!$/, n => `🏅 ${f(n)}의 챔피언!`],
     [/^🏅 The guild became Champion of (.+)\.$/, n => `🏅 길드가 ${f(n)}의 챔피언이 되었습니다.`],
@@ -292,7 +296,7 @@ export function makeKoRules(T) {
     [/^🐪 The caravan returned with (\d+)g!$/, n => `🐪 카라반이 ${n}골드를 벌어 돌아왔습니다!`],
     [/^🐪 The caravan was ambushed\. Only (\d+)g was saved\.$/, n => `🐪 카라반이 습격당했습니다. ${n}골드만 건졌습니다.`],
     [/^🐪 Caravan on the road with (\d+)g of goods — back in (\d+) s\.$/, (a, b) => `🐪 ${a}골드어치 카라반이 이동 중 — ${b}초 후 도착.`],
-    [/^🎨 The hall now flies (.+) banners\.$/, n => `🎨 이제 홀에 ${f(n)} 깃발이 걸립니다.`],
+    [/^🎨 The hall now flies (.+) banners and a matching roof\.$/, n => `🎨 이제 홀에 ${f(n)} 깃발과 어울리는 지붕이 올라갑니다.`],
     [/^(\S+) (.+) wears the (.+)\.$/, (i, n, c) => `${i} ${n}이(가) ${f(c)}을(를) 착용했습니다.`],
     [/^(\S+) A (hound|cat|hawk|fox) joined the guild!$/, (i, a) => `${i} ${f({hound:'Hound',cat:'Cat',hawk:'Hawk',fox:'Fox'}[a])}이(가) 길드에 합류했습니다!`],
     [/^📅 Daily Dive \(best (\d+)( ✔)?\)$/, (n, c) => `📅 일일 다이브 (최고 ${n}${c || ''})`],

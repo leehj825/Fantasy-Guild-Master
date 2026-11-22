@@ -447,7 +447,7 @@ const survBonus = h => (traitOf(h) === 'brave' ? 0.35 : 0) + heroMods(h).survive
 const heroLabel = h => h.promo ? promoOf(h).name : CLASSES[h.cls].label;
 function gainXp(h, n) {
   h.xp += n * heroMods(h).xp * (1 + 0.06 * legacyLvl('tutor')) * (1 + 0.1 * Math.min(3, retireN('instructor'))) * (hasPet('fox') ? 1.05 : 1);
-  while (h.xp >= h.level + 1) { h.xp -= h.level + 1; h.level++; sfx('level'); floatText(h.pos, `⬆ ${h.name} Lv${h.level}`, '#9bff9b'); if (h.level === 3 || h.level === 6) toast(`✨ ${h.name} can choose a new talent! (tap the hero)`); }
+  while (h.xp >= h.level + 1) { h.xp -= h.level + 1; h.level++; sfx('level'); diary(h, `Reached level ${h.level}.`); floatText(h.pos, `⬆ ${h.name} Lv${h.level}`, '#9bff9b'); if (h.level === 3 || h.level === 6) toast(`✨ ${h.name} can choose a new talent! (tap the hero)`); }
 }
 function addPromoGear(h) { h.mesh.add(vox(0.46, 0.5, 0.05, 0xe8c04a, 0, 0.3, -0.2), vox(0.1, 0.1, 0.06, 0xc0392b, 0, 0.62, -0.23)); }
 // Bonds come from a number: affinity, -100..100, kept on both heroes (h.aff[otherId]). It grows by questing together and by chatting in the
@@ -515,7 +515,7 @@ function createHero(d) {
     mesh, pos: mesh.position, bub, state: 'idle', target: null, onArrive: null, timer: 0, onDone: null, cool: 0, phase: Math.random() * 6, vis: true,
   };
   codexAdd('classes', h.cls); if (d.tags) { h.tags = d.tags; h.bio = d.bio; h.likes = d.likes; h.dislikes = d.dislikes; } else Object.assign(h, makeProfile(h.cls));
-  (h.tags || []).forEach(t => codexAdd('tags', t)); h.loy = d.loy ?? 60; h.charm = d.charm || null; h.marks = d.marks || []; h.title = d.title || null; h.boon = d.boon || null; h.arc = d.arc || { id: pickArc(h), ch: 0 };
+  (h.tags || []).forEach(t => codexAdd('tags', t)); h.loy = d.loy ?? 60; h.charm = d.charm || null; h.diary = d.diary || []; h.marks = d.marks || []; h.title = d.title || null; h.boon = d.boon || null; h.arc = d.arc || { id: pickArc(h), ch: 0 };
   mesh.userData.hid = h.id; G.heroes.push(h); if (h.vip) addStar(h); if (h.promo) addPromoGear(h); if (d.bonds === undefined) assignBonds(h); else if (!h.aff) { h.aff = {}; for (const [id, k] of Object.entries(h.bonds || {})) h.aff[id] = k === 'rival' ? -35 : 35; }
   return h;
 }
@@ -869,7 +869,7 @@ function resolveQuest(q) {
     h.state = 'idle'; h.cool = 0; h.stamina = Math.max(20, h.stamina - 25 * (1 - 0.12 * Math.min(3, retireN('scout')) - (hasPet('hawk') ? 0.08 : 0)));
     h.pos.set(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1)); h.mesh.visible = true; h.target = null;
     if (!ok && q.deaths.includes(h.id)) { memorialize(h, `fell on "${q.name}"`); if (h.vip) G.renown = Math.max(0, G.renown - 1); removeHero(h, h.vip ? `☠ ${h.name} — a legend of the guild — has fallen!` : `${h.name} the ${CLASSES[h.cls].label} fell in battle...`); return; }
-    h.quests = (h.quests || 0) + 1;
+    h.quests = (h.quests || 0) + 1; diary(h, ok ? `Returned victorious from “${q.name}”.` : `Limped home from “${q.name}”.`);
     if (ok) gainXp(h, traitOf(h) === 'scholar' ? 2 : 1);
     if (ok && h.bonds && Object.entries(h.bonds).some(([id, k]) => k === 'apprentice' && q.heroes.some(x => x.id === +id))) gainXp(h, 1);   // a mentor in the party teaches
     h.loy = Math.max(0, Math.min(100, (h.loy ?? 60) + (ok ? 1 : -1)));
@@ -1506,7 +1506,7 @@ function tickFamily(dt) {
       if (pairs.length) {
         const [a, b] = pick(pairs), name = pick(NAMES), tags = [...new Set([pick(a.tags || ['brave']), pick(b.tags || ['brave'])])].slice(0, 2);
         kids().push({ name, cls: pick([a.cls, b.cls]), parents: [a.name, b.name], tags, grow: G.time + 480 });
-        toast(`👶 ${a.name} and ${b.name} had a child: ${name}!`); chron(`👶 ${a.name} and ${b.name} welcomed ${name} into the world.`); sfx('chime'); a.happy = Math.min(100, a.happy + 20); b.happy = Math.min(100, b.happy + 20);
+        toast(`👶 ${a.name} and ${b.name} had a child: ${name}!`); chron(`👶 ${a.name} and ${b.name} welcomed ${name} into the world.`); sfx('chime'); a.happy = Math.min(100, a.happy + 20); b.happy = Math.min(100, b.happy + 20); diary(a, `Welcomed a child, ${name}, with ${b.name}.`); diary(b, `Welcomed a child, ${name}, with ${a.name}.`);
       }
     }
   }
@@ -1545,10 +1545,16 @@ const calEvent = () => { const d = new Date(), m = d.getMonth() + 1, dd = d.getD
 const PETS = { dog: ['🐕', 'Hound', 'Quest gold +3%.', 0], cat: ['🐈', 'Cat', 'Heroes are a little happier (+2% mood).', 300], hawk: ['🦅', 'Hawk', 'Heroes lose 8% less stamina on expeditions.', 500], fox: ['🦊', 'Fox', 'Heroes learn 5% faster.', 800] };
 const hasPet = k => (G.flags.pets || []).includes(k);
 const CHARMS = { might: { icon: '🗡', name: 'Charm of Might', desc: '+5% power.', pw: 1.05, gold: 150, ore: 6 }, vigor: { icon: '💚', name: 'Charm of Vigor', desc: 'Stamina drains 15% slower.', decay: -0.15, gold: 150, ore: 6 }, fortune: { icon: '🍀', name: 'Charm of Fortune', desc: '+10% loot.', loot: 0.1, gold: 200, ore: 8 }, ward: { icon: '🛡', name: 'Ward Charm', desc: '+6% survival chance.', survive: 0.06, gold: 250, ore: 10 } };
-const THEMES = { crimson: ['Crimson', 0xc0392b, 0], azure: ['Azure', 0x2f6fd0, 300], emerald: ['Emerald', 0x2f9a4a, 300], violet: ['Royal Violet', 0x7a3fc0, 500], obsidian: ['Obsidian', 0x2b2b36, 500] };
+const THEMES = { crimson: ['Crimson', 0xc0392b, 0, 0], azure: ['Azure', 0x2f6fd0, 300, 0x7fa6ff], emerald: ['Emerald', 0x2f9a4a, 300, 0x7fd08a], violet: ['Royal Violet', 0x7a3fc0, 500, 0xb58cff], obsidian: ['Obsidian', 0x2b2b36, 500, 0x6a6a78] };
 function applyTheme() {
   const hall = G.buildings[0]; if (!hall || hall.type !== 'hall') return; const T = THEMES[G.flags.theme || 'crimson'] || THEMES.crimson; hall.group.userData.base ||= 0xc0392b;
-  hall.group.traverse(o => { if (o.isMesh && o.material && o.material.color) { const hx = o.material.color.getHex(); if (hx === 0xc0392b || o.userData.themed) { o.userData.themed = 1; o.material = mat(T[1]); } } });
+  hall.group.traverse(o => { if (!o.isMesh || !o.material || !o.material.color) return;
+    const hx = o.material.color.getHex();
+    if (hx === 0xc0392b || o.userData.themed) { o.userData.themed = 1; o.material = mat(T[1]); }   // banners
+    if (o.material.map || o.userData.roofMat) {   // roof: the textured mesh that sits above the walls
+      o.geometry.boundingBox || o.geometry.computeBoundingBox();
+      if (o.userData.roofMat || o.geometry.boundingBox.min.y >= 2.5) { if (!o.userData.roofMat) o.userData.roofMat = o.material; o.material = T[3] ? Object.assign(o.userData.roofMat.clone(), {}) : o.userData.roofMat; if (T[3]) o.material.color.setHex(T[3]); }
+    } });
 }
 function chooseTrade(amt) {
   const f = G.flags; if (f.trade || G.gold < amt || !first('market')) return; G.gold -= amt;
@@ -1561,6 +1567,55 @@ function tickTrade() {
   else { const g = Math.round(t.amt * 0.3); G.gold += g; toast(`🐪 The caravan was ambushed. Only ${g}g was saved.`); chron('🐪 A trade caravan was ambushed.'); }
   sfx(ok ? 'goal' : 'lose');
   if (ok && t.amt >= 500 && Ads.canShow('caravanDouble')) { const bonus = Math.round(t.amt * 0.5); showAdOffer('caravanDouble', `▶ Watch an ad: a bigger haul (+${bonus}g)`, 12, () => { G.gold += bonus; toast(`🐪 Bonus haul: +${bonus}g!`); }); }
+}
+// ---- hero diary: a few lines per hero about what happened to them
+const diary = (h, text) => { if (!h) return; const d = (h.diary ||= []); d.push({ d: Math.floor(G.time / 60) + 1, t: text }); if (d.length > 8) d.shift(); };
+// ---- 3D companions and disaster visuals
+const petGroup = new THREE.Group(); scene.add(petGroup);
+const PET_COL = { dog: [0x9a6a3a, 0x6b4a2b], cat: [0xd8d0c4, 0x8a8478], fox: [0xd8742a, 0xf4eee6], hawk: [0x8a6a4a, 0xf4eee6] };
+function buildPet(k) {
+  const g = new THREE.Group(), [c1, c2] = PET_COL[k];
+  if (k === 'hawk') { g.add(vox(0.16, 0.12, 0.4, c1, 0, 0, 0), vox(0.7, 0.04, 0.2, c1, 0, 0.05, 0), vox(0.1, 0.1, 0.1, c2, 0, 0.1, 0.22), vox(0.08, 0.04, 0.2, c2, 0, 0.02, -0.28)); return g; }
+  const sc = k === 'cat' ? 0.8 : 1;
+  g.add(vox(0.22, 0.2, 0.46, c1, 0, 0.14, 0), vox(0.17, 0.17, 0.17, c1, 0, 0.3, 0.28), vox(0.05, 0.08, 0.05, c2, -0.06, 0.45, 0.28), vox(0.05, 0.08, 0.05, c2, 0.06, 0.45, 0.28), vox(0.06, 0.06, 0.2, k === 'fox' ? c2 : c1, 0, 0.26, -0.33));
+  for (const x of [-0.07, 0.07]) for (const z of [-0.16, 0.16]) g.add(vox(0.05, 0.14, 0.05, c2, x, 0, z));
+  g.scale.setScalar(sc * 1.3); return g;
+}
+const petMeshes = new Map();
+function syncPets() {
+  const have = G.flags.pets || [];
+  for (const [k, m] of petMeshes) if (!have.includes(k)) { petGroup.remove(m.g); petMeshes.delete(k); }
+  for (const k of have) if (!petMeshes.has(k)) { const g = buildPet(k); g.position.set(HALL.cx + 2.5 + rnd(-2, 2), 0, HALL.cz + 5 + rnd(-1, 2)); petGroup.add(g); petMeshes.set(k, { g, tx: g.position.x, tz: g.position.z, wait: 0, a: Math.random() * 6 }); }
+}
+function tickPets(dt) {
+  if (petMeshes.size !== (G.flags.pets || []).length) syncPets();
+  const t = performance.now() / 1000;
+  for (const [k, m] of petMeshes) {
+    const g = m.g;
+    if (k === 'hawk') { m.a += dt * 0.5; g.position.set(HALL.cx + 2.5 + Math.cos(m.a) * 5, 4.5 + Math.sin(t) * 0.3, HALL.cz + 4 + Math.sin(m.a) * 5); g.rotation.y = -m.a; g.rotation.z = Math.sin(t * 6) * 0.15; continue; }
+    const dx = m.tx - g.position.x, dz = m.tz - g.position.z, d = Math.hypot(dx, dz);
+    if (d < 0.2) { m.wait -= dt; g.position.y = 0; if (m.wait <= 0) { m.wait = 2 + Math.random() * 4; const h = G.heroes.filter(x => x.state !== 'quest' && x.mesh.visible); const near = h.length && Math.random() < 0.6 ? pick(h).pos : null; m.tx = (near ? near.x : HALL.cx + 2.5) + rnd(-2.5, 2.5); m.tz = (near ? near.z : HALL.cz + 5) + rnd(-2, 2.5); } }
+    else { const sp = (k === 'cat' ? 1.1 : 1.6) * dt; g.position.x += dx / d * sp; g.position.z += dz / d * sp; g.rotation.y = Math.atan2(dx, dz); g.position.y = Math.abs(Math.sin(t * 10)) * 0.05; }
+  }
+}
+// disasters show on screen while their event waits: flames on a building, rising water, or green fog
+const disasterFx = { group: new THREE.Group(), kind: null, parts: [] };
+scene.add(disasterFx.group);
+function syncDisasterFx() {
+  const q = evq(), kind = q.find(x => ['fire', 'flood', 'plague'].includes(x)) || null;
+  if (kind === disasterFx.kind) return; disasterFx.kind = kind; disasterFx.parts = []; while (disasterFx.group.children.length) disasterFx.group.remove(disasterFx.group.children[0]);
+  if (!kind) return;
+  if (kind === 'fire') { const bs = G.buildings.filter(b => !BUILDINGS[b.type].decor && !BUILDINGS[b.type].walkable); const b = bs.length ? pick(bs) : G.buildings[0]; for (let i = 0; i < 7; i++) { const f = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.9, 5), new THREE.MeshBasicMaterial({ color: i % 2 ? 0xff8a1a : 0xffd24a, transparent: true, opacity: 0.85 })); f.position.set(b.cx + b.w / 2 + rnd(-b.w / 2, b.w / 2), 1.6 + Math.random(), b.cz + b.d / 2 + rnd(-b.d / 2, b.d / 2)); f.userData.p = Math.random() * 6; disasterFx.group.add(f); disasterFx.parts.push(f); } }
+  else if (kind === 'flood') { const w = new THREE.Mesh(new THREE.PlaneGeometry(26, 14), new THREE.MeshBasicMaterial({ color: 0x3b8fd8, transparent: true, opacity: 0.4, depthWrite: false })); w.rotation.x = -Math.PI / 2; w.position.set(HALL.cx + 2.5, 0.12, HALL.cz + 6); disasterFx.group.add(w); disasterFx.parts.push(w); }
+  else { for (let i = 0; i < 24; i++) { const f = new THREE.Mesh(new THREE.SphereGeometry(0.35, 6, 5), new THREE.MeshBasicMaterial({ color: 0x8acb5a, transparent: true, opacity: 0.22, depthWrite: false })); f.position.set(HALL.cx + 2.5 + rnd(-9, 9), 0.6 + Math.random() * 1.5, HALL.cz + 5 + rnd(-6, 6)); f.userData.p = Math.random() * 6; disasterFx.group.add(f); disasterFx.parts.push(f); } }
+}
+function tickDisasterFx() {
+  syncDisasterFx(); if (!disasterFx.kind) return; const t = performance.now() / 1000;
+  for (const f of disasterFx.parts) {
+    if (disasterFx.kind === 'fire') { f.scale.y = 0.8 + Math.sin(t * 9 + f.userData.p) * 0.3; f.position.y += Math.sin(t * 5 + f.userData.p) * 0.003; }
+    else if (disasterFx.kind === 'flood') { f.position.y = 0.12 + Math.sin(t * 1.2) * 0.03; }
+    else { f.position.y += Math.sin(t + f.userData.p) * 0.003; f.position.x += Math.cos(t * 0.5 + f.userData.p) * 0.004; }
+  }
 }
 // ---- region trials: completing 4, 10 and 18 quests in a region unlocks its three trials (rewards and a title for the guild)
 const TRIAL_AT = [4, 10, 18];
@@ -2043,6 +2098,7 @@ function modalContent() {
       { const pc = plusCost(h), pl = h.plus || 0, mp = maxPlus(), canP = first('forge') && pl < mp && G.gold >= pc.gold && G.ore >= pc.ore && G.ingots >= pc.ing, tc = trainCost(h);
         body += `<div class="row"><div class="grow"><div class="t">⚒ Gear +${pl}/${mp}</div><div class="s">Each step: +5% power. ${first('forge') ? (pl >= mp ? 'Upgrade the Forge for more steps.' : `Next: ${pc.gold}g, ${pc.ore} ore${pc.ing ? ', ' + pc.ing + ' ingots' : ''}`) : 'Needs a Forge.'}</div></div><button class="act" data-act="reinforce" data-id="${h.id}" ${canP ? '' : 'disabled'}>Reinforce</button></div>`;
         body += `<div class="row"><div class="grow"><div class="t">🏋 Intensive training</div><div class="s">${h.train > 0 ? 'Training… ' + Math.ceil(h.train) + 's left' : first('training') ? `80 s of drills for ${tc}g — heroes in training cannot go on quests.` : 'Needs a Training Grounds.'}</div></div><button class="act" data-act="trainhero" data-id="${h.id}" ${first('training') && !(h.train > 0) && h.state !== 'quest' && G.gold >= tc ? '' : 'disabled'}>Train</button></div>`; }
+      if ((h.diary || []).length) body += `<div class="sec">📔 Diary</div>` + [...h.diary].reverse().slice(0, 6).map(e => `<div class="s">Day ${e.d}: ${e.t}</div>`).join('');
       if (first('forge')) body += `<div class="sec">🔮 Charm${h.charm ? ': ' + CHARMS[h.charm].icon + ' ' + CHARMS[h.charm].name : ''}</div>` + Object.entries(CHARMS).filter(([k]) => k !== h.charm).map(([k, C]) => `<div class="row"><div style="font-size:22px">${C.icon}</div><div class="grow"><div class="t">${C.name}</div><div class="s">${C.desc}</div></div><button class="act" data-act="charm" data-id="${h.id}" data-k="${k}" ${G.gold < C.gold || G.ore < C.ore ? 'disabled' : ''}>${C.gold}g + ${C.ore}⛏️</button></div>`).join('');
       if (retireOk(h)) body += `<div class="sec">🏡 Retire (a veteran can stay as a resident)</div>` + Object.entries(RETIRE).map(([k, R]) => `<div class="row"><div style="font-size:24px">${R[0]}</div><div class="grow"><div class="t">${R[1]}</div><div class="s">${R[2]}</div></div><button class="act red" data-act="retire" data-id="${h.id}" data-k="${k}">Retire</button></div>`).join('');
       return [(h.vip ? '⭐ ' : '') + h.name, body];
@@ -2156,7 +2212,7 @@ const ACT = {
   petbuy(d) { const P = PETS[d.k]; if (!P || hasPet(d.k) || !P[3] || G.gold < P[3] || (G.flags.pets || []).length >= 4) return; G.gold -= P[3]; (G.flags.pets ||= []).push(d.k); toast(`${P[0]} A ${P[1].toLowerCase()} joined the guild!`); sfx('goal'); },
   charm(d) { const h = G.heroes.find(x => x.id === +d.id), C = CHARMS[d.k]; if (!h || !C || G.gold < C.gold || G.ore < C.ore) return; G.gold -= C.gold; G.ore -= C.ore; h.charm = d.k; toast(`${C.icon} ${h.name} wears the ${C.name}.`); sfx('goal'); },
   trade(d) { chooseTrade(+d.n); },
-  theme(d) { const T = THEMES[d.k]; if (!T) return; const own = (G.flags.themes ||= ['crimson']); if (!own.includes(d.k)) { if (G.gold < T[2]) return; G.gold -= T[2]; own.push(d.k); } G.flags.theme = d.k; applyTheme(); toast(`🎨 The hall now flies ${T[0]} banners.`); },
+  theme(d) { const T = THEMES[d.k]; if (!T) return; const own = (G.flags.themes ||= ['crimson']); if (!own.includes(d.k)) { if (G.gold < T[2]) return; G.gold -= T[2]; own.push(d.k); } G.flags.theme = d.k; applyTheme(); toast(`🎨 The hall now flies ${T[0]} banners and a matching roof.`); },
   textsize() { a11y.text = (a11y.text + 1) % 3; applyA11y(); },
   cbmode() { a11y.cb = a11y.cb ? 0 : 1; applyA11y(); },
   photo() { photoT = performance.now(); setPhoto(true); },
@@ -2470,7 +2526,7 @@ function serialize() {
   return {
     v: 1, savedAt: Date.now(), g,
     buildings: G.buildings.map(b => ({ type: b.type, cx: b.cx, cz: b.cz, rot: b.rot || 0, level: b.level, stock: b.stock, progress: b.progress, spec: b.spec })),
-    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, promo: h.promo, talents: h.talents, bonds: h.bonds, aff: h.aff, vow: h.vow, quests: h.quests, vip: h.vip, tags: h.tags, bio: h.bio, likes: h.likes, dislikes: h.dislikes, loy: h.loy, marks: h.marks, plus: h.plus, train: h.train, arc: h.arc, title: h.title, boon: h.boon, charm: h.charm, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
+    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, promo: h.promo, talents: h.talents, bonds: h.bonds, aff: h.aff, vow: h.vow, quests: h.quests, vip: h.vip, tags: h.tags, bio: h.bio, likes: h.likes, dislikes: h.dislikes, loy: h.loy, marks: h.marks, plus: h.plus, train: h.train, arc: h.arc, title: h.title, boon: h.boon, charm: h.charm, diary: h.diary, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
     quests: G.quests.map(q => { const o = {}; for (const [k, v] of Object.entries(q)) if (k !== 'heroes' && k !== 'script') o[k] = v; o.heroIds = (q.heroes || []).map(h => h.id); return o; }),
     extra: serializeExtra(),
   };
@@ -2685,7 +2741,7 @@ function frame() {
   updateEconomy(dt);
   G.heroes.slice().forEach(h => updateHero(h, dt));
   updateGoblins(dt);
-  updateSeasonFx(rdt); updateConfetti(rdt); updateDayNight(); tickChat(dt); tickResidents(dt); residentGroup.children.forEach(m => autoAnim(m, rdt, frustum.containsPoint(m.position)));
+  tickPets(rdt); tickDisasterFx(); updateSeasonFx(rdt); updateConfetti(rdt); updateDayNight(); tickChat(dt); tickResidents(dt); residentGroup.children.forEach(m => autoAnim(m, rdt, frustum.containsPoint(m.position)));
   camera.updateMatrixWorld(); frustumM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); frustum.setFromProjectionMatrix(frustumM);
   const seen = m => frustum.containsPoint(m.position);
   if (charStyle !== 'classic') { heroGroup.children.forEach(m => autoAnim(m, rdt, seen(m))); staffMeshes.forEach(x => autoAnim(x.mesh, rdt, seen(x.mesh))); G.goblins.forEach(x => autoAnim(x.mesh, rdt, seen(x.mesh))); }
