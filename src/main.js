@@ -415,6 +415,13 @@ const PROMO = {
 };
 // roles (level 3+): the same class can be built as a tank, a striker or a support; a full kit (legendary weapon + charm + gear +3) adds a set bonus
 const ROLES = { tank: ['🛡', 'Tank', 'Survival +9%, power −5%. Stays calm under pressure.', { pw: 0.95, survive: 0.09 }], striker: ['⚔', 'Striker', 'Power +10%, survival −3%. Hits hard.', { pw: 1.1, survive: -0.03 }], support: ['🎗', 'Support', 'Party success +3%, stamina drains 12% slower.', { succ: 0.03, decay: -0.12 }] };
+// mastery tree: one point per level above 1 (+2 for a promotion); three branches per class, rank 1-3 each; maxing a branch adds a capstone
+const BRANCH = {
+  off: { icon: '⚔', per: { pw: 1.03 }, cap: { pw: 1.04 }, names: { knight: 'Blade Mastery', ranger: 'Marksmanship', wizard: 'Destruction', rogue: 'Assassination', cleric: 'Smiting', alchemist: 'Volatile Brews' } },
+  def: { icon: '🛡', per: { survive: 0.025 }, cap: { survive: 0.04 }, names: { knight: 'Bulwark', ranger: 'Evasion', wizard: 'Wards', rogue: 'Shadows', cleric: 'Blessings', alchemist: 'Elixirs of Life' } },
+  uti: { icon: '🧰', per: { loot: 0.04, decay: -0.03 }, cap: { succ: 0.02, loot: 0.05 }, names: { knight: 'Leadership', ranger: 'Tracking', wizard: 'Lore', rogue: 'Burglary', cleric: 'Mercy', alchemist: 'Transmutation' } },
+};
+const skPoints = h => Math.max(0, h.level - 1 + (h.promo ? 2 : 0)) - Object.values(h.sk || {}).reduce((a, b) => a + b, 0);
 const roleCost = h => (h.role ? 300 : 0);
 const fullKit = h => !!(h.wep && h.charm && (h.plus || 0) >= 3);
 const PROMO2 = {
@@ -441,6 +448,7 @@ function heroMods(h) {
   if (h.boon) { m.pw *= h.boon.pw || 1; m.succ += h.boon.succ || 0; m.loot += h.boon.loot || 0; m.survive += h.boon.survive || 0; }
   if ((h.loy ?? 60) >= 80) m.pw *= 1.04; else if ((h.loy ?? 60) <= 25) m.pw *= 0.96;
   if (h.cls === 'rogue') m.loot += 0.15;
+  if (h.sk) for (const [k, r] of Object.entries(h.sk)) { const B = BRANCH[k]; if (!B || !r) continue; for (const [a, v] of Object.entries(B.per)) { if (a === 'pw') m.pw *= Math.pow(v, r); else m[a] += v * r; } if (r >= 3) for (const [a, v] of Object.entries(B.cap)) { if (a === 'pw') m.pw *= v; else m[a] += v; } }
   if (h.role && ROLES[h.role]) { const R = ROLES[h.role][3]; m.pw *= R.pw || 1; m.survive += R.survive || 0; m.succ += R.succ || 0; m.decay += R.decay || 0; }
   if (fullKit(h)) { m.pw *= 1.08; m.survive += 0.05; }
   { const L = h.wep && LEGWEP[h.wep]; if (L) { m.pw *= L.pw || 1; m.survive += L.survive || 0; m.loot += L.loot || 0; m.mana += L.mana || 0; m.decay += L.decay || 0; if (L.pwType) for (const [t, v] of Object.entries(L.pwType)) m.pwType[t] = (m.pwType[t] || 1) * v; } }
@@ -522,7 +530,7 @@ function createHero(d) {
     mesh, pos: mesh.position, bub, state: 'idle', target: null, onArrive: null, timer: 0, onDone: null, cool: 0, phase: Math.random() * 6, vis: true,
   };
   codexAdd('classes', h.cls); if (d.tags) { h.tags = d.tags; h.bio = d.bio; h.likes = d.likes; h.dislikes = d.dislikes; } else Object.assign(h, makeProfile(h.cls));
-  (h.tags || []).forEach(t => codexAdd('tags', t)); h.loy = d.loy ?? 60; h.charm = d.charm || null; h.role = d.role || null; h.wep = d.wep || null; h.diary = d.diary || []; h.marks = d.marks || []; h.title = d.title || null; h.boon = d.boon || null; h.arc = d.arc || { id: pickArc(h), ch: 0 };
+  (h.tags || []).forEach(t => codexAdd('tags', t)); h.loy = d.loy ?? 60; h.charm = d.charm || null; h.sk = d.sk || null; h.role = d.role || null; h.wep = d.wep || null; h.diary = d.diary || []; h.marks = d.marks || []; h.title = d.title || null; h.boon = d.boon || null; h.arc = d.arc || { id: pickArc(h), ch: 0 };
   mesh.userData.hid = h.id; G.heroes.push(h); if (loadedOnce) cardAdd(h); if (h.vip) addStar(h); if (h.promo) addPromoGear(h); if (d.bonds === undefined) assignBonds(h); else if (!h.aff) { h.aff = {}; for (const [id, k] of Object.entries(h.bonds || {})) h.aff[id] = k === 'rival' ? -35 : 35; }
   return h;
 }
@@ -1761,6 +1769,7 @@ const SORTS = { level: 'Level', tired: 'Tired first', cls: 'Class', todo: 'To-do
 function heroTodo(h) {
   const t = [];
   if ((h.talents || []).length < talentSlots(h)) t.push(['✨', 'New talent']);
+  if (skPoints(h) > 0) t.push(['🌳', 'Mastery points to spend']);
   if (!h.promo && G.rank >= 1 && h.level >= 5 && G.gold >= 500) t.push(['⭐', 'Can be promoted']);
   { const ch = storyChapter(h); if (ch && h.level >= ch.lv && h.state !== 'quest') t.push(['🗣', 'Story ready']); }
   if (!h.gear) t.push(['🛡', 'Needs gear']);
@@ -2384,6 +2393,7 @@ function modalContent() {
       const T = { head: '', abil: '', gear: '', story: '' }; let cur = 'head'; T.head = `<div class="row"><div style="font-size:34px">${c.icon}</div><div class="grow"><div class="t">${h.vip ? '⭐ ' : ''}${h.name}</div><div class="s">Level ${h.level} ${heroLabel(h)} · ${stateTxt}${h.quests ? ' · ' + h.quests + ' expeditions' : ''}</div></div>${aq ? `<button class="act" data-act="watch" data-q="${aq.id}">👁 Watch</button>` : ''}</div>`;
       const P = promoOf(h) || PROMO[h.cls], hm = heroMods(h), pend = (h.talents || []).length < talentSlots(h);
       cur = 'abil';
+      T[cur] += `<div class="sec">🌳 Mastery <span class="s">· ${skPoints(h)} points free</span></div>` + Object.entries(BRANCH).map(([k, B]) => { const r = (h.sk || {})[k] || 0; return `<div class="row"><div style="font-size:24px">${B.icon}</div><div class="grow"><div class="t">${B.names[h.cls]} <span class="s">${'●'.repeat(r)}${'○'.repeat(3 - r)}</span></div><div class="s">${{ off: '+3% power per rank', def: '+2.5% survival per rank', uti: '+4% loot, −3% stamina drain per rank' }[k]}${r >= 3 ? ' · capstone ✔' : ' · capstone at rank 3'}</div></div><button class="act" data-act="skup" data-id="${h.id}" data-k="${k}" ${skPoints(h) > 0 && r < 3 ? '' : 'disabled'}>＋</button></div>`; }).join('') + (Object.keys(h.sk || {}).length ? `<button class="act red" data-act="skreset" data-id="${h.id}" ${G.gold < 200 ? 'disabled' : ''}>Reset points (200g)</button>` : '');
       if (h.level >= 3) T[cur] += `<div class="sec">🎭 Role${h.role ? ': ' + ROLES[h.role][0] + ' ' + ROLES[h.role][1] : ''}${fullKit(h) ? ' · 🎖 Full kit +8% power' : ''}</div>` + Object.entries(ROLES).filter(([k]) => k !== h.role).map(([k, R]) => `<div class="row"><div style="font-size:24px">${R[0]}</div><div class="grow"><div class="t">${R[1]}</div><div class="s">${R[2]}</div></div><button class="act" data-act="role" data-id="${h.id}" data-k="${k}" ${G.gold < roleCost(h) ? 'disabled' : ''}>${roleCost(h) ? roleCost(h) + 'g' : 'Choose'}</button></div>`).join('');
       if (h.promo) T[cur] += `<div class="row" style="border-color:#e8c04a"><div style="font-size:30px">${P.icon}</div><div class="grow"><div class="t">${P.name}</div><div class="s">${P.desc}</div></div></div>`;
       else T[cur] += [['a', PROMO[h.cls]], ['b', PROMO2[h.cls]]].map(([k, Q]) => `<div class="row"><div style="font-size:30px">${Q.icon}</div><div class="grow"><div class="t">Promotion: ${Q.name}</div><div class="s">${Q.desc} Needs level 5 and Guild Rank Hold.</div>${cost(500)}</div><button class="act" data-act="promote" data-k="${k}" data-id="${h.id}" ${G.rank >= 1 && h.level >= 5 && G.gold >= 500 ? '' : 'disabled'}>Promote</button></div>`).join('');
@@ -2513,6 +2523,8 @@ const ACT = {
   storychoice(d) { chooseStory(+d.i); },
   dive(d) { dispatchDive(d && d.m); },
   hero(d) { openModal('hero', +d.id); },
+  skup(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h || !BRANCH[d.k] || skPoints(h) <= 0) return; h.sk = h.sk || {}; if ((h.sk[d.k] || 0) >= 3) return; h.sk[d.k] = (h.sk[d.k] || 0) + 1; sfx('level'); if (h.sk[d.k] === 3) toast(`🌳 ${h.name} mastered ${BRANCH[d.k].names[h.cls]}!`); },
+  skreset(d) { const h = G.heroes.find(x => x.id === +d.id); if (!h || G.gold < 200 || !h.sk) return; G.gold -= 200; h.sk = null; toast(`🌳 ${h.name}'s mastery points were reset.`); },
   role(d) { const h = G.heroes.find(x => x.id === +d.id), R = ROLES[d.k]; if (!h || !R || h.level < 3 || G.gold < roleCost(h)) return; G.gold -= roleCost(h); h.role = d.k; diary(h, `Took up the role of ${R[1].toLowerCase()}.`); toast(`${R[0]} ${h.name} is now a ${R[1].toLowerCase()}.`); sfx('goal'); },
   heroes() { openModal('heroes'); },
   album() { openModal('album'); },
@@ -2872,7 +2884,7 @@ function serialize() {
   return {
     v: 1, savedAt: Date.now(), g,
     buildings: G.buildings.map(b => ({ type: b.type, cx: b.cx, cz: b.cz, rot: b.rot || 0, level: b.level, stock: b.stock, progress: b.progress, spec: b.spec })),
-    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, promo: h.promo, talents: h.talents, bonds: h.bonds, aff: h.aff, vow: h.vow, quests: h.quests, vip: h.vip, tags: h.tags, bio: h.bio, likes: h.likes, dislikes: h.dislikes, loy: h.loy, marks: h.marks, plus: h.plus, train: h.train, arc: h.arc, title: h.title, boon: h.boon, charm: h.charm, role: h.role, wep: h.wep, diary: h.diary, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
+    heroes: G.heroes.map(h => ({ id: h.id, cls: h.cls, variant: h.variant, name: h.name, level: h.level, xp: h.xp, stamina: h.stamina, happy: h.happy, gear: h.gear, gearTier: h.gearTier || 1, promo: h.promo, talents: h.talents, bonds: h.bonds, aff: h.aff, vow: h.vow, quests: h.quests, vip: h.vip, tags: h.tags, bio: h.bio, likes: h.likes, dislikes: h.dislikes, loy: h.loy, marks: h.marks, plus: h.plus, train: h.train, arc: h.arc, title: h.title, boon: h.boon, charm: h.charm, sk: h.sk, role: h.role, wep: h.wep, diary: h.diary, x: h.pos.x, z: h.pos.z, onQuest: h.state === 'quest' })),
     quests: G.quests.map(q => { const o = {}; for (const [k, v] of Object.entries(q)) if (k !== 'heroes' && k !== 'script') o[k] = v; o.heroIds = (q.heroes || []).map(h => h.id); return o; }),
     extra: serializeExtra(),
   };
@@ -3055,6 +3067,14 @@ function watchRecall() {
   q.heroes.forEach(h => { if (!G.heroes.includes(h)) return; h.state = 'idle'; h.cool = 0; h.target = null; h.stamina = Math.max(20, h.stamina - 10); h.happy = Math.max(0, h.happy - 8); h.pos.set(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1)); h.mesh.visible = true; });
   toast('🏳 Party recalled — no rewards.'); endWatch();
 }
+// the crossroads shows up on the battlefield while you are watching that expedition
+function updateForkCard() {
+  const el = $('forkCard'); if (!el) return;
+  const q = watching && !watching.exiting ? watching.q : null, on = !!q && evq()[0] === 'fork' && G.flags.forkQ === q.id && !modalKind;
+  if (!on) { if (!el.classList.contains('hidden')) { el.classList.add('hidden'); el._h = ''; } return; }
+  const E = EVENTS.fork, h = `<div class="t">🧭 ${E.title}</div><div class="s">${E.text}</div><div class="fk">` + E.ch.map((c, i) => `<button class="act ${i === 3 ? 'red' : ''}" data-act="eventchoose" data-i="${i}" ${c.ok && !c.ok() ? 'disabled' : ''}>${c.label}</button>`).join('') + '</div>';
+  el.classList.remove('hidden'); if (el._h !== h) { el._h = h; el.innerHTML = trHtml(h); }
+}
 function updateWatchHUD() {
   const w = watching; if (!w) return; const q = w.q, S = q.script, T = nowT(w), dv = !!q.dive;
   $('wRelic').classList.toggle('hidden', !(dv && q.offer)); $('wName').textContent = tr(dv ? `Endless Dungeon — floor ${diveFloorIndex(S, T) + 1} · best ${G.diveBest} ${(q.relics || []).map(r => RELICS[r.id].icon).join('')}` : `${w.exp.name} — ${q.name}`);
@@ -3105,7 +3125,7 @@ function frame() {
   frameEma += (rdt * 1000 - frameEma) * 0.05; slowT = frameEma > 40 ? Math.min(10, slowT + rdt) : Math.max(0, slowT - rdt * 2);
   if (slowT < 5) { tickPets(rdt); tickDisasterFx(); } else if (petMeshes.size) { petGroup.visible = false; }
   if (slowT < 5 && !petGroup.visible) petGroup.visible = true;
-  updateSeasonFx(rdt); updateConfetti(rdt); updateDayNight(); tickChat(dt); tickResidents(dt); residentGroup.children.forEach(m => autoAnim(m, rdt, frustum.containsPoint(m.position)));
+  updateForkCard(); updateSeasonFx(rdt); updateConfetti(rdt); updateDayNight(); tickChat(dt); tickResidents(dt); residentGroup.children.forEach(m => autoAnim(m, rdt, frustum.containsPoint(m.position)));
   camera.updateMatrixWorld(); frustumM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); frustum.setFromProjectionMatrix(frustumM);
   const seen = m => frustum.containsPoint(m.position);
   if (charStyle !== 'classic') { heroGroup.children.forEach(m => autoAnim(m, rdt, seen(m))); staffMeshes.forEach(x => autoAnim(x.mesh, rdt, seen(x.mesh))); G.goblins.forEach(x => autoAnim(x.mesh, rdt, seen(x.mesh))); }

@@ -274,6 +274,11 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^· (\d+) points free$/, n => `· 남은 포인트 ${n}`],
+    [/^🌳 Mastery(?: · (\d+) points free)?$/, n => `🌳 숙련${n ? ' · 남은 포인트 ' + n : ''}`],
+    [/^(.+?) · capstone (✔|at rank 3)$/, (a, c) => `${f(a)} · 정점 ${c === '✔' ? '✔' : '랭크 3에서'}`],
+    [/^🌳 (.+) mastered (.+)!$/, (h, b) => `🌳 ${h}이(가) ${f(b)}을(를) 숙달했습니다!`],
+    [/^🌳 (.+)'s mastery points were reset\.$/, h => `🌳 ${h}의 숙련 포인트가 초기화되었습니다.`],
     [/^🧭 “(.+)” takes the safe road\.$/, n => `🧭 “${f(n)}” 원정대가 안전한 길을 택합니다.`],
     [/^🧭 “(.+)” risks the shortcut!$/, n => `🧭 “${f(n)}” 원정대가 지름길에 도전합니다!`],
     [/^🧭 The scouts found a safer way for “(.+)”\.$/, n => `🧭 척후병이 “${f(n)}”을(를) 위한 더 안전한 길을 찾았습니다.`],
