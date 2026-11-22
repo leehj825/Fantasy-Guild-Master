@@ -350,7 +350,7 @@ const boardSlots = () => 3 + G.boardLvl + (G.rank >= 2 ? 1 : 0) + (G.rank >= 3 ?
 const craftSpeed = () => (1 + 0.25 * G.staff.smith) * (G.research.forging ? 1.3 : 1) * (G.research.mythril ? 1.4 : 1) * (1 + 0.1 * regionPerk('stonepeak')) * (G.flags.faction === 'vanguard' ? 1.15 : 1) * (G.flags.smithTaught ? 1.1 : 1);
 const alchSpeed = () => (1 + 0.25 * G.staff.alch) * (G.research.forging ? 1.15 : 1) * (1 + 0.1 * regionPerk('ashen')) * (G.flags.faction === 'arcane' ? 1.15 : 1);
 const mealGold = tav => { tav = tav || first('tavern'); return (tav && tav.spec === 'feast' ? 1.25 : 1) * (G.flags.fest ? 1.5 : 1) * (seasonIdx() === 3 ? 1.25 : 1) * 9 * (1 + 0.15 * G.staff.cook) * (1 + 0.3 * ((tav?.level || 1) - 1)) * (tav ? adj(tav).meal : 1); };
-const questGoldMul = () => (G.research.charter ? 1.25 : 1) * (seasonIdx() === 1 ? 1.1 : 1) * (1 + 0.002 * (G.flags.rep ?? 10)) * (first('monument') ? 1.05 : 1) * (1 + 0.03 * squares()) * (1 + 0.05 * regionPerk('dunes')) * (1 + 0.03 * legacyLvl('trade'));
+const questGoldMul = () => (1 + 0.04 * Math.min(3, retireN('quartermaster'))) * (G.research.charter ? 1.25 : 1) * (seasonIdx() === 1 ? 1.1 : 1) * (1 + 0.002 * (G.flags.rep ?? 10)) * (first('monument') ? 1.05 : 1) * (1 + 0.03 * squares()) * (1 + 0.05 * regionPerk('dunes')) * (1 + 0.03 * legacyLvl('trade'));
 const trickleMul = () => (1 + 0.5 * G.staff.porter);
 const warehouseBonus = () => ofType('warehouse').reduce((s, w) => s + 6 + 4 * (w.level - 1), 0);
 const stockCap = b => 4 + 2 * b.level + warehouseBonus();
@@ -436,7 +436,7 @@ function heroMods(h) {
 const survBonus = h => (traitOf(h) === 'brave' ? 0.35 : 0) + heroMods(h).survive;
 const heroLabel = h => h.promo ? PROMO[h.cls].name : CLASSES[h.cls].label;
 function gainXp(h, n) {
-  h.xp += n * heroMods(h).xp * (1 + 0.06 * legacyLvl('tutor'));
+  h.xp += n * heroMods(h).xp * (1 + 0.06 * legacyLvl('tutor')) * (1 + 0.1 * Math.min(3, retireN('instructor')));
   while (h.xp >= h.level + 1) { h.xp -= h.level + 1; h.level++; sfx('level'); floatText(h.pos, `⬆ ${h.name} Lv${h.level}`, '#9bff9b'); if (h.level === 3 || h.level === 6) toast(`✨ ${h.name} can choose a new talent! (tap the hero)`); }
 }
 function addPromoGear(h) { h.mesh.add(vox(0.46, 0.5, 0.05, 0xe8c04a, 0, 0.3, -0.2), vox(0.1, 0.1, 0.06, 0xc0392b, 0, 0.62, -0.23)); }
@@ -856,7 +856,7 @@ function resolveQuest(q) {
   const alive = [];
   q.heroes.forEach(h => {
     if (!G.heroes.includes(h)) return;
-    h.state = 'idle'; h.cool = 0; h.stamina = Math.max(20, h.stamina - 25);
+    h.state = 'idle'; h.cool = 0; h.stamina = Math.max(20, h.stamina - 25 * (1 - 0.12 * Math.min(3, retireN('scout'))));
     h.pos.set(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1)); h.mesh.visible = true; h.target = null;
     if (!ok && q.deaths.includes(h.id)) { memorialize(h, `fell on "${q.name}"`); if (h.vip) G.renown = Math.max(0, G.renown - 1); removeHero(h, h.vip ? `☠ ${h.name} — a legend of the guild — has fallen!` : `${h.name} the ${CLASSES[h.cls].label} fell in battle...`); return; }
     h.quests = (h.quests || 0) + 1;
@@ -1209,7 +1209,7 @@ function updateEconomy(dt) {
   // quests
   t.quest -= dt;
   if (t.quest <= 0) { t.quest = 14; if (G.quests.filter(q => q.state === 'open').length < boardSlots()) genQuest(); legendTick(); }
-  townTick(dt); tickPeople(dt); tickDisaster(dt);
+  townTick(dt); tickPeople(dt); tickDisaster(dt); tickFamily(dt);
   for (const q of [...G.quests]) if (q.state === 'active') { if (q.dive) diveTick(q, dt); else { q.t -= dt; if (q.t <= 0 || q.dur - q.t >= questEnd(q)) (q.defense ? resolveDefense(q) : resolveQuest(q)); } }
   // events
   t.merchant -= dt; if (t.merchant <= 0) { t.merchant = rnd(150, 220); if (G.renown >= 2 && !G.merchant) startMerchant(); }
@@ -1474,6 +1474,38 @@ function tickDisaster(dt) {
 }
 function maybeQuestEvent(q) { if (!q.ok || q.town || q.dive || Math.random() > 0.15) return; pushEvent(pick(['merchant', 'ruins', 'stray'])); }
 function maybeDiveEvent(q) { if (q.cleared >= 2 && Math.random() < 0.7) pushEvent(pick(['rest', 'shop', 'trap', 'treasure'])); }
+// ---- retirement and family: veterans can retire into the guild as instructor, quartermaster or scout; sweethearts may have a child who grows into a new hero
+const RETIRE = { instructor: ['🎓', 'Instructor', 'Every hero gains a little extra experience from quests.'], quartermaster: ['📦', 'Quartermaster', '+4% quest gold.'], scout: ['🔭', 'Scout', 'Heroes lose less stamina on expeditions.'] };
+const retired = () => (G.flags.retired ||= []), kids = () => (G.flags.kids ||= []);
+const retireN = role => retired().filter(r => r.role === role).length;
+const retireOk = h => h.level >= 4 && h.state !== 'quest' && !h.vip && retired().length < 6;
+function retireHero(h, role) {
+  if (!RETIRE[role] || !retireOk(h) || !G.heroes.includes(h)) return;
+  retired().push({ name: h.name, cls: h.cls, role, level: h.level, tags: (h.tags || []).slice(0, 2) });
+  chron(`${RETIRE[role][0]} ${h.name} retired and became the guild's ${RETIRE[role][1].toLowerCase()}.`); G.renown += 1;
+  removeHero(h, `${RETIRE[role][0]} ${h.name} retired as ${RETIRE[role][1]}.`); sfx('goal'); closeModal();
+}
+function tickFamily(dt) {
+  const f = G.flags; f.famT = (f.famT ?? 360) - dt;
+  if (f.famT <= 0) {
+    f.famT = 300 + Math.random() * 240;
+    if (kids().length < 2 && G.heroes.length < popCap() && Math.random() < 0.5) {
+      const pairs = []; for (const a of G.heroes) for (const [id, k] of Object.entries(a.bonds || {})) { const b = G.heroes.find(x => x.id === +id); if (k === 'sweet' && b && a.id < b.id && a.state !== 'quest' && b.state !== 'quest') pairs.push([a, b]); }
+      if (pairs.length) {
+        const [a, b] = pick(pairs), name = pick(NAMES), tags = [...new Set([pick(a.tags || ['brave']), pick(b.tags || ['brave'])])].slice(0, 2);
+        kids().push({ name, cls: pick([a.cls, b.cls]), parents: [a.name, b.name], tags, grow: G.time + 480 });
+        toast(`👶 ${a.name} and ${b.name} had a child: ${name}!`); chron(`👶 ${a.name} and ${b.name} welcomed ${name} into the world.`); sfx('chime'); a.happy = Math.min(100, a.happy + 20); b.happy = Math.min(100, b.happy + 20);
+      }
+    }
+  }
+  for (const k of kids().slice()) if (G.time >= k.grow && G.heroes.length < popCap()) {
+    kids().splice(kids().indexOf(k), 1);
+    const p = new THREE.Vector3(HALL.cx + 2.5 + rnd(-1.5, 1.5), 0, HALL.cz + 5 + rnd(0, 1.2)), h = createHero({ cls: k.cls, variant: Math.floor(Math.random() * 3), name: k.name, x: p.x, z: p.z, level: 2 + Math.floor(legacyLvl('recruits') / 2) });
+    if (k.tags && TAGS[k.tags[0]]) { h.tags = k.tags.filter(t => TAGS[t]); h.tags.forEach(t => codexAdd('tags', t)); }
+    h.bio = [h.bio ? h.bio[0] : 'Raised in the guild.', `Child of ${k.parents[0]} and ${k.parents[1]}.`]; h.loy = 80;
+    toast(`🌱 ${k.name}, child of ${k.parents[0]} and ${k.parents[1]}, has grown up and joined the guild!`); chron(`🌱 ${k.name} grew up and joined the guild.`); sfx('goal');
+  }
+}
 // ---- festivals: once per season the villagers offer to hold one; it costs gold and pays back in town reputation and mood
 const festCost = lavish => Math.round((lavish ? 300 : 100) * (1 + 0.5 * G.rank));
 const FEST = [{ name: 'Blossom Fair', icon: '🌸' }, { name: 'Midsummer Games', icon: '🏅' }, { name: 'Harvest Feast', icon: '🍂' }, { name: 'Lantern Night', icon: '🏮' }];
@@ -1758,6 +1790,7 @@ function modalContent() {
       h += `<div class="sec">Guild Staff <span class="s">· wages: ${wage()}g / 30s</span></div>`;
       h += Object.entries(STAFF).map(([k, [n, i, d]]) => `<div class="row"><div style="font-size:28px">${i}</div><div class="grow"><div class="t">${n} <span class="tag">${G.staff[k]}/${maxStaff}</span></div><div class="s">${d} · wage 4g/30s</div>${cost(staffCost(k))}</div>
         <div style="display:flex;gap:4px"><button class="act" data-act="hire" data-k="${k}" ${G.gold < staffCost(k) || G.staff[k] >= maxStaff ? 'disabled' : ''}>Hire</button>${G.staff[k] ? `<button class="act red" data-act="fire" data-k="${k}">Fire</button>` : ''}</div></div>`).join('');
+      if (retired().length || kids().length) h += `<div class="sec">Retired veterans & family</div>` + retired().map(r => `<div class="row"><div style="font-size:24px">${RETIRE[r.role][0]}</div><div class="grow"><div class="t">${r.name} <span class="tag">${RETIRE[r.role][1]}</span></div><div class="s">Level ${r.level} ${r.cls} · ${RETIRE[r.role][2]}</div></div></div>`).join('') + kids().map(k => `<div class="row"><div style="font-size:24px">👶</div><div class="grow"><div class="t">${k.name}</div><div class="s">Child of ${k.parents[0]} and ${k.parents[1]} · grows up in ${Math.max(0, Math.ceil((k.grow - G.time) / 60))} min</div></div></div>`).join('');
       return ['🛡️ Recruit & Staff', h];
     }
     case 'research': return ['⚗️ Research', Object.entries(TECHS).map(([k, [n, d, c, req]]) => `<div class="row"><div class="grow"><div class="t">${n}</div><div class="s">${d}</div>${cost(c)}${rareTags(req)}</div>
@@ -1909,6 +1942,7 @@ function modalContent() {
       { const pc = plusCost(h), pl = h.plus || 0, mp = maxPlus(), canP = first('forge') && pl < mp && G.gold >= pc.gold && G.ore >= pc.ore && G.ingots >= pc.ing, tc = trainCost(h);
         body += `<div class="row"><div class="grow"><div class="t">⚒ Gear +${pl}/${mp}</div><div class="s">Each step: +5% power. ${first('forge') ? (pl >= mp ? 'Upgrade the Forge for more steps.' : `Next: ${pc.gold}g, ${pc.ore} ore${pc.ing ? ', ' + pc.ing + ' ingots' : ''}`) : 'Needs a Forge.'}</div></div><button class="act" data-act="reinforce" data-id="${h.id}" ${canP ? '' : 'disabled'}>Reinforce</button></div>`;
         body += `<div class="row"><div class="grow"><div class="t">🏋 Intensive training</div><div class="s">${h.train > 0 ? 'Training… ' + Math.ceil(h.train) + 's left' : first('training') ? `80 s of drills for ${tc}g — heroes in training cannot go on quests.` : 'Needs a Training Grounds.'}</div></div><button class="act" data-act="trainhero" data-id="${h.id}" ${first('training') && !(h.train > 0) && h.state !== 'quest' && G.gold >= tc ? '' : 'disabled'}>Train</button></div>`; }
+      if (retireOk(h)) body += `<div class="sec">🏡 Retire (a veteran can stay as a resident)</div>` + Object.entries(RETIRE).map(([k, R]) => `<div class="row"><div style="font-size:24px">${R[0]}</div><div class="grow"><div class="t">${R[1]}</div><div class="s">${R[2]}</div></div><button class="act red" data-act="retire" data-id="${h.id}" data-k="${k}">Retire</button></div>`).join('');
       return [(h.vip ? '⭐ ' : '') + h.name, body];
     }
     case 'upgrades': {
@@ -2014,6 +2048,7 @@ const ACT = {
   dailyopen() { openModal('daily'); },
   shop() { openModal('shop'); },
   spec(d) { const b = G.buildings.find(x => x.id === +d.id); if (!b || b.spec || b.level < 3 || !SPEC[b.type] || !SPEC[b.type][d.k] || G.gold < specCost(b)) return; G.gold -= specCost(b); b.spec = d.k; sfx('goal'); toast(`${SPEC[b.type][d.k][0]} ${BUILDINGS[b.type].name} became a ${SPEC[b.type][d.k][1]}!`); chron(`${SPEC[b.type][d.k][0]} The ${BUILDINGS[b.type].name} became a ${SPEC[b.type][d.k][1]}.`); renderModal(true); },
+  retire(d) { const h = G.heroes.find(x => x.id === +d.id); if (h) retireHero(h, d.k); },
   eventopen() { openModal('event'); },
   eventchoose(d) { chooseEvent(+d.i); },
   async iapbuy(d) { const ok = await IAP.buy(d.id); if (!ok) return toast('The purchase was not completed.'); grantPurchase(d.id); renderModal(true); },
@@ -2625,4 +2660,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__renderer = renderer; window.__scene = scene; window.__api = { pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__renderer = renderer; window.__scene = scene; window.__api = { spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };

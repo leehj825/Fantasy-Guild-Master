@@ -274,6 +274,10 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^(\S+) (.+) retired as (.+)\.$/, (i, n, role) => `${i} ${n}이(가) ${f(role)}(으)로 은퇴했습니다.`],
+    [/^👶 (.+) and (.+) had a child: (.+)!$/, (a, b, c) => `👶 ${a}와(과) ${b}에게 아이가 태어났습니다: ${c}!`],
+    [/^🌱 (.+), child of (.+) and (.+), has grown up and joined the guild!$/, (c, a, b) => `🌱 ${a}와(과) ${b}의 아이 ${c}이(가) 자라 길드에 합류했습니다!`],
+    [/^Child of (.+) and (.+) · grows up in (\d+) min$/, (a, b, n) => `${a}와(과) ${b}의 아이 · ${n}분 후 성장`],
     [/^Choose a specialization \((\d+)g, permanent\)$/, n => `전문화 선택 (${n}골드, 영구)`],
     [/^Grain: (\d+)\/60$/, n => `곡식: ${n}/60`],
     [/^Grain: (\d+) · Bread: (\d+)\/40$/, (a, b) => `곡식: ${a} · 빵: ${b}/40`],
