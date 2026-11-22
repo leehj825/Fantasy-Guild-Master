@@ -1250,7 +1250,6 @@ const rewardTags = r => Object.entries(r).map(([k, v]) => k === 'gold' ? `💰${
 // ---- purchases: what each product gives (checked again on start so a restored purchase is never lost)
 function grantPurchase(id) {
   if (id === 'starter_pack' && !G.flags.starter) { G.flags.starter = 1; G.gold += 2500; G.rare.mythril += 2; G.ore += 30; G.wood += 30; G.herbs += 20; sfx('goal'); toast('🎁 Starter pack: +2500g, +2 Mythril and materials. Thank you!'); chron('🎁 The guild received a starter pack.'); }
-  if (id === 'remove_ads') { toast('🚫 Banner ads removed. Thank you for supporting the game!'); }
 }
 // ---- daily login: a 7-day track of small rewards (claimed from a window that opens once a day)
 const DAILY = [{ gold: 150 }, { gold: 200, ore: 10 }, { gold: 250, herbs: 10 }, { gold: 300, wood: 15 }, { gold: 400, mana: 10 }, { gold: 500, ore: 20, herbs: 10 }, { gold: 800, mythril: 1 }];
@@ -1867,7 +1866,7 @@ function modalContent() {
       <div class="row"><div class="grow"><div class="t">📷 Photo mode</div><div class="s">Hides the interface so you can look at your town. Tap to leave.</div></div><button class="act" data-act="photo">Start</button></div>
       <div class="row"><div class="grow"><div class="t">🧾 Error log</div><div class="s">${readErrs().length} recorded on this device.</div></div><button class="act red" data-act="errlog">Open</button></div>
       <div class="row"><div class="grow"><div class="t">🌐 Language</div><div class="s">English / 한국어 / 日本語</div></div>${Object.entries(LANGS).map(([k, n]) => `<button class="act ${getLang() === k ? '' : 'red'}" style="${getLang() === k ? 'outline:2px solid #fff8' : ''}" data-act="lang" data-l="${k}">${n}</button>`).join('')}</div>
-      ${IAP.available ? `<div class="row"><div class="grow"><div class="t">🛒 Shop</div><div class="s">Remove the banner, or a one-time starter pack.</div></div><button class="act" data-act="shop">Open</button></div>` : ''}
+      ${IAP.available ? `<div class="row"><div class="grow"><div class="t">🛒 Shop</div><div class="s">A one-time starter pack.</div></div><button class="act" data-act="shop">Open</button></div>` : ''}
       <div class="row"><div class="grow"><div class="t">📺 Rewarded ads</div><div class="s">Optional offers: double a quest's loot, rest tired heroes, rescue a wiped dive. Never forced.</div></div><button class="act ${Ads.enabled ? '' : 'red'}" data-act="adstoggle">${Ads.enabled ? 'On' : 'Off'}</button></div>
       <div class="row"><div class="grow"><div class="t">🎚 Graphics</div><div class="s">Auto lowers the resolution when the game runs slowly. Low turns shadows off for the smoothest play.</div></div><button class="act red" data-act="gfxcycle">${{ auto: 'Auto', high: 'High', low: 'Low' }[gfx]}</button></div>
       <div class="row"><div class="grow"><div class="t">🛤 Auto paths</div><div class="s">Link every new building to the street network with a short cobble path (a few coins).</div></div><button class="act ${G.flags.noAutoRoad ? 'red' : ''}" data-act="autoroadtoggle">${G.flags.noAutoRoad ? 'Off' : 'On'}</button></div>
@@ -1894,7 +1893,7 @@ function modalContent() {
       return [E.icon + ' ' + E.title, `<div class="s" style="line-height:1.5;margin-bottom:8px">${E.text}</div>` + E.ch.map((c, i) => `<div class="row"><div class="grow"><div class="t">${c.label}</div></div><button class="act" data-act="eventchoose" data-i="${i}" ${c.ok && !c.ok() ? 'disabled' : ''}>Choose</button></div>`).join('')];
     }
     case 'shop': {
-      let h = '<div class="s">Optional purchases that support the game. Nothing here is needed to play, and none of it makes the game easier to win.</div>';
+      let h = '<div class="s">An optional one-time purchase that supports the game. Nothing here is needed to play.</div>';
       h += Object.entries(PRODUCTS).map(([id, P]) => { const have = IAP.owned(id), gone = id === 'starter_pack' && G.flags.starter; return `<div class="row"><div style="font-size:30px">${P.icon}</div><div class="grow"><div class="t">${P.name}</div><div class="s">${P.desc}</div></div>${have || gone ? '<span class="tag">✔ Owned</span>' : `<button class="act" data-act="iapbuy" data-id="${id}" ${IAP.available ? '' : 'disabled'}>${IAP.price(id)}</button>`}</div>`; }).join('');
       h += IAP.available ? '' : '<div class="s">Purchases are not available right now (they need the Android app and a connection).</div>';
       return ['🛒 Shop', h];

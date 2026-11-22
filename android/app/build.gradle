@@ -57,7 +57,7 @@ android {
 
 dependencies {
     implementation 'com.google.android.gms:play-services-ads:23.2.0'            // AdMob: banner + rewarded ads
-    implementation 'com.android.billingclient:billing:7.1.1'                    // Play Billing: remove ads + starter pack
+    implementation 'com.android.billingclient:billing:7.1.1'                    // Play Billing: starter pack
     implementation 'com.google.android.ump:user-messaging-platform:2.2.0'       // consent form (GDPR / EEA, UK)
 }
 

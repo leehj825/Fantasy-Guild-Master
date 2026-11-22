@@ -81,7 +81,7 @@ public class MainActivity extends Activity {
     private LinearLayout rootView;
 
     // Play Billing: one-time products created in the Play Console with these ids
-    private static final String[] PRODUCT_IDS = { "remove_ads", "starter_pack" };
+    private static final String[] PRODUCT_IDS = { "starter_pack" };
     private BillingClient billing;
     private final Map<String, ProductDetails> details = new HashMap<>();
     private boolean billingReady = false;
@@ -164,7 +164,7 @@ public class MainActivity extends Activity {
         });
         root.addView(banner, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         ((LinearLayout.LayoutParams) banner.getLayoutParams()).gravity = android.view.Gravity.CENTER_HORIZONTAL;
-        if (!adsRemoved()) banner.loadAd(new AdRequest.Builder().build());
+        banner.loadAd(new AdRequest.Builder().build());
         loadRewarded();
     }
 
@@ -195,7 +195,6 @@ public class MainActivity extends Activity {
     }
 
     // ---------------------------------------------------------------- purchases
-    private boolean adsRemoved() { return getSharedPreferences("iap", MODE_PRIVATE).getBoolean("remove_ads", false); }
     private boolean ownedLocal(String id) { return getSharedPreferences("iap", MODE_PRIVATE).getBoolean(id, false); }
 
     private void startBilling() {
@@ -244,7 +243,6 @@ public class MainActivity extends Activity {
         if (p.getPurchaseState() != Purchase.PurchaseState.PURCHASED) return;
         for (final String id : p.getProducts()) {
             getSharedPreferences("iap", MODE_PRIVATE).edit().putBoolean(id, true).apply();
-            if ("remove_ads".equals(id)) runOnUiThread(() -> { if (banner != null) banner.setVisibility(View.GONE); });
             if (fresh) { reply(id, true); pendingId = null; }
         }
         if (!p.isAcknowledged()) {

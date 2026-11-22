@@ -417,7 +417,6 @@ export const KO_PEOPLE = {
   'Today\'s reward is already claimed. See you tomorrow!': '오늘의 보상은 이미 받았습니다. 내일 또 만나요!',
   '🛒 Shop': '🛒 상점',
   'Shop': '상점',
-  'Remove banner ads': '배너 광고 제거',
   'Removes the banner at the bottom of the screen. Optional reward offers still work.': '화면 아래 배너를 없앱니다. 선택형 보상 광고는 계속 쓸 수 있습니다.',
   'Starter pack': '스타터 팩',
   '2,500 gold, 2 Mythril, 30 ore, 30 wood and 20 herbs. One time only.': '골드 2,500, 미스릴 2, 광석 30, 목재 30, 약초 20. 한 번만 구매할 수 있습니다.',

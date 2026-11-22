@@ -2,11 +2,9 @@
 // (isReady(), owned(id), price(id), buy(id)); the wrapper answers with window.__iapResult(id, ok). In a browser, add ?mockiap to the address to
 // try the shop with a free fake purchase; without it the shop stays hidden.
 // Products (create them as one-time "in-app products" in the Play Console with these ids):
-//   remove_ads    - removes the banner (rewarded offers stay optional)
 //   starter_pack  - one-time gold, Mythril and materials
 const KEY = 'fantasy-guild-master-iap';
 export const PRODUCTS = {
-  remove_ads: { icon: '🚫', name: 'Remove banner ads', desc: 'Removes the banner at the bottom of the screen. Optional reward offers still work.', price: '$2.99' },
   starter_pack: { icon: '🎁', name: 'Starter pack', desc: '2,500 gold, 2 Mythril, 30 ore, 30 wood and 20 herbs. One time only.', price: '$1.99' },
 };
 let pending = null, owned = new Set();
