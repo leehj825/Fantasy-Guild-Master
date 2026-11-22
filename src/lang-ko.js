@@ -274,6 +274,14 @@ export const KO_DICT = Object.assign({}, UI, BUILD, PROG, KO_PEOPLE);
 export function makeKoRules(T) {
   const f = x => T(x);
   return [
+    [/^🔮 Charm(?:: (.+))?$/, n => n ? `🔮 부적: ${f(n)}` : '🔮 부적'],
+    [/^🐪 A caravan leaves with (\d+)g of goods\. It will be back in 2–3 minutes\.$/, n => `🐪 카라반이 ${n}골드어치 물건을 싣고 떠났습니다. 2~3분 뒤 돌아옵니다.`],
+    [/^🐪 The caravan returned with (\d+)g!$/, n => `🐪 카라반이 ${n}골드를 벌어 돌아왔습니다!`],
+    [/^🐪 The caravan was ambushed\. Only (\d+)g was saved\.$/, n => `🐪 카라반이 습격당했습니다. ${n}골드만 건졌습니다.`],
+    [/^🐪 Caravan on the road with (\d+)g of goods — back in (\d+) s\.$/, (a, b) => `🐪 ${a}골드어치 카라반이 이동 중 — ${b}초 후 도착.`],
+    [/^🎨 The hall now flies (.+) banners\.$/, n => `🎨 이제 홀에 ${f(n)} 깃발이 걸립니다.`],
+    [/^(\S+) (.+) wears the (.+)\.$/, (i, n, c) => `${i} ${n}이(가) ${f(c)}을(를) 착용했습니다.`],
+    [/^(\S+) A (hound|cat|hawk|fox) joined the guild!$/, (i, a) => `${i} ${f({hound:'Hound',cat:'Cat',hawk:'Hawk',fox:'Fox'}[a])}이(가) 길드에 합류했습니다!`],
     [/^📅 Daily Dive \(best (\d+)( ✔)?\)$/, (n, c) => `📅 일일 다이브 (최고 ${n}${c || ''})`],
     [/^👹 Boss Rush \(best (\d+)\)$/, n => `👹 보스 러시 (최고 ${n})`],
     [/^💀 Hardcore \(best (\d+)\)$/, n => `💀 하드코어 (최고 ${n})`],

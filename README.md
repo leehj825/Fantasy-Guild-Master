@@ -58,6 +58,7 @@ English and 한국어 (Korean). Pick a language in ⚙ Settings; it is remembere
 - Production chain: Farm → Bakery → bread boosts tavern meals; Tavern, Lumber Camp, Farm and Bakery can specialize at level 3.
 - Retirement and family: level 4+ veterans can retire as instructor, quartermaster or scout; sweethearts may have a child who grows into a new hero with inherited tags.
 - Challenge dives: Daily Dive (date-seeded, bonus once a day), Boss Rush (boss every floor) and Hardcore (no rescue, +50% gold), with best floors; real-calendar events give a small quest-gold bonus.
+- Companions (pets with small bonuses), hero charms forged at the Forge, trade caravans from the Market, and hall banner colour themes.
 - **Seasons and time:** four seasons with perks and falling petals/leaves/snow, a day-night cycle, hero chatter, a Guild Chronicle diary, decor with a happiness perk (fountain, banner, statue) and the Ember Colossus legend questline after Fortress.
 - **Tools:** `tools/botsim.cjs` (balance bot, weekly CI workflow), `tools/i18n_audit.mjs` (untranslated toast check, run by `npm test`), `tools/pick_clips.mjs` (builds `src/clips.js`).
 - Events: monster incursion (sound the alarm), wandering merchant, royal demand
