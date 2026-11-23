@@ -63,6 +63,9 @@ English and 한국어 (Korean). Pick a language in ⚙ Settings; it is remembere
 - Away summary with an optional double-reward ad, Speed Dive, hero promotion branches, region trials with a Champion title, a free monthly pass, 3D companions, disaster visuals, hall roof themes and a hero diary.
 - 3D dive-room dioramas, legendary weapons (blueprints → Forge → equip), Trophy Hall, Crown favor after the legend quest, weekly seeded challenge, more legacy perks and achievements.
 - Bond Strike co-op skill, heirs who choose their path, rival guild events (poaching, joint hunts, sabotage), touch controls (pan or orbit, twist to rotate, double-tap reset), more Japanese strings, new sound effects and seasonal ambience.
+- Mastery trees, loot (armor and trinkets with rarities), boss preparation, defense posts, in-scene crossroads choices, compare heroes, auto-manager rules, quest filters, notification log, failure reports.
+- Building tiers, resident shops, weather, a calendar with market days and tournaments, relationship scenes, regional fame, a rival leader story, epilogue endings, Delve roguelike mode, new-guild challenges, seed dives with share codes, achievement hats.
+- Coach marks, keyboard and gamepad support, reduced motion and high contrast, partial Japanese, Spanish and Chinese, and baked building meshes for big towns.
 - Hero management: a Heroes screen (sort, filter, to-do badges, bulk train/reinforce, album), nameplates above heroes in town, tabbed hero details with prev/next and Find, a party screen with slots, bonds and boss weakness, roles (tank/striker/support) and a full-kit bonus.
 - Never bored: daily missions and a "next action" suggestion, districts (market/training/residential) with ground rings, flash bounties, tap-to-strike raiders during raids, crossroads decisions during expeditions, hero card album and rare seasonal visitors.
 - Android reminder notifications (expedition returned, heroes rested, come-back nudge); toggle in Settings.

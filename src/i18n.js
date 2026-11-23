@@ -2,8 +2,10 @@
 // (toasts, modals, HUD, logs). The Korean dictionary lives in lang-ko.js.
 import { KO_DICT, makeKoRules } from './lang-ko.js';
 import { JA_DICT } from './lang-ja.js';
+import { ES_DICT } from './lang-es.js';
+import { ZH_DICT } from './lang-zh.js';
 
-export const LANGS = { en: 'English', ko: '한국어', ja: '日本語 (partial)' };
+export const LANGS = { en: 'English', ko: '한국어', ja: '日本語 (partial)', es: 'Español (partial)', zh: '中文 (partial)' };
 let lang = 'en', dict = {}, rules = [], rx = null;
 const cache = new Map(), listeners = new Set(), KEY = 'fantasy-guild-master-lang';
 const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -12,7 +14,7 @@ export const getLang = () => lang;
 export function onLangChange(f) { listeners.add(f); }
 export function initLang() {
   let l = null; try { l = localStorage.getItem(KEY); } catch (e) { /* storage unavailable */ }
-  if (!l) l = (navigator.language || '').toLowerCase().startsWith('ko') ? 'ko' : (navigator.language || '').toLowerCase().startsWith('ja') ? 'ja' : 'en';
+  if (!l) l = (navigator.language || '').toLowerCase().startsWith('ko') ? 'ko' : (navigator.language || '').toLowerCase().startsWith('ja') ? 'ja' : (navigator.language || '').toLowerCase().startsWith('es') ? 'es' : (navigator.language || '').toLowerCase().startsWith('zh') ? 'zh' : 'en';
   applyLang(LANGS[l] ? l : 'en', false);
 }
 export function setLang(l) { if (LANGS[l] && l !== lang) applyLang(l, true); }
@@ -22,8 +24,8 @@ function applyLang(l, persist) {
     dict = KO_DICT; rules = makeKoRules(tr);
     const keys = Object.keys(dict).sort((a, b) => b.length - a.length);   // longest phrase first
     rx = new RegExp('(?<![A-Za-z])(?:' + keys.map(esc).join('|') + ')(?![A-Za-z])', 'g');
-  } else if (l === 'ja') {
-    dict = JA_DICT; rules = [];
+  } else if (l === 'ja' || l === 'es' || l === 'zh') {
+    dict = { ja: JA_DICT, es: ES_DICT, zh: ZH_DICT }[l]; rules = [];
     const keys = Object.keys(dict).sort((a, b) => b.length - a.length);
     rx = new RegExp('(?<![A-Za-z])(?:' + keys.map(esc).join('|') + ')(?![A-Za-z])', 'g');
   } else { dict = {}; rules = []; rx = null; }
