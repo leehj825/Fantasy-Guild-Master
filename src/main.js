@@ -2104,10 +2104,8 @@ function demoScenery() {
   const trees = [];
   // outer forest: a thick ring beyond the border (the camera sees it when zoomed out)
   for (let i = 0; i < 1500; i++) { const a = rnd(0, 6.283), r = rnd(0, 1); const x = 14 + Math.cos(a) * (28 + r * 34) * 1.2, z = 14 + Math.sin(a) * (28 + r * 34); if (x > B.x0 - 0.5 && x < B.x1 + 0.5 && z > B.z0 - 0.5 && z < B.z1 + 0.5) continue; trees.push([x, z, rnd(1, 1.9), Math.random() < 0.3 ? 'round' : 'pine', false]); }
-  // border belt just inside the playable area
-  for (let i = 0; i < 700; i++) { const x = rnd(B.x0 + 0.5, B.x1 - 0.5), z = rnd(B.z0 + 0.5, B.z1 - 0.5), d = Math.min(x - B.x0, B.x1 - x, z - B.z0, B.z1 - z); if (d > 5.5 || Math.random() > 0.8 - d * 0.1) continue; if (nearBuilding(x, z, 1) || onPath(x, z)) continue; trees.push([x, z, rnd(0.9, 1.6), Math.random() < 0.3 ? 'round' : 'pine', true]); }
-  // gaps inside the town: groves between districts and single trees beside the lanes
-  for (let i = 0; i < 520; i++) { const x = rnd(B.x0 + 2, B.x1 - 2), z = rnd(B.z0 + 2, B.z1 - 2); if (nearBuilding(x, z, 2) || onPath(x, z)) continue; const clump = Math.sin(x * 0.35) * Math.cos(z * 0.31) > 0.1; if (!clump && Math.random() > 0.35) continue; trees.push([x, z, rnd(0.8, 1.5), Math.random() < 0.45 ? 'round' : 'pine', true]); }
+  // inside the borders: trees thicken with distance from the guild hall — none in the town centre, a few between the outer districts, a proper wood near the edges
+  for (let i = 0; i < 3200; i++) { const x = rnd(B.x0 + 0.5, B.x1 - 0.5), z = rnd(B.z0 + 0.5, B.z1 - 0.5), r = Math.hypot(x - 14, (z - 12.5)); const p = r < 17 ? 0 : r < 22 ? 0.03 : r < 27 ? 0.2 : 0.75; if (Math.random() > p) continue; if (nearBuilding(x, z, 1) || onPath(x, z)) continue; trees.push([x, z, rnd(0.9, 1.7), Math.random() < 0.3 ? 'round' : 'pine', true]); }
   const pines = trees.filter(t => t[3] === 'pine'), rounds = trees.filter(t => t[3] === 'round'), col = new THREE.Color(), d = new THREE.Object3D();
   const pineMat = new THREE.MeshLambertMaterial({ flatShading: true }), roundMat = new THREE.MeshLambertMaterial({ flatShading: true });
   const T1 = mk(trunkG, mat(0x6b4a2a), trees.length, true), P1 = mk(coneG, pineMat, pines.length, true), P2 = mk(cone2G, pineMat, pines.length, true), R1 = mk(crownG, roundMat, rounds.length, true);
@@ -2116,13 +2114,13 @@ function demoScenery() {
   rounds.forEach((t, i) => { const [x, z, sc] = t; d.rotation.set(0, rnd(0, 6), 0); d.scale.set(sc, sc * rnd(0.9, 1.1), sc); d.position.set(x, 1.45 * sc, z); d.updateMatrix(); R1.setMatrixAt(i, d.matrix); col.setHSL(rnd(0.22, 0.32), rnd(0.5, 0.65), rnd(0.3, 0.42)); R1.setColorAt(i, col); });
   [T1, P1, P2, R1].forEach(m => { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; });
   // bushes and wild flowers
-  const bushes = [], flw = []; for (let i = 0; i < 900; i++) { const x = rnd(B.x0 + 1, B.x1 - 1), z = rnd(B.z0 + 1, B.z1 - 1); if (nearBuilding(x, z, 1) || onPath(x, z)) continue; (Math.random() < 0.55 ? bushes : flw).push([x, z]); }
+  const bushes = [], flw = []; for (let i = 0; i < 900; i++) { const x = rnd(B.x0 + 1, B.x1 - 1), z = rnd(B.z0 + 1, B.z1 - 1), r = Math.hypot(x - 14, z - 12.5); if (r < 15 && Math.random() < 0.9) continue; if (r < 24 && Math.random() < 0.6) continue; if (nearBuilding(x, z, 1) || onPath(x, z)) continue; (Math.random() < 0.55 ? bushes : flw).push([x, z]); }
   const BU = mk(bushG, new THREE.MeshLambertMaterial({ flatShading: true }), bushes.length, false), FL = mk(flowerG, new THREE.MeshLambertMaterial({}), flw.length * 3, false);
   bushes.forEach(([x, z], i) => { const sc = rnd(0.7, 1.5); d.rotation.set(0, rnd(0, 6), 0); d.scale.set(sc, sc * 0.8, sc); d.position.set(x, 0.3 * sc, z); d.updateMatrix(); BU.setMatrixAt(i, d.matrix); col.setHSL(rnd(0.25, 0.35), 0.55, rnd(0.22, 0.34)); BU.setColorAt(i, col); });
   flw.forEach(([x, z], i) => { const hue = pick([0.96, 0.12, 0.58, 0.8, 0.0]); for (let k = 0; k < 3; k++) { d.rotation.set(0, 0, 0); d.scale.setScalar(rnd(0.8, 1.2)); d.position.set(x + rnd(-0.35, 0.35), 0.1, z + rnd(-0.35, 0.35)); d.updateMatrix(); FL.setMatrixAt(i * 3 + k, d.matrix); col.setHSL(hue, 0.8, 0.6); FL.setColorAt(i * 3 + k, col); } });
   [BU, FL].forEach(m => { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; });
   // rocks, mushrooms and a few logs from the model library
-  for (let i = 0; i < 70; i++) { const x = rnd(B.x0 + 1, B.x1 - 1), z = rnd(B.z0 + 1, B.z1 - 1); if (nearBuilding(x, z, 2) || onPath(x, z)) continue; const o = Math.random() < 0.6 ? PROPS.rockCluster(rnd(0.6, 1.4)) : PROPS.bigMushroom(pick([0xd6336c, 0x7b3fb5, 0x2aa9a0, 0xe07a1f]), rnd(0.5, 1.2)); o.position.set(x, 0, z); o.rotation.y = rnd(0, 6); g.add(o); }
+  for (let i = 0; i < 70; i++) { const x = rnd(B.x0 + 1, B.x1 - 1), z = rnd(B.z0 + 1, B.z1 - 1); if (Math.hypot(x - 14, z - 12.5) < 18 || nearBuilding(x, z, 2) || onPath(x, z)) continue; const o = Math.random() < 0.6 ? PROPS.rockCluster(rnd(0.6, 1.4)) : PROPS.bigMushroom(pick([0xd6336c, 0x7b3fb5, 0x2aa9a0, 0xe07a1f]), rnd(0.5, 1.2)); o.position.set(x, 0, z); o.rotation.y = rnd(0, 6); g.add(o); }
   return g;
 }
 function buildDemoTown() {
@@ -2131,34 +2129,32 @@ function buildDemoTown() {
   G.rare.mythril = 8; G.rare.scale = 3; G.rare.feather = 3; G.diveBest = 34; G.flags.rep = 92; applyLand();
   for (const k of Object.keys(TECHS)) G.research[k] = true; for (const k of Object.keys(G.staff)) G.staff[k] = maxStaff;
   const put = (type, x, z, rot = 0, spread = 4) => { for (let r = 0; r <= spread; r++) for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) { if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue; if (canPlace(type, x + dx, z + dz, rot)) { const b = addBuilding(type, x + dx, z + dz, rot); b.pop = 1; b.group.scale.setScalar(1); return b; } } return null; };
-  // districts: crafts and training in the north, the guild hall and its plaza in the middle, market and tavern street to the south, homes and farms beyond
-  const plan = [
-    ['training', -6, 2], ['tower', -1, 2], ['forge', 4, 2], ['smelter', 10, 3], ['warehouse', 16, 2], ['alchemy', 22, 2], ['garden', 28, 3], ['tower', 33, 2], ['lumber', -7, 8],
-    ['trophy', 18, 8], ['memorial', 4, 10], ['pond', 8, 8], ['portal', 24, 9], ['hill', 30, 9], ['stones', 30, 13],
-    ['fountain', 13, 15], ['statue', 9, 15], ['banner', 6, 15], ['banner', 19, 15], ['monument', 15, 19],
-    ['market', 3, 21], ['tavern', 9, 21], ['market', 17, 21], ['campfire', 14, 24], ['bakery', 23, 21], ['farm', 28, 21], ['farm', 33, 21],
-    ['cottage', -2, 22], ['cottage', -2, 26], ['tent', 2, 27], ['tent', 6, 27], ['tent', 10, 27], ['well', 14, 28], ['tent', 18, 27], ['tent', 22, 27], ['cottage', 26, 27], ['cottage', 30, 27], ['pond', 20, 31], ['garden', 6, 31], ['cottage', 34, 27],
-  ];
-  const jit = ['tent', 'cottage', 'market', 'garden', 'farm', 'pond', 'banner', 'statue', 'well', 'campfire', 'lumber', 'bakery'];
-  for (const [t, x, z] of plan) put(t, x + (jit.includes(t) ? Math.round(rnd(-1, 1)) : 0), z + (jit.includes(t) ? Math.round(rnd(-1, 1)) : 0), ['tent', 'cottage', 'market', 'cart', 'lumber'].includes(t) ? Math.floor(rnd(0, 4)) : 0);
-  // winding lanes (Catmull-Rom curves, two tiles wide) instead of a rigid grid, with lamps and flowers along them
-  const lane = (pts, width = 2, lamps = true) => {
-    const P = pts, at = (t) => { const n = P.length - 1, f = Math.min(n - 1e-6, t * n), i = Math.floor(f), u = f - i, p0 = P[Math.max(0, i - 1)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(n, i + 2)], cr = (a, b, c, d) => 0.5 * ((2 * b) + (-a + c) * u + (2 * a - 5 * b + 4 * c - d) * u * u + (-a + 3 * b - 3 * c + d) * u * u * u); return [cr(p0[0], p1[0], p2[0], p3[0]), cr(p0[1], p1[1], p2[1], p3[1])]; };
-    const len = P.reduce((n, p, k) => n + (k ? Math.hypot(p[0] - P[k - 1][0], p[1] - P[k - 1][1]) : 0), 0), steps = Math.ceil(len * 2.2);
-    for (let k = 0; k <= steps; k++) { const [x, z] = at(k / steps), [x2, z2] = at(Math.min(1, (k + 1) / steps)), nx = -(z2 - z), nz = x2 - x, nl = Math.hypot(nx, nz) || 1;
-      for (let w = 0; w < width; w++) put('road', Math.round(x + nx / nl * (w - (width - 1) / 2)), Math.round(z + nz / nl * (w - (width - 1) / 2)), 0, 0);
-      if (lamps && k % 11 === 5) { const side = (k / 11 | 0) % 2 ? 1 : -1; put('lamp', Math.round(x + nx / nl * 2.2 * side), Math.round(z + nz / nl * 2.2 * side), 0, 1); }
-      if (k % 7 === 3) put(k % 14 === 3 ? 'flowers' : 'sapling', Math.round(x - nx / nl * 2.8), Math.round(z - nz / nl * 2.8), 0, 1); }
-  };
-  lane([[14, 15], [13, 18], [9, 20], [8, 24], [12, 26], [19, 25], [26, 24], [33, 24]]);          // from the plaza through the market and tavern street out to the farms
-  lane([[14, 15], [18, 15], [22, 14], [25, 12]], 2);                                              // to the waystone portal
-  lane([[13, 10], [11, 7], [8, 6], [3, 6], [-4, 7], [-8, 10]], 2);                               // west past the forge to training and the lumber camp
-  lane([[16, 9], [18, 6], [24, 6], [30, 7], [33, 6]], 2);                                        // east along the workshops and gardens
-  lane([[8, 24], [4, 26], [1, 29], [4, 32]], 1);                                                 // down to the cottages
-  lane([[19, 25], [20, 29], [22, 32]], 1);                                                       // lane to the south pond
-  lane([[13, 10], [13, 8], [14, 4]], 1, false);                                                  // behind the hall
-  // a broken palisade with a gate gap where the main lane leaves the town
-  for (let a = 18; a <= 162; a += 8) { if (a > 80 && a < 102) continue; const r = 28, x = 14 + Math.cos(a * Math.PI / 180) * r * 1.15, z = 14 + Math.sin(a * Math.PI / 180) * r; put('palisade', Math.round(x), Math.round(z), 0, 0); }
+  // a radial town: the guild hall in the middle, a plaza ring, lanes running out in every direction, buildings turned to face the nearest lane, small spurs joining their doors to it
+  const C = [14, 12.5], D2R = Math.PI / 180, polar = (deg, r) => [C[0] + Math.cos(deg * D2R) * r, C[1] + Math.sin(deg * D2R) * r];
+  const laneCells = [];   // [x, z] of every lane tile (planned before the buildings so they can face them)
+  const sampleLane = (pts) => { const n = pts.length - 1, at = (t) => { const f = Math.min(n - 1e-6, t * n), i = Math.floor(f), u = f - i, p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(n, i + 2)], cr = (a, b, c, d) => 0.5 * ((2 * b) + (-a + c) * u + (2 * a - 5 * b + 4 * c - d) * u * u + (-a + 3 * b - 3 * c + d) * u * u * u); return [cr(p0[0], p1[0], p2[0], p3[0]), cr(p0[1], p1[1], p2[1], p3[1])]; };
+    const len = pts.reduce((m, p, k) => m + (k ? Math.hypot(p[0] - pts[k - 1][0], p[1] - pts[k - 1][1]) : 0), 0), steps = Math.ceil(len * 2.2), out = []; for (let k = 0; k <= steps; k++) { const [x, z] = at(k / steps), [x2, z2] = at(Math.min(1, (k + 1) / steps)), nx = -(z2 - z), nz = x2 - x, nl = Math.hypot(nx, nz) || 1; out.push({ x, z, nx: nx / nl, nz: nz / nl }); } return out; };
+  const lanes = [];
+  for (let k = 0; k < 8; k++) { const a = k * 45 + (k % 2 ? 6 : -4), wob = (k % 3 - 1) * 5, R = k % 2 ? 21 : 23; lanes.push(sampleLane([polar(a, 4.5), polar(a + wob * 0.4, 9), polar(a + wob, 14), polar(a - wob * 0.5, 18.5), polar(a + wob * 0.3, R)])); }
+  const ring = []; for (let a = 0; a <= 360; a += 6) ring.push({ ...(() => { const [x, z] = polar(a, 6.2 + Math.sin(a * D2R * 3) * 0.5); return { x, z, nx: Math.cos(a * D2R), nz: Math.sin(a * D2R) }; })() });
+  const ring2 = []; for (let a = 20; a <= 340; a += 5) { const [x, z] = polar(a, 14.5 + Math.sin(a * D2R * 2) * 1.2); ring2.push({ x, z, nx: Math.cos(a * D2R), nz: Math.sin(a * D2R) }); }
+  [...lanes.flat(), ...ring, ...ring2].forEach(p => laneCells.push([Math.round(p.x), Math.round(p.z)]));
+  const nearestLane = (x, z) => { let best = null, bd = 1e9; for (const [lx, lz] of laneCells) { const d = (lx - x) ** 2 + (lz - z) ** 2; if (d < bd) { bd = d; best = [lx, lz]; } } return best; };
+  const faceRot = (type, x, z) => { const t = BUILDINGS[type], cx = x + t.w / 2, cz = z + t.d / 2, [lx, lz] = nearestLane(cx, cz), dx = lx - cx, dz = lz - cz; return Math.abs(dz) >= Math.abs(dx) ? (dz >= 0 ? 0 : 2) : (dx >= 0 ? 1 : 3); };
+  const slot = (type, deg, r) => { const [x, z] = polar(deg, r), t = BUILDINGS[type], rot = faceRot(type, Math.round(x - t.w / 2), Math.round(z - t.d / 2)); const b = put(type, Math.round(x - t.w / 2), Math.round(z - t.d / 2), rot, 2); if (b) { const [rx, rz] = nearestLane(b.door.x, b.door.z); let x0 = Math.round(b.door.x), z0 = Math.round(b.door.z); for (let g = 0; g < 14 && (x0 !== rx || z0 !== rz); g++) { put('road', x0, z0, 0, 0); if (Math.abs(rx - x0) > Math.abs(rz - z0)) x0 += Math.sign(rx - x0); else z0 += Math.sign(rz - z0); } } return b; };
+  // civic core around the plaza
+  const hallDoorZ = HALL.cz + 4.2;
+  put('fountain', 13, 17, 0, 1); put('statue', 8, 15, 0, 1); put('statue', 19, 15, 0, 1); put('banner', 10, 17, 0, 1); put('banner', 17, 17, 0, 1); put('monument', 12, 20, 0, 2);
+  // the districts, by compass direction
+  [['forge', 258, 11.5], ['alchemy', 292, 11.5], ['smelter', 244, 16], ['warehouse', 276, 16.5], ['training', 262, 21.5], ['tower', 236, 21], ['tower', 305, 21], ['garden', 318, 16],
+   ['trophy', 330, 11.5], ['portal', 12, 15], ['hill', 30, 20], ['stones', 350, 22.5], ['garden', 345, 12],
+   ['bakery', 40, 12.5], ['farm', 42, 21], ['farm', 58, 22.5], ['market', 62, 13.5], ['tavern', 80, 12.5], ['market', 104, 13.5], ['campfire', 92, 18], ['cottage', 120, 14], ['cottage', 134, 19], ['well', 112, 18], ['tent', 120, 23], ['tent', 150, 22], ['tent', 100, 23.5], ['pond', 140, 23.5], ['cottage', 150, 14],
+   ['cottage', 168, 15], ['memorial', 176, 10], ['lumber', 194, 17], ['pond', 205, 12.5], ['tent', 185, 23], ['tent', 214, 15], ['cottage', 222, 19.5], ['tent', 205, 22.5], ['cottage', 228, 12.5], ['tent', 160, 24]].forEach(([t, a, r]) => slot(t, a, r));
+  // the lanes themselves, with lamps and a few flowers along the main ones
+  const paveLane = (cells, lamps) => cells.forEach((p, k) => { for (let w = 0; w < 2; w++) put('road', Math.round(p.x + p.nx * (w - 0.5)), Math.round(p.z + p.nz * (w - 0.5)), 0, 0); if (lamps && k % 10 === 4) put('lamp', Math.round(p.x + p.nx * 2.3 * (k % 20 < 10 ? 1 : -1)), Math.round(p.z + p.nz * 2.3 * (k % 20 < 10 ? 1 : -1)), 0, 1); if (lamps && k % 17 === 8) put(k % 34 === 8 ? 'flowers' : 'sapling', Math.round(p.x - p.nx * 2.9), Math.round(p.z - p.nz * 2.9), 0, 1); });
+  lanes.forEach(l => paveLane(l, true)); paveLane(ring, true); paveLane(ring2, false);
+  // a broken palisade with gaps where the lanes leave the town
+  for (let a = 8; a <= 352; a += 7) { const [x, z] = polar(a, 25.5 + Math.sin(a * D2R * 2) * 0.7); if (lanes.some((l, k) => Math.abs(((a - (k * 45 + (k % 2 ? 6 : -4)) + 540) % 360) - 180) < 12)) continue; put('palisade', Math.round(x), Math.round(z), 0, 0); }
   // everything fully upgraded, specializations chosen
   for (const b of G.buildings) { if (['forge', 'alchemy', 'tavern', 'warehouse', 'smelter', 'lumber', 'farm', 'bakery'].includes(b.type) || b.type === 'hall') { b.level = maxLevel(); b.stock = 12; } if (b.level >= 3) { const o = { tavern: 'feast', lumber: 'saw', farm: 'granary', bakery: 'loaves' }[b.type]; if (o) b.spec = o; tierDecor(b); } }
   G.buildings.filter(b => b.type === 'tower').forEach(b => { b.level = Math.max(b.level, 3); tierDecor(b); });
