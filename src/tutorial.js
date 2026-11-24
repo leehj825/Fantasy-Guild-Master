@@ -26,6 +26,7 @@ export function createTutorial({ G, first, toast }) {
     if (G.flags.tut === undefined && !G.flags.tutDone) {
       if (G.buildings.length > 2 || G.questsDone > 0) G.flags.tutDone = 1; else G.flags.tut = 0;   // existing guilds skip the guide
     }
+    if ($('tutDemo')) $('tutDemo').onclick = () => { if (window.__startDemo) window.__startDemo(); };
     $('tutSkip').onclick = () => { G.flags.tutDone = 1; render(); toast('Tutorial skipped. You can reopen it in Settings.'); };
     render();
   }

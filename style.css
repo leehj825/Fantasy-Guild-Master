@@ -229,3 +229,4 @@ body.hc .act{background:#000;border:2px solid #fff;color:#fff}body.hc .act:disab
 body.hc .s{color:#e8e8e8}
 body.hc #toolbar button{background:#000;border-color:#fff}
 :focus-visible{outline:3px solid #ffd24a;outline-offset:2px}
+#tutDemo{margin-right:6px;background:#2d4a2d;border:1px solid #6bd86b;color:#fff;border-radius:6px;cursor:pointer;font-size:12px;padding:2px 8px}

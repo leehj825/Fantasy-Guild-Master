@@ -2086,6 +2086,65 @@ function tickBake(dt) {
   if (G.buildings.filter(bakeOk).length < 12) { if (bakedGroup.children.length) { for (const b of G.buildings) if (b.bakedMeshes) { b.bakedMeshes.forEach(m => { m.visible = true; }); b.bakedMeshes = null; } while (bakedGroup.children.length) { const o = bakedGroup.children[0]; bakedGroup.remove(o); o.geometry.dispose(); } } bakeDirty = false; return; }
   bakeBuildings();
 }
+// ---- demo town: a fully upgraded, well planned guild town for showing the game (Settings → Demo town, the first-run card, or ?demo in the address)
+const DEMO_KEY = 'fantasy-guild-master-demo', BACKUP_KEY = 'fantasy-guild-master-save-backup';
+const demoWanted = () => { try { return localStorage.getItem(DEMO_KEY) === '1' || /[?&]demo(\b|=)/.test(location.search); } catch (e) { return false; } };
+function startDemo() {
+  try { const cur = localStorage.getItem(SAVE_KEY); if (cur && !localStorage.getItem(BACKUP_KEY)) localStorage.setItem(BACKUP_KEY, cur); localStorage.setItem(DEMO_KEY, '1'); localStorage.removeItem(SAVE_KEY); } catch (e) { /* ignore */ }
+  window.__noSave = true; location.href = location.pathname;
+}
+function restoreMyGame() { try { const b = localStorage.getItem(BACKUP_KEY); if (!b) return; localStorage.setItem(SAVE_KEY, b); localStorage.removeItem(BACKUP_KEY); localStorage.removeItem(DEMO_KEY); } catch (e) { /* ignore */ } window.__noSave = true; location.href = location.pathname; }
+function buildDemoTown() {
+  try { localStorage.removeItem(DEMO_KEY); if (/[?&]demo/.test(location.search)) history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ }
+  G.flags.demo = 1; G.flags.tutDone = 1; G.rank = 3; G.land = 3; G.outpost = 5; G.boardLvl = 5; G.walls = 5; G.renown = 160; G.gold = 60000; G.ore = 400; G.wood = 400; G.herbs = 250; G.mana = 120; G.ingots = 60;
+  G.rare.mythril = 8; G.rare.scale = 3; G.rare.feather = 3; G.diveBest = 34; G.flags.rep = 92; applyLand();
+  for (const k of Object.keys(TECHS)) G.research[k] = true; for (const k of Object.keys(G.staff)) G.staff[k] = maxStaff;
+  const put = (type, x, z, rot = 0, spread = 4) => { for (let r = 0; r <= spread; r++) for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) { if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue; if (canPlace(type, x + dx, z + dz, rot)) { const b = addBuilding(type, x + dx, z + dz, rot); b.pop = 1; b.group.scale.setScalar(1); return b; } } return null; };
+  // districts: crafts and training in the north, the guild hall and its plaza in the middle, market and tavern street to the south, homes and farms beyond
+  const plan = [
+    ['training', -6, 2], ['tower', -1, 2], ['forge', 4, 2], ['smelter', 10, 3], ['warehouse', 16, 2], ['alchemy', 22, 2], ['garden', 28, 3], ['tower', 33, 2], ['lumber', -7, 8],
+    ['trophy', 18, 8], ['memorial', 4, 10], ['pond', 8, 8], ['portal', 24, 9], ['hill', 30, 9], ['stones', 30, 13],
+    ['fountain', 13, 15], ['statue', 9, 15], ['banner', 6, 15], ['banner', 19, 15], ['monument', 15, 19],
+    ['market', 3, 21], ['tavern', 9, 21], ['market', 17, 21], ['campfire', 14, 24], ['bakery', 23, 21], ['farm', 28, 21], ['farm', 33, 21],
+    ['cottage', -2, 22], ['cottage', -2, 26], ['tent', 2, 27], ['tent', 6, 27], ['tent', 10, 27], ['well', 14, 28], ['tent', 18, 27], ['tent', 22, 27], ['cottage', 26, 27], ['cottage', 30, 27], ['pond', 20, 31], ['garden', 6, 31], ['cottage', 34, 27],
+  ];
+  for (const [t, x, z] of plan) put(t, x, z);
+  // streets: an avenue in front of the plaza, a cross street, and a ring road around the market square
+  for (let x = -9; x <= 37; x++) { put('road', x, 18, 0, 0); put('road', x, 19, 0, 0); }
+  for (let z = -3; z <= 33; z++) put('road', 19, z, 0, 0);
+  for (let z = 4; z <= 17; z++) put('road', 13, z, 0, 0);
+  // palisade on the south edge, lamps and flowers along the streets
+  for (let x = -9; x <= 37; x += 2) put('palisade', x, 35, 0, 0);
+  for (let x = -8; x <= 36; x += 4) { put('lamp', x, 20, 0, 0); put('lamp', x, 17, 0, 0); }
+  for (let x = -7; x <= 35; x += 3) { put('flowers', x, 16, 0, 0); put('sapling', x + 1, 22, 0, 0); }
+  // everything fully upgraded, specializations chosen
+  for (const b of G.buildings) { if (['forge', 'alchemy', 'tavern', 'warehouse', 'smelter', 'lumber', 'farm', 'bakery'].includes(b.type) || b.type === 'hall') { b.level = maxLevel(); b.stock = 12; } if (b.level >= 3) { const o = { tavern: 'feast', lumber: 'saw', farm: 'granary', bakery: 'loaves' }[b.type]; if (o) b.spec = o; tierDecor(b); } }
+  G.buildings.filter(b => b.type === 'tower').forEach(b => { b.level = Math.max(b.level, 3); tierDecor(b); });
+  // legend, collections, pets, theme
+  G.flags.legendDone = 1; G.flags.legend = 3; G.flags.codex = { bosses: Object.fromEntries(Object.keys(CODEX_BOSS).map(k => [k, 2])), classes: Object.fromEntries(Object.keys(CLASSES).map(k => [k, 3])), tags: Object.fromEntries(Object.keys(TAGS).map(k => [k, 1])) };
+  G.flags.ach = Object.fromEntries(ACHS.filter(a => ['boss3', 'bossall', 'family', 'pass10', 'champ', 'rooms10', 'cls6', 'tag12'].includes(a.id)).map(a => [a.id, 1]));
+  G.flags.pets = ['dog', 'cat', 'hawk', 'fox']; G.flags.themes = ['crimson', 'azure', 'emerald', 'violet', 'obsidian']; G.flags.theme = 'azure'; G.flags.kw = { fame: 600, t: 300 };
+  for (const k of Object.keys(LEGWEP)) { bps()[k] = 1; armory()[k] = 'free'; }
+  Object.keys(G.regions).length || (G.regions = {}); for (const id of Object.keys(REGIONS)) G.regions[id] = { done: 40, fame: 60, trial: 3 }; G.regions.greenwood = { done: 60, fame: 80, trial: 3 };
+  retired().push({ name: 'Old Brannoch', cls: 'knight', role: 'instructor', level: 9, tags: [] }, { name: 'Sera the Quick', cls: 'ranger', role: 'scout', level: 8, tags: [] }, { name: 'Dame Orla', cls: 'cleric', role: 'quartermaster', level: 9, tags: [] });
+  // the roster: a full, varied guild, every hero promoted, geared, trained and equipped
+  const cls = ['knight', 'ranger', 'wizard', 'rogue', 'cleric', 'alchemist'], hats = ['crown', 'plume', 'party', 'halo', 'flowers', 'explorer'], roles = ['tank', 'striker', 'support'];
+  for (const h of G.heroes.slice()) removeHero(h);
+  for (let i = 0; i < Math.min(popCap(), 18); i++) {
+    const c = cls[i % cls.length], p = new THREE.Vector3(HALL.cx + 2.5 + rnd(-3, 3), 0, HALL.cz + 5 + rnd(0, 3)), h = createHero({ cls: c, variant: i % 3, name: NAMES[i % NAMES.length], x: p.x, z: p.z, level: 7 + (i % 4) });
+    h.gear = true; h.gearTier = 3; h.plus = maxPlus(); h.stamina = 100; h.happy = 100; h.loy = 90; h.promo = i % 4 === 3 ? false : (i % 2 ? 'b' : true); if (h.promo) addPromoGear(h);
+    h.talents = TALENTS[c].slice(0, talentSlots(h)).map(t => t[0][0]); h.role = roles[i % 3]; h.charm = Object.keys(CHARMS)[i % 4]; h.hat = hats[i % hats.length]; h.sk = { off: 3, def: Math.min(3, i % 4), uti: 1 };
+    const w = Object.keys(LEGWEP).find(k => LEGWEP[k].cls === c); if (w && !G.heroes.some(x => x.wep === w)) { h.wep = w; armory()[w] = h.name; }
+    h.eq = { armor: { ...rollItem(5), rar: 2, name: 'Epic Sturdy Mail', aff: { survive: 0.06, pw: 0.05 } }, trinket: { ...rollItem(5), rar: 3, name: 'Legendary Greedy Ring', aff: { loot: 0.18, succ: 0.04, pw: 0.06 } } };
+    setTimeout(() => { try { applyHat(h); } catch (e) { /* cosmetic */ } }, 80);
+  }
+  for (let i = 0; i < G.heroes.length - 1; i += 2) { const a = G.heroes[i], b = G.heroes[i + 1]; addAff(a, b, 70, true); }
+  G.heroes.forEach(h => cardAdd(h, true)); G.heroes.forEach(h => { if (h.promo) { G.flags.cards = G.flags.cards || {}; G.flags.cards[cardKey(h.cls, h.promo === 'b' ? 'b' : 'a')] = 1; } });
+  for (let i = 0; i < 6; i++) { const it = rollItem(4); it.rar = Math.max(it.rar, 1); inv().push(it); }
+  applyTheme(); G.quests = G.quests.filter(q => q.state !== 'open'); for (let i = 0; i < 6; i++) genQuest();
+  G.flags.login = { streak: 7, pending: 0, last: dayKey() }; G.time = Math.max(G.time, 60 * 30); resetView(); camTarget.set(14, 0, 16); viewS = VIEW0.zoom * 2.3; updateCamera();
+  chron('🏙 Demo town: a fully upgraded guild.'); toast('🏙 Demo town loaded — every building upgraded, every hero promoted. Explore!');
+}
 // ---- hero diary: a few lines per hero about what happened to them
 const diary = (h, text) => { if (!h) return; const d = (h.diary ||= []); d.push({ d: Math.floor(G.time / 60) + 1, t: text }); if (d.length > 8) d.shift(); };
 // ---- 3D companions and disaster visuals
@@ -2454,7 +2513,7 @@ function updateHUD() {
  * ------------------------------------------------------------------ */
 let modalKind = null, modalArg = null, lastHtml = '';
 const modal = $('modal');
-let heroTab = 'abil';
+let heroTab = 'abil', demoConfirm = false;
 function openModal(kind, arg) { if (kind === 'upgrades') G.flags.tutRank = 1; modalKind = kind; modalArg = arg; modal.classList.remove('hidden'); renderModal(true); }
 function closeModal() { stopRoom(); modalKind = null; modal.classList.add('hidden'); lastHtml = ''; }
 $('modalClose').onclick = closeModal;
@@ -2546,6 +2605,7 @@ function modalContent() {
       <div class="row"><div class="grow"><div class="t">📈 Performance</div><div class="s">Frame time ${frameEma.toFixed(0)} ms (about ${Math.round(1000 / Math.max(8, frameEma))} fps)${slowT >= 5 ? ' · slow: decorations paused' : ''}. When it stays slow the game pauses pets and disaster effects, and Auto graphics lowers the resolution.</div></div></div>
       ${G.flags.legendDone ? `<div class="row"><div class="grow"><div class="t">👑 Crown favor</div><div class="s">Level ${kingdomLv()}/10 · ${kingdom().fame % KW_PER}/${KW_PER} toward the next. Each level: +2% quest gold. The Crown calls for aid every few minutes.</div></div></div>` : ''}
       <div class="row"><div class="grow"><div class="t">👆 Touch controls</div><div class="s">Pan mode: one finger drags the view, two fingers pinch to zoom and twist to rotate. Orbit mode: one finger rotates. Double-tap empty ground to reset the view.</div></div><button class="act" data-act="touchscheme">${touchScheme() === 'pan' ? 'Pan' : 'Orbit'}</button></div>
+      <div class="row" style="border-color:#ffd24a"><div class="grow"><div class="t">🏙 Demo town</div><div class="s">${demoConfirm ? '<b>Replace the current guild with a fully upgraded demo town? Your own game is kept and can be restored.</b>' : 'Load a complete, fully upgraded, well planned town to look around.'}${G.flags.demo ? ' (You are in the demo town.)' : ''}</div></div><div style="display:flex;gap:4px"><button class="act ${demoConfirm ? 'red' : ''}" data-act="demotown">${demoConfirm ? 'Yes, load it' : 'Load demo'}</button>${(() => { try { return localStorage.getItem(BACKUP_KEY) ? '<button class="act red" data-act="demorestore">Restore my game</button>' : ''; } catch (e) { return ''; } })()}</div></div>
       <div class="row"><div class="grow"><div class="t">📷 Photo mode</div><div class="s">Hides the interface so you can look at your town. Tap to leave.</div></div><button class="act" data-act="photo">Start</button></div>
       <div class="row"><div class="grow"><div class="t">🧾 Error log</div><div class="s">${readErrs().length} recorded on this device.</div></div><button class="act red" data-act="errlog">Open</button></div>
       <div class="row"><div class="grow"><div class="t">🌐 Language</div><div class="s">English / 한국어 / 日本語</div></div>${Object.entries(LANGS).map(([k, n]) => `<button class="act ${getLang() === k ? '' : 'red'}" style="${getLang() === k ? 'outline:2px solid #fff8' : ''}" data-act="lang" data-l="${k}">${n}</button>`).join('')}</div>
@@ -2886,6 +2946,8 @@ const ACT = {
   role(d) { const h = G.heroes.find(x => x.id === +d.id), R = ROLES[d.k]; if (!h || !R || h.level < 3 || G.gold < roleCost(h)) return; G.gold -= roleCost(h); h.role = d.k; diary(h, `Took up the role of ${R[1].toLowerCase()}.`); toast(`${R[0]} ${h.name} is now a ${R[1].toLowerCase()}.`); sfx('goal'); },
   heroes() { openModal('heroes'); },
   album() { openModal('album'); },
+  demotown() { if (!demoConfirm) { demoConfirm = true; return; } demoConfirm = false; startDemo(); },
+  demorestore() { restoreMyGame(); },
   coachok() { (G.flags.coach ||= {})[modalKind] = 1; },
   seeds() { openModal('seeds'); },
   seedrand() { G.flags.lastSeed = randomCode(); },
@@ -3601,15 +3663,17 @@ function frame() {
  * ------------------------------------------------------------------ */
 initLang();
 resize();
-const loaded = loadGame(); G.heroes.forEach(h => cardAdd(h, true)); checkAway(); applyA11y(); try { applyTheme(); } catch (e) { /* cosmetic */ } setTimeout(() => { try { if (IAP.owned('starter_pack') && !G.flags.starter) grantPurchase('starter_pack'); } catch (e) { /* offline */ } }, 5000); checkDaily(); setTimeout(() => { if (G.flags.login && G.flags.login.pending && (G.flags.tutDone || G.questsDone > 0)) openModal('daily'); }, 2500); loadedOnce = true; try { buildLandmarks(false); } catch (e) { /* decoration */ }
+const wantDemo = demoWanted(); if (wantDemo) { try { const cur = localStorage.getItem(SAVE_KEY); if (cur && !localStorage.getItem(BACKUP_KEY) && !/"demo":1/.test(cur)) localStorage.setItem(BACKUP_KEY, cur); } catch (e) { /* ignore */ } }
+const loaded = wantDemo ? false : loadGame(); G.heroes.forEach(h => cardAdd(h, true)); checkAway(); applyA11y(); try { applyTheme(); } catch (e) { /* cosmetic */ } setTimeout(() => { try { if (IAP.owned('starter_pack') && !G.flags.starter) grantPurchase('starter_pack'); } catch (e) { /* offline */ } }, 5000); checkDaily(); setTimeout(() => { if (G.flags.login && G.flags.login.pending && (G.flags.tutDone || G.questsDone > 0)) openModal('daily'); }, 2500); loadedOnce = true; try { buildLandmarks(false); } catch (e) { /* decoration */ }
 if (!loaded) {
   G.gold += 300 * legacyLvl('purse'); G.renown += 2 * legacyLvl('name'); if (hand('poor')) { G.gold = 200; G.renown = 0; } G.flags.gen = LEGACY.gen + 1; if (LEGACY.gen) chron(`🏛 Generation ${LEGACY.gen + 1} of the guild begins.`);
   spawnHero('knight', true); spawnHero('ranger', true);
   genQuest(); genQuest();
   toast('Welcome, Guild Master! Build a Tavern and a Forge to attract & equip heroes.');
 }
+if (wantDemo) buildDemoTown();
 tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__renderer = renderer; window.__scene = scene; window.__api = { bakeBuildings, applyHat, HATS, dvStart, dvChoose, dvRelic, dvState, epilogue, ENDINGS, tickScenes, tickRivalArc, weather, tickCalendar, dayNo, tierDecor, whyFailed, tickAutoManage, rollItem, dropLoot, equipItem, inv, maybeFork, smiteGoblin, tickFlash, cardAdd, tickVisitors, districts, fullKit, ROLES, missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__startDemo = () => { if (confirm('Load the demo town? Your own game is kept and can be restored from Settings.')) startDemo(); }; window.__renderer = renderer; window.__scene = scene; window.__api = { bakeBuildings, applyHat, HATS, dvStart, dvChoose, dvRelic, dvState, epilogue, ENDINGS, tickScenes, tickRivalArc, weather, tickCalendar, dayNo, tierDecor, whyFailed, tickAutoManage, rollItem, dropLoot, equipItem, inv, maybeFork, smiteGoblin, tickFlash, cardAdd, tickVisitors, districts, fullKit, ROLES, missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
