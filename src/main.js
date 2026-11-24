@@ -2094,6 +2094,37 @@ function startDemo() {
   window.__noSave = true; location.href = location.pathname;
 }
 function restoreMyGame() { try { const b = localStorage.getItem(BACKUP_KEY); if (!b) return; localStorage.setItem(SAVE_KEY, b); localStorage.removeItem(BACKUP_KEY); localStorage.removeItem(DEMO_KEY); } catch (e) { /* ignore */ } window.__noSave = true; location.href = location.pathname; }
+// the demo town sits in a living forest: thick woods outside the borders, scattered trees, bushes, rocks and flowers inside, nothing on roads or buildings
+function demoScenery() {
+  const B = landBounds(), g = new THREE.Group(); g.name = 'demoScenery'; scene.add(g);
+  const nearBuilding = (x, z, r) => { for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) if (occ.has(key(Math.floor(x) + dx, Math.floor(z) + dz))) return true; return false; };
+  const onPath = (x, z) => roadCells.has(key(Math.floor(x), Math.floor(z))) || walkCells.has(key(Math.floor(x), Math.floor(z)));
+  const trunkG = new THREE.CylinderGeometry(0.1, 0.16, 0.7, 6), coneG = new THREE.ConeGeometry(0.75, 1.1, 7), cone2G = new THREE.ConeGeometry(0.52, 0.95, 7), crownG = new THREE.IcosahedronGeometry(0.8, 0), bushG = new THREE.IcosahedronGeometry(0.42, 0), flowerG = new THREE.SphereGeometry(0.09, 5, 4);
+  const mk = (geo, material, n, shadow) => { const m = new THREE.InstancedMesh(geo, material, n); m.castShadow = shadow; m.receiveShadow = true; m.frustumCulled = false; g.add(m); return m; };
+  const trees = [];
+  // outer forest: a thick ring beyond the border (the camera sees it when zoomed out)
+  for (let i = 0; i < 1500; i++) { const a = rnd(0, 6.283), r = rnd(0, 1); const x = 14 + Math.cos(a) * (28 + r * 34) * 1.2, z = 14 + Math.sin(a) * (28 + r * 34); if (x > B.x0 - 0.5 && x < B.x1 + 0.5 && z > B.z0 - 0.5 && z < B.z1 + 0.5) continue; trees.push([x, z, rnd(1, 1.9), Math.random() < 0.3 ? 'round' : 'pine', false]); }
+  // border belt just inside the playable area
+  for (let i = 0; i < 700; i++) { const x = rnd(B.x0 + 0.5, B.x1 - 0.5), z = rnd(B.z0 + 0.5, B.z1 - 0.5), d = Math.min(x - B.x0, B.x1 - x, z - B.z0, B.z1 - z); if (d > 5.5 || Math.random() > 0.8 - d * 0.1) continue; if (nearBuilding(x, z, 1) || onPath(x, z)) continue; trees.push([x, z, rnd(0.9, 1.6), Math.random() < 0.3 ? 'round' : 'pine', true]); }
+  // gaps inside the town: groves between districts and single trees beside the lanes
+  for (let i = 0; i < 520; i++) { const x = rnd(B.x0 + 2, B.x1 - 2), z = rnd(B.z0 + 2, B.z1 - 2); if (nearBuilding(x, z, 2) || onPath(x, z)) continue; const clump = Math.sin(x * 0.35) * Math.cos(z * 0.31) > 0.1; if (!clump && Math.random() > 0.35) continue; trees.push([x, z, rnd(0.8, 1.5), Math.random() < 0.45 ? 'round' : 'pine', true]); }
+  const pines = trees.filter(t => t[3] === 'pine'), rounds = trees.filter(t => t[3] === 'round'), col = new THREE.Color(), d = new THREE.Object3D();
+  const pineMat = new THREE.MeshLambertMaterial({ flatShading: true }), roundMat = new THREE.MeshLambertMaterial({ flatShading: true });
+  const T1 = mk(trunkG, mat(0x6b4a2a), trees.length, true), P1 = mk(coneG, pineMat, pines.length, true), P2 = mk(cone2G, pineMat, pines.length, true), R1 = mk(crownG, roundMat, rounds.length, true);
+  trees.forEach((t, i) => { const [x, z, sc] = t; d.rotation.set(0, rnd(0, 6), 0); d.scale.setScalar(sc); d.position.set(x, 0.35 * sc, z); d.updateMatrix(); T1.setMatrixAt(i, d.matrix); });
+  pines.forEach((t, i) => { const [x, z, sc] = t; d.rotation.set(0, rnd(0, 6), 0); d.scale.setScalar(sc); d.position.set(x, 1.25 * sc, z); d.updateMatrix(); P1.setMatrixAt(i, d.matrix); d.position.set(x, 1.9 * sc, z); d.updateMatrix(); P2.setMatrixAt(i, d.matrix); col.setHSL(rnd(0.3, 0.38), rnd(0.5, 0.65), rnd(0.18, 0.28)); P1.setColorAt(i, col); P2.setColorAt(i, col); });
+  rounds.forEach((t, i) => { const [x, z, sc] = t; d.rotation.set(0, rnd(0, 6), 0); d.scale.set(sc, sc * rnd(0.9, 1.1), sc); d.position.set(x, 1.45 * sc, z); d.updateMatrix(); R1.setMatrixAt(i, d.matrix); col.setHSL(rnd(0.22, 0.32), rnd(0.5, 0.65), rnd(0.3, 0.42)); R1.setColorAt(i, col); });
+  [T1, P1, P2, R1].forEach(m => { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; });
+  // bushes and wild flowers
+  const bushes = [], flw = []; for (let i = 0; i < 900; i++) { const x = rnd(B.x0 + 1, B.x1 - 1), z = rnd(B.z0 + 1, B.z1 - 1); if (nearBuilding(x, z, 1) || onPath(x, z)) continue; (Math.random() < 0.55 ? bushes : flw).push([x, z]); }
+  const BU = mk(bushG, new THREE.MeshLambertMaterial({ flatShading: true }), bushes.length, false), FL = mk(flowerG, new THREE.MeshLambertMaterial({}), flw.length * 3, false);
+  bushes.forEach(([x, z], i) => { const sc = rnd(0.7, 1.5); d.rotation.set(0, rnd(0, 6), 0); d.scale.set(sc, sc * 0.8, sc); d.position.set(x, 0.3 * sc, z); d.updateMatrix(); BU.setMatrixAt(i, d.matrix); col.setHSL(rnd(0.25, 0.35), 0.55, rnd(0.22, 0.34)); BU.setColorAt(i, col); });
+  flw.forEach(([x, z], i) => { const hue = pick([0.96, 0.12, 0.58, 0.8, 0.0]); for (let k = 0; k < 3; k++) { d.rotation.set(0, 0, 0); d.scale.setScalar(rnd(0.8, 1.2)); d.position.set(x + rnd(-0.35, 0.35), 0.1, z + rnd(-0.35, 0.35)); d.updateMatrix(); FL.setMatrixAt(i * 3 + k, d.matrix); col.setHSL(hue, 0.8, 0.6); FL.setColorAt(i * 3 + k, col); } });
+  [BU, FL].forEach(m => { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; });
+  // rocks, mushrooms and a few logs from the model library
+  for (let i = 0; i < 70; i++) { const x = rnd(B.x0 + 1, B.x1 - 1), z = rnd(B.z0 + 1, B.z1 - 1); if (nearBuilding(x, z, 2) || onPath(x, z)) continue; const o = Math.random() < 0.6 ? PROPS.rockCluster(rnd(0.6, 1.4)) : PROPS.bigMushroom(pick([0xd6336c, 0x7b3fb5, 0x2aa9a0, 0xe07a1f]), rnd(0.5, 1.2)); o.position.set(x, 0, z); o.rotation.y = rnd(0, 6); g.add(o); }
+  return g;
+}
 function buildDemoTown() {
   try { localStorage.removeItem(DEMO_KEY); if (/[?&]demo/.test(location.search)) history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ }
   G.flags.demo = 1; G.flags.tutDone = 1; G.rank = 3; G.land = 3; G.outpost = 5; G.boardLvl = 5; G.walls = 5; G.renown = 160; G.gold = 60000; G.ore = 400; G.wood = 400; G.herbs = 250; G.mana = 120; G.ingots = 60;
@@ -2108,15 +2139,26 @@ function buildDemoTown() {
     ['market', 3, 21], ['tavern', 9, 21], ['market', 17, 21], ['campfire', 14, 24], ['bakery', 23, 21], ['farm', 28, 21], ['farm', 33, 21],
     ['cottage', -2, 22], ['cottage', -2, 26], ['tent', 2, 27], ['tent', 6, 27], ['tent', 10, 27], ['well', 14, 28], ['tent', 18, 27], ['tent', 22, 27], ['cottage', 26, 27], ['cottage', 30, 27], ['pond', 20, 31], ['garden', 6, 31], ['cottage', 34, 27],
   ];
-  for (const [t, x, z] of plan) put(t, x, z);
-  // streets: an avenue in front of the plaza, a cross street, and a ring road around the market square
-  for (let x = -9; x <= 37; x++) { put('road', x, 18, 0, 0); put('road', x, 19, 0, 0); }
-  for (let z = -3; z <= 33; z++) put('road', 19, z, 0, 0);
-  for (let z = 4; z <= 17; z++) put('road', 13, z, 0, 0);
-  // palisade on the south edge, lamps and flowers along the streets
-  for (let x = -9; x <= 37; x += 2) put('palisade', x, 35, 0, 0);
-  for (let x = -8; x <= 36; x += 4) { put('lamp', x, 20, 0, 0); put('lamp', x, 17, 0, 0); }
-  for (let x = -7; x <= 35; x += 3) { put('flowers', x, 16, 0, 0); put('sapling', x + 1, 22, 0, 0); }
+  const jit = ['tent', 'cottage', 'market', 'garden', 'farm', 'pond', 'banner', 'statue', 'well', 'campfire', 'lumber', 'bakery'];
+  for (const [t, x, z] of plan) put(t, x + (jit.includes(t) ? Math.round(rnd(-1, 1)) : 0), z + (jit.includes(t) ? Math.round(rnd(-1, 1)) : 0), ['tent', 'cottage', 'market', 'cart', 'lumber'].includes(t) ? Math.floor(rnd(0, 4)) : 0);
+  // winding lanes (Catmull-Rom curves, two tiles wide) instead of a rigid grid, with lamps and flowers along them
+  const lane = (pts, width = 2, lamps = true) => {
+    const P = pts, at = (t) => { const n = P.length - 1, f = Math.min(n - 1e-6, t * n), i = Math.floor(f), u = f - i, p0 = P[Math.max(0, i - 1)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(n, i + 2)], cr = (a, b, c, d) => 0.5 * ((2 * b) + (-a + c) * u + (2 * a - 5 * b + 4 * c - d) * u * u + (-a + 3 * b - 3 * c + d) * u * u * u); return [cr(p0[0], p1[0], p2[0], p3[0]), cr(p0[1], p1[1], p2[1], p3[1])]; };
+    const len = P.reduce((n, p, k) => n + (k ? Math.hypot(p[0] - P[k - 1][0], p[1] - P[k - 1][1]) : 0), 0), steps = Math.ceil(len * 2.2);
+    for (let k = 0; k <= steps; k++) { const [x, z] = at(k / steps), [x2, z2] = at(Math.min(1, (k + 1) / steps)), nx = -(z2 - z), nz = x2 - x, nl = Math.hypot(nx, nz) || 1;
+      for (let w = 0; w < width; w++) put('road', Math.round(x + nx / nl * (w - (width - 1) / 2)), Math.round(z + nz / nl * (w - (width - 1) / 2)), 0, 0);
+      if (lamps && k % 11 === 5) { const side = (k / 11 | 0) % 2 ? 1 : -1; put('lamp', Math.round(x + nx / nl * 2.2 * side), Math.round(z + nz / nl * 2.2 * side), 0, 1); }
+      if (k % 7 === 3) put(k % 14 === 3 ? 'flowers' : 'sapling', Math.round(x - nx / nl * 2.8), Math.round(z - nz / nl * 2.8), 0, 1); }
+  };
+  lane([[14, 15], [13, 18], [9, 20], [8, 24], [12, 26], [19, 25], [26, 24], [33, 24]]);          // from the plaza through the market and tavern street out to the farms
+  lane([[14, 15], [18, 15], [22, 14], [25, 12]], 2);                                              // to the waystone portal
+  lane([[13, 10], [11, 7], [8, 6], [3, 6], [-4, 7], [-8, 10]], 2);                               // west past the forge to training and the lumber camp
+  lane([[16, 9], [18, 6], [24, 6], [30, 7], [33, 6]], 2);                                        // east along the workshops and gardens
+  lane([[8, 24], [4, 26], [1, 29], [4, 32]], 1);                                                 // down to the cottages
+  lane([[19, 25], [20, 29], [22, 32]], 1);                                                       // lane to the south pond
+  lane([[13, 10], [13, 8], [14, 4]], 1, false);                                                  // behind the hall
+  // a broken palisade with a gate gap where the main lane leaves the town
+  for (let a = 18; a <= 162; a += 8) { if (a > 80 && a < 102) continue; const r = 28, x = 14 + Math.cos(a * Math.PI / 180) * r * 1.15, z = 14 + Math.sin(a * Math.PI / 180) * r; put('palisade', Math.round(x), Math.round(z), 0, 0); }
   // everything fully upgraded, specializations chosen
   for (const b of G.buildings) { if (['forge', 'alchemy', 'tavern', 'warehouse', 'smelter', 'lumber', 'farm', 'bakery'].includes(b.type) || b.type === 'hall') { b.level = maxLevel(); b.stock = 12; } if (b.level >= 3) { const o = { tavern: 'feast', lumber: 'saw', farm: 'granary', bakery: 'loaves' }[b.type]; if (o) b.spec = o; tierDecor(b); } }
   G.buildings.filter(b => b.type === 'tower').forEach(b => { b.level = Math.max(b.level, 3); tierDecor(b); });
@@ -2143,6 +2185,7 @@ function buildDemoTown() {
   for (let i = 0; i < 6; i++) { const it = rollItem(4); it.rar = Math.max(it.rar, 1); inv().push(it); }
   applyTheme(); G.quests = G.quests.filter(q => q.state !== 'open'); for (let i = 0; i < 6; i++) genQuest();
   G.flags.login = { streak: 7, pending: 0, last: dayKey() }; G.time = Math.max(G.time, 60 * 30); resetView(); camTarget.set(14, 0, 16); viewS = VIEW0.zoom * 2.3; updateCamera();
+  demoScenery();
   chron('🏙 Demo town: a fully upgraded guild.'); toast('🏙 Demo town loaded — every building upgraded, every hero promoted. Explore!');
 }
 // ---- hero diary: a few lines per hero about what happened to them
@@ -3671,7 +3714,7 @@ if (!loaded) {
   genQuest(); genQuest();
   toast('Welcome, Guild Master! Build a Tavern and a Forge to attract & equip heroes.');
 }
-if (wantDemo) buildDemoTown();
+if (wantDemo) buildDemoTown(); else if (loaded && G.flags.demo) { try { demoScenery(); } catch (e) { logError('scenery: ' + e.message); } }
 tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
