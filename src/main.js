@@ -2086,6 +2086,108 @@ function tickBake(dt) {
   if (G.buildings.filter(bakeOk).length < 12) { if (bakedGroup.children.length) { for (const b of G.buildings) if (b.bakedMeshes) { b.bakedMeshes.forEach(m => { m.visible = true; }); b.bakedMeshes = null; } while (bakedGroup.children.length) { const o = bakedGroup.children[0]; bakedGroup.remove(o); o.geometry.dispose(); } } bakeDirty = false; return; }
   bakeBuildings();
 }
+// ---- demo town: a fully upgraded, well planned guild town for showing the game (Settings → Demo town, the first-run card, or ?demo in the address)
+const DEMO_KEY = 'fantasy-guild-master-demo', BACKUP_KEY = 'fantasy-guild-master-save-backup';
+const demoWanted = () => { try { return localStorage.getItem(DEMO_KEY) === '1' || /[?&]demo(\b|=)/.test(location.search); } catch (e) { return false; } };
+function startDemo() {
+  try { const cur = localStorage.getItem(SAVE_KEY); if (cur && !localStorage.getItem(BACKUP_KEY)) localStorage.setItem(BACKUP_KEY, cur); localStorage.setItem(DEMO_KEY, '1'); localStorage.removeItem(SAVE_KEY); } catch (e) { /* ignore */ }
+  window.__noSave = true; location.href = location.pathname;
+}
+function restoreMyGame() { try { const b = localStorage.getItem(BACKUP_KEY); if (!b) return; localStorage.setItem(SAVE_KEY, b); localStorage.removeItem(BACKUP_KEY); localStorage.removeItem(DEMO_KEY); } catch (e) { /* ignore */ } window.__noSave = true; location.href = location.pathname; }
+// the demo town sits in a living forest: thick woods outside the borders, scattered trees, bushes, rocks and flowers inside, nothing on roads or buildings
+function demoScenery() {
+  const B = landBounds(), g = new THREE.Group(); g.name = 'demoScenery'; scene.add(g);
+  const nearBuilding = (x, z, r) => { for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) if (occ.has(key(Math.floor(x) + dx, Math.floor(z) + dz))) return true; return false; };
+  const onPath = (x, z) => roadCells.has(key(Math.floor(x), Math.floor(z))) || walkCells.has(key(Math.floor(x), Math.floor(z)));
+  const trunkG = new THREE.CylinderGeometry(0.1, 0.16, 0.7, 6), coneG = new THREE.ConeGeometry(0.75, 1.1, 7), cone2G = new THREE.ConeGeometry(0.52, 0.95, 7), crownG = new THREE.IcosahedronGeometry(0.8, 0), bushG = new THREE.IcosahedronGeometry(0.42, 0), flowerG = new THREE.SphereGeometry(0.09, 5, 4);
+  const mk = (geo, material, n, shadow) => { const m = new THREE.InstancedMesh(geo, material, n); m.castShadow = shadow; m.receiveShadow = true; m.frustumCulled = false; g.add(m); return m; };
+  const trees = [];
+  // outer forest: a thick ring beyond the border (the camera sees it when zoomed out)
+  for (let i = 0; i < 1500; i++) { const a = rnd(0, 6.283), r = rnd(0, 1); const x = 14 + Math.cos(a) * (28 + r * 34) * 1.2, z = 14 + Math.sin(a) * (28 + r * 34); if (x > B.x0 - 0.5 && x < B.x1 + 0.5 && z > B.z0 - 0.5 && z < B.z1 + 0.5) continue; trees.push([x, z, rnd(1, 1.9), Math.random() < 0.3 ? 'round' : 'pine', false]); }
+  // border belt just inside the playable area
+  for (let i = 0; i < 700; i++) { const x = rnd(B.x0 + 0.5, B.x1 - 0.5), z = rnd(B.z0 + 0.5, B.z1 - 0.5), d = Math.min(x - B.x0, B.x1 - x, z - B.z0, B.z1 - z); if (d > 5.5 || Math.random() > 0.8 - d * 0.1) continue; if (nearBuilding(x, z, 1) || onPath(x, z)) continue; trees.push([x, z, rnd(0.9, 1.6), Math.random() < 0.3 ? 'round' : 'pine', true]); }
+  // gaps inside the town: groves between districts and single trees beside the lanes
+  for (let i = 0; i < 520; i++) { const x = rnd(B.x0 + 2, B.x1 - 2), z = rnd(B.z0 + 2, B.z1 - 2); if (nearBuilding(x, z, 2) || onPath(x, z)) continue; const clump = Math.sin(x * 0.35) * Math.cos(z * 0.31) > 0.1; if (!clump && Math.random() > 0.35) continue; trees.push([x, z, rnd(0.8, 1.5), Math.random() < 0.45 ? 'round' : 'pine', true]); }
+  const pines = trees.filter(t => t[3] === 'pine'), rounds = trees.filter(t => t[3] === 'round'), col = new THREE.Color(), d = new THREE.Object3D();
+  const pineMat = new THREE.MeshLambertMaterial({ flatShading: true }), roundMat = new THREE.MeshLambertMaterial({ flatShading: true });
+  const T1 = mk(trunkG, mat(0x6b4a2a), trees.length, true), P1 = mk(coneG, pineMat, pines.length, true), P2 = mk(cone2G, pineMat, pines.length, true), R1 = mk(crownG, roundMat, rounds.length, true);
+  trees.forEach((t, i) => { const [x, z, sc] = t; d.rotation.set(0, rnd(0, 6), 0); d.scale.setScalar(sc); d.position.set(x, 0.35 * sc, z); d.updateMatrix(); T1.setMatrixAt(i, d.matrix); });
+  pines.forEach((t, i) => { const [x, z, sc] = t; d.rotation.set(0, rnd(0, 6), 0); d.scale.setScalar(sc); d.position.set(x, 1.25 * sc, z); d.updateMatrix(); P1.setMatrixAt(i, d.matrix); d.position.set(x, 1.9 * sc, z); d.updateMatrix(); P2.setMatrixAt(i, d.matrix); col.setHSL(rnd(0.3, 0.38), rnd(0.5, 0.65), rnd(0.18, 0.28)); P1.setColorAt(i, col); P2.setColorAt(i, col); });
+  rounds.forEach((t, i) => { const [x, z, sc] = t; d.rotation.set(0, rnd(0, 6), 0); d.scale.set(sc, sc * rnd(0.9, 1.1), sc); d.position.set(x, 1.45 * sc, z); d.updateMatrix(); R1.setMatrixAt(i, d.matrix); col.setHSL(rnd(0.22, 0.32), rnd(0.5, 0.65), rnd(0.3, 0.42)); R1.setColorAt(i, col); });
+  [T1, P1, P2, R1].forEach(m => { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; });
+  // bushes and wild flowers
+  const bushes = [], flw = []; for (let i = 0; i < 900; i++) { const x = rnd(B.x0 + 1, B.x1 - 1), z = rnd(B.z0 + 1, B.z1 - 1); if (nearBuilding(x, z, 1) || onPath(x, z)) continue; (Math.random() < 0.55 ? bushes : flw).push([x, z]); }
+  const BU = mk(bushG, new THREE.MeshLambertMaterial({ flatShading: true }), bushes.length, false), FL = mk(flowerG, new THREE.MeshLambertMaterial({}), flw.length * 3, false);
+  bushes.forEach(([x, z], i) => { const sc = rnd(0.7, 1.5); d.rotation.set(0, rnd(0, 6), 0); d.scale.set(sc, sc * 0.8, sc); d.position.set(x, 0.3 * sc, z); d.updateMatrix(); BU.setMatrixAt(i, d.matrix); col.setHSL(rnd(0.25, 0.35), 0.55, rnd(0.22, 0.34)); BU.setColorAt(i, col); });
+  flw.forEach(([x, z], i) => { const hue = pick([0.96, 0.12, 0.58, 0.8, 0.0]); for (let k = 0; k < 3; k++) { d.rotation.set(0, 0, 0); d.scale.setScalar(rnd(0.8, 1.2)); d.position.set(x + rnd(-0.35, 0.35), 0.1, z + rnd(-0.35, 0.35)); d.updateMatrix(); FL.setMatrixAt(i * 3 + k, d.matrix); col.setHSL(hue, 0.8, 0.6); FL.setColorAt(i * 3 + k, col); } });
+  [BU, FL].forEach(m => { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; });
+  // rocks, mushrooms and a few logs from the model library
+  for (let i = 0; i < 70; i++) { const x = rnd(B.x0 + 1, B.x1 - 1), z = rnd(B.z0 + 1, B.z1 - 1); if (nearBuilding(x, z, 2) || onPath(x, z)) continue; const o = Math.random() < 0.6 ? PROPS.rockCluster(rnd(0.6, 1.4)) : PROPS.bigMushroom(pick([0xd6336c, 0x7b3fb5, 0x2aa9a0, 0xe07a1f]), rnd(0.5, 1.2)); o.position.set(x, 0, z); o.rotation.y = rnd(0, 6); g.add(o); }
+  return g;
+}
+function buildDemoTown() {
+  try { localStorage.removeItem(DEMO_KEY); if (/[?&]demo/.test(location.search)) history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ }
+  G.flags.demo = 1; G.flags.tutDone = 1; G.rank = 3; G.land = 3; G.outpost = 5; G.boardLvl = 5; G.walls = 5; G.renown = 160; G.gold = 60000; G.ore = 400; G.wood = 400; G.herbs = 250; G.mana = 120; G.ingots = 60;
+  G.rare.mythril = 8; G.rare.scale = 3; G.rare.feather = 3; G.diveBest = 34; G.flags.rep = 92; applyLand();
+  for (const k of Object.keys(TECHS)) G.research[k] = true; for (const k of Object.keys(G.staff)) G.staff[k] = maxStaff;
+  const put = (type, x, z, rot = 0, spread = 4) => { for (let r = 0; r <= spread; r++) for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) { if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue; if (canPlace(type, x + dx, z + dz, rot)) { const b = addBuilding(type, x + dx, z + dz, rot); b.pop = 1; b.group.scale.setScalar(1); return b; } } return null; };
+  // districts: crafts and training in the north, the guild hall and its plaza in the middle, market and tavern street to the south, homes and farms beyond
+  const plan = [
+    ['training', -6, 2], ['tower', -1, 2], ['forge', 4, 2], ['smelter', 10, 3], ['warehouse', 16, 2], ['alchemy', 22, 2], ['garden', 28, 3], ['tower', 33, 2], ['lumber', -7, 8],
+    ['trophy', 18, 8], ['memorial', 4, 10], ['pond', 8, 8], ['portal', 24, 9], ['hill', 30, 9], ['stones', 30, 13],
+    ['fountain', 13, 15], ['statue', 9, 15], ['banner', 6, 15], ['banner', 19, 15], ['monument', 15, 19],
+    ['market', 3, 21], ['tavern', 9, 21], ['market', 17, 21], ['campfire', 14, 24], ['bakery', 23, 21], ['farm', 28, 21], ['farm', 33, 21],
+    ['cottage', -2, 22], ['cottage', -2, 26], ['tent', 2, 27], ['tent', 6, 27], ['tent', 10, 27], ['well', 14, 28], ['tent', 18, 27], ['tent', 22, 27], ['cottage', 26, 27], ['cottage', 30, 27], ['pond', 20, 31], ['garden', 6, 31], ['cottage', 34, 27],
+  ];
+  const jit = ['tent', 'cottage', 'market', 'garden', 'farm', 'pond', 'banner', 'statue', 'well', 'campfire', 'lumber', 'bakery'];
+  for (const [t, x, z] of plan) put(t, x + (jit.includes(t) ? Math.round(rnd(-1, 1)) : 0), z + (jit.includes(t) ? Math.round(rnd(-1, 1)) : 0), ['tent', 'cottage', 'market', 'cart', 'lumber'].includes(t) ? Math.floor(rnd(0, 4)) : 0);
+  // winding lanes (Catmull-Rom curves, two tiles wide) instead of a rigid grid, with lamps and flowers along them
+  const lane = (pts, width = 2, lamps = true) => {
+    const P = pts, at = (t) => { const n = P.length - 1, f = Math.min(n - 1e-6, t * n), i = Math.floor(f), u = f - i, p0 = P[Math.max(0, i - 1)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(n, i + 2)], cr = (a, b, c, d) => 0.5 * ((2 * b) + (-a + c) * u + (2 * a - 5 * b + 4 * c - d) * u * u + (-a + 3 * b - 3 * c + d) * u * u * u); return [cr(p0[0], p1[0], p2[0], p3[0]), cr(p0[1], p1[1], p2[1], p3[1])]; };
+    const len = P.reduce((n, p, k) => n + (k ? Math.hypot(p[0] - P[k - 1][0], p[1] - P[k - 1][1]) : 0), 0), steps = Math.ceil(len * 2.2);
+    for (let k = 0; k <= steps; k++) { const [x, z] = at(k / steps), [x2, z2] = at(Math.min(1, (k + 1) / steps)), nx = -(z2 - z), nz = x2 - x, nl = Math.hypot(nx, nz) || 1;
+      for (let w = 0; w < width; w++) put('road', Math.round(x + nx / nl * (w - (width - 1) / 2)), Math.round(z + nz / nl * (w - (width - 1) / 2)), 0, 0);
+      if (lamps && k % 11 === 5) { const side = (k / 11 | 0) % 2 ? 1 : -1; put('lamp', Math.round(x + nx / nl * 2.2 * side), Math.round(z + nz / nl * 2.2 * side), 0, 1); }
+      if (k % 7 === 3) put(k % 14 === 3 ? 'flowers' : 'sapling', Math.round(x - nx / nl * 2.8), Math.round(z - nz / nl * 2.8), 0, 1); }
+  };
+  lane([[14, 15], [13, 18], [9, 20], [8, 24], [12, 26], [19, 25], [26, 24], [33, 24]]);          // from the plaza through the market and tavern street out to the farms
+  lane([[14, 15], [18, 15], [22, 14], [25, 12]], 2);                                              // to the waystone portal
+  lane([[13, 10], [11, 7], [8, 6], [3, 6], [-4, 7], [-8, 10]], 2);                               // west past the forge to training and the lumber camp
+  lane([[16, 9], [18, 6], [24, 6], [30, 7], [33, 6]], 2);                                        // east along the workshops and gardens
+  lane([[8, 24], [4, 26], [1, 29], [4, 32]], 1);                                                 // down to the cottages
+  lane([[19, 25], [20, 29], [22, 32]], 1);                                                       // lane to the south pond
+  lane([[13, 10], [13, 8], [14, 4]], 1, false);                                                  // behind the hall
+  // a broken palisade with a gate gap where the main lane leaves the town
+  for (let a = 18; a <= 162; a += 8) { if (a > 80 && a < 102) continue; const r = 28, x = 14 + Math.cos(a * Math.PI / 180) * r * 1.15, z = 14 + Math.sin(a * Math.PI / 180) * r; put('palisade', Math.round(x), Math.round(z), 0, 0); }
+  // everything fully upgraded, specializations chosen
+  for (const b of G.buildings) { if (['forge', 'alchemy', 'tavern', 'warehouse', 'smelter', 'lumber', 'farm', 'bakery'].includes(b.type) || b.type === 'hall') { b.level = maxLevel(); b.stock = 12; } if (b.level >= 3) { const o = { tavern: 'feast', lumber: 'saw', farm: 'granary', bakery: 'loaves' }[b.type]; if (o) b.spec = o; tierDecor(b); } }
+  G.buildings.filter(b => b.type === 'tower').forEach(b => { b.level = Math.max(b.level, 3); tierDecor(b); });
+  // legend, collections, pets, theme
+  G.flags.legendDone = 1; G.flags.legend = 3; G.flags.codex = { bosses: Object.fromEntries(Object.keys(CODEX_BOSS).map(k => [k, 2])), classes: Object.fromEntries(Object.keys(CLASSES).map(k => [k, 3])), tags: Object.fromEntries(Object.keys(TAGS).map(k => [k, 1])) };
+  G.flags.ach = Object.fromEntries(ACHS.filter(a => ['boss3', 'bossall', 'family', 'pass10', 'champ', 'rooms10', 'cls6', 'tag12'].includes(a.id)).map(a => [a.id, 1]));
+  G.flags.pets = ['dog', 'cat', 'hawk', 'fox']; G.flags.themes = ['crimson', 'azure', 'emerald', 'violet', 'obsidian']; G.flags.theme = 'azure'; G.flags.kw = { fame: 600, t: 300 };
+  for (const k of Object.keys(LEGWEP)) { bps()[k] = 1; armory()[k] = 'free'; }
+  Object.keys(G.regions).length || (G.regions = {}); for (const id of Object.keys(REGIONS)) G.regions[id] = { done: 40, fame: 60, trial: 3 }; G.regions.greenwood = { done: 60, fame: 80, trial: 3 };
+  retired().push({ name: 'Old Brannoch', cls: 'knight', role: 'instructor', level: 9, tags: [] }, { name: 'Sera the Quick', cls: 'ranger', role: 'scout', level: 8, tags: [] }, { name: 'Dame Orla', cls: 'cleric', role: 'quartermaster', level: 9, tags: [] });
+  // the roster: a full, varied guild, every hero promoted, geared, trained and equipped
+  const cls = ['knight', 'ranger', 'wizard', 'rogue', 'cleric', 'alchemist'], hats = ['crown', 'plume', 'party', 'halo', 'flowers', 'explorer'], roles = ['tank', 'striker', 'support'];
+  for (const h of G.heroes.slice()) removeHero(h);
+  for (let i = 0; i < Math.min(popCap(), 18); i++) {
+    const c = cls[i % cls.length], p = new THREE.Vector3(HALL.cx + 2.5 + rnd(-3, 3), 0, HALL.cz + 5 + rnd(0, 3)), h = createHero({ cls: c, variant: i % 3, name: NAMES[i % NAMES.length], x: p.x, z: p.z, level: 7 + (i % 4) });
+    h.gear = true; h.gearTier = 3; h.plus = maxPlus(); h.stamina = 100; h.happy = 100; h.loy = 90; h.promo = i % 4 === 3 ? false : (i % 2 ? 'b' : true); if (h.promo) addPromoGear(h);
+    h.talents = TALENTS[c].slice(0, talentSlots(h)).map(t => t[0][0]); h.role = roles[i % 3]; h.charm = Object.keys(CHARMS)[i % 4]; h.hat = hats[i % hats.length]; h.sk = { off: 3, def: Math.min(3, i % 4), uti: 1 };
+    const w = Object.keys(LEGWEP).find(k => LEGWEP[k].cls === c); if (w && !G.heroes.some(x => x.wep === w)) { h.wep = w; armory()[w] = h.name; }
+    h.eq = { armor: { ...rollItem(5), rar: 2, name: 'Epic Sturdy Mail', aff: { survive: 0.06, pw: 0.05 } }, trinket: { ...rollItem(5), rar: 3, name: 'Legendary Greedy Ring', aff: { loot: 0.18, succ: 0.04, pw: 0.06 } } };
+    setTimeout(() => { try { applyHat(h); } catch (e) { /* cosmetic */ } }, 80);
+  }
+  for (let i = 0; i < G.heroes.length - 1; i += 2) { const a = G.heroes[i], b = G.heroes[i + 1]; addAff(a, b, 70, true); }
+  G.heroes.forEach(h => cardAdd(h, true)); G.heroes.forEach(h => { if (h.promo) { G.flags.cards = G.flags.cards || {}; G.flags.cards[cardKey(h.cls, h.promo === 'b' ? 'b' : 'a')] = 1; } });
+  for (let i = 0; i < 6; i++) { const it = rollItem(4); it.rar = Math.max(it.rar, 1); inv().push(it); }
+  applyTheme(); G.quests = G.quests.filter(q => q.state !== 'open'); for (let i = 0; i < 6; i++) genQuest();
+  G.flags.login = { streak: 7, pending: 0, last: dayKey() }; G.time = Math.max(G.time, 60 * 30); resetView(); camTarget.set(14, 0, 16); viewS = VIEW0.zoom * 2.3; updateCamera();
+  demoScenery();
+  chron('🏙 Demo town: a fully upgraded guild.'); toast('🏙 Demo town loaded — every building upgraded, every hero promoted. Explore!');
+}
 // ---- hero diary: a few lines per hero about what happened to them
 const diary = (h, text) => { if (!h) return; const d = (h.diary ||= []); d.push({ d: Math.floor(G.time / 60) + 1, t: text }); if (d.length > 8) d.shift(); };
 // ---- 3D companions and disaster visuals
@@ -2454,7 +2556,7 @@ function updateHUD() {
  * ------------------------------------------------------------------ */
 let modalKind = null, modalArg = null, lastHtml = '';
 const modal = $('modal');
-let heroTab = 'abil';
+let heroTab = 'abil', demoConfirm = false;
 function openModal(kind, arg) { if (kind === 'upgrades') G.flags.tutRank = 1; modalKind = kind; modalArg = arg; modal.classList.remove('hidden'); renderModal(true); }
 function closeModal() { stopRoom(); modalKind = null; modal.classList.add('hidden'); lastHtml = ''; }
 $('modalClose').onclick = closeModal;
@@ -2546,6 +2648,7 @@ function modalContent() {
       <div class="row"><div class="grow"><div class="t">📈 Performance</div><div class="s">Frame time ${frameEma.toFixed(0)} ms (about ${Math.round(1000 / Math.max(8, frameEma))} fps)${slowT >= 5 ? ' · slow: decorations paused' : ''}. When it stays slow the game pauses pets and disaster effects, and Auto graphics lowers the resolution.</div></div></div>
       ${G.flags.legendDone ? `<div class="row"><div class="grow"><div class="t">👑 Crown favor</div><div class="s">Level ${kingdomLv()}/10 · ${kingdom().fame % KW_PER}/${KW_PER} toward the next. Each level: +2% quest gold. The Crown calls for aid every few minutes.</div></div></div>` : ''}
       <div class="row"><div class="grow"><div class="t">👆 Touch controls</div><div class="s">Pan mode: one finger drags the view, two fingers pinch to zoom and twist to rotate. Orbit mode: one finger rotates. Double-tap empty ground to reset the view.</div></div><button class="act" data-act="touchscheme">${touchScheme() === 'pan' ? 'Pan' : 'Orbit'}</button></div>
+      <div class="row" style="border-color:#ffd24a"><div class="grow"><div class="t">🏙 Demo town</div><div class="s">${demoConfirm ? '<b>Replace the current guild with a fully upgraded demo town? Your own game is kept and can be restored.</b>' : 'Load a complete, fully upgraded, well planned town to look around.'}${G.flags.demo ? ' (You are in the demo town.)' : ''}</div></div><div style="display:flex;gap:4px"><button class="act ${demoConfirm ? 'red' : ''}" data-act="demotown">${demoConfirm ? 'Yes, load it' : 'Load demo'}</button>${(() => { try { return localStorage.getItem(BACKUP_KEY) ? '<button class="act red" data-act="demorestore">Restore my game</button>' : ''; } catch (e) { return ''; } })()}</div></div>
       <div class="row"><div class="grow"><div class="t">📷 Photo mode</div><div class="s">Hides the interface so you can look at your town. Tap to leave.</div></div><button class="act" data-act="photo">Start</button></div>
       <div class="row"><div class="grow"><div class="t">🧾 Error log</div><div class="s">${readErrs().length} recorded on this device.</div></div><button class="act red" data-act="errlog">Open</button></div>
       <div class="row"><div class="grow"><div class="t">🌐 Language</div><div class="s">English / 한국어 / 日本語</div></div>${Object.entries(LANGS).map(([k, n]) => `<button class="act ${getLang() === k ? '' : 'red'}" style="${getLang() === k ? 'outline:2px solid #fff8' : ''}" data-act="lang" data-l="${k}">${n}</button>`).join('')}</div>
@@ -2886,6 +2989,8 @@ const ACT = {
   role(d) { const h = G.heroes.find(x => x.id === +d.id), R = ROLES[d.k]; if (!h || !R || h.level < 3 || G.gold < roleCost(h)) return; G.gold -= roleCost(h); h.role = d.k; diary(h, `Took up the role of ${R[1].toLowerCase()}.`); toast(`${R[0]} ${h.name} is now a ${R[1].toLowerCase()}.`); sfx('goal'); },
   heroes() { openModal('heroes'); },
   album() { openModal('album'); },
+  demotown() { if (!demoConfirm) { demoConfirm = true; return; } demoConfirm = false; startDemo(); },
+  demorestore() { restoreMyGame(); },
   coachok() { (G.flags.coach ||= {})[modalKind] = 1; },
   seeds() { openModal('seeds'); },
   seedrand() { G.flags.lastSeed = randomCode(); },
@@ -3601,15 +3706,17 @@ function frame() {
  * ------------------------------------------------------------------ */
 initLang();
 resize();
-const loaded = loadGame(); G.heroes.forEach(h => cardAdd(h, true)); checkAway(); applyA11y(); try { applyTheme(); } catch (e) { /* cosmetic */ } setTimeout(() => { try { if (IAP.owned('starter_pack') && !G.flags.starter) grantPurchase('starter_pack'); } catch (e) { /* offline */ } }, 5000); checkDaily(); setTimeout(() => { if (G.flags.login && G.flags.login.pending && (G.flags.tutDone || G.questsDone > 0)) openModal('daily'); }, 2500); loadedOnce = true; try { buildLandmarks(false); } catch (e) { /* decoration */ }
+const wantDemo = demoWanted(); if (wantDemo) { try { const cur = localStorage.getItem(SAVE_KEY); if (cur && !localStorage.getItem(BACKUP_KEY) && !/"demo":1/.test(cur)) localStorage.setItem(BACKUP_KEY, cur); } catch (e) { /* ignore */ } }
+const loaded = wantDemo ? false : loadGame(); G.heroes.forEach(h => cardAdd(h, true)); checkAway(); applyA11y(); try { applyTheme(); } catch (e) { /* cosmetic */ } setTimeout(() => { try { if (IAP.owned('starter_pack') && !G.flags.starter) grantPurchase('starter_pack'); } catch (e) { /* offline */ } }, 5000); checkDaily(); setTimeout(() => { if (G.flags.login && G.flags.login.pending && (G.flags.tutDone || G.questsDone > 0)) openModal('daily'); }, 2500); loadedOnce = true; try { buildLandmarks(false); } catch (e) { /* decoration */ }
 if (!loaded) {
   G.gold += 300 * legacyLvl('purse'); G.renown += 2 * legacyLvl('name'); if (hand('poor')) { G.gold = 200; G.renown = 0; } G.flags.gen = LEGACY.gen + 1; if (LEGACY.gen) chron(`🏛 Generation ${LEGACY.gen + 1} of the guild begins.`);
   spawnHero('knight', true); spawnHero('ranger', true);
   genQuest(); genQuest();
   toast('Welcome, Guild Master! Build a Tavern and a Forge to attract & equip heroes.');
 }
+if (wantDemo) buildDemoTown(); else if (loaded && G.flags.demo) { try { demoScenery(); } catch (e) { logError('scenery: ' + e.message); } }
 tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__renderer = renderer; window.__scene = scene; window.__api = { bakeBuildings, applyHat, HATS, dvStart, dvChoose, dvRelic, dvState, epilogue, ENDINGS, tickScenes, tickRivalArc, weather, tickCalendar, dayNo, tierDecor, whyFailed, tickAutoManage, rollItem, dropLoot, equipItem, inv, maybeFork, smiteGoblin, tickFlash, cardAdd, tickVisitors, districts, fullKit, ROLES, missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__startDemo = () => { if (confirm('Load the demo town? Your own game is kept and can be restored from Settings.')) startDemo(); }; window.__renderer = renderer; window.__scene = scene; window.__api = { bakeBuildings, applyHat, HATS, dvStart, dvChoose, dvRelic, dvState, epilogue, ENDINGS, tickScenes, tickRivalArc, weather, tickCalendar, dayNo, tierDecor, whyFailed, tickAutoManage, rollItem, dropLoot, equipItem, inv, maybeFork, smiteGoblin, tickFlash, cardAdd, tickVisitors, districts, fullKit, ROLES, missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
