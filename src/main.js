@@ -507,7 +507,7 @@ function bondInfo(party) {
   for (let i = 0; i < party.length; i++) for (let j = i + 1; j < party.length; j++) { const k = (party[i].bonds || {})[party[j].id], f = PAIR[k]; if (!f) continue; d += f[0]; notes.push(`${f[1]} ${party[i].name} & ${party[j].name} (${f[0] > 0 ? '+' : '−'}${Math.abs(Math.round(f[0] * 100))}%)`); }
   return { d, notes };
 }
-function memorialize(h, deed) { sfx('die'); chron(`✝ ${h.name} ${deed}.`); grieve(h); G.fallen.push({ name: h.name, cls: heroLabel(h), level: h.level, quests: h.quests || 0, vip: !!h.vip, deed, day: Math.floor(G.time / 60) }); if (G.fallen.length > 40) G.fallen.shift(); }
+function memorialize(h, deed) { sfx('die'); setTimeout(() => { try { gatherMourners(h); } catch (e) { /* cosmetic */ } }, 400); chron(`✝ ${h.name} ${deed}.`); grieve(h); G.fallen.push({ name: h.name, cls: heroLabel(h), level: h.level, quests: h.quests || 0, vip: !!h.vip, deed, day: Math.floor(G.time / 60) }); if (G.fallen.length > 40) G.fallen.shift(); }
 // ---- guild specialization (light faction): perks plus a different-looking Guild Hall
 const FACTIONS = {
   vanguard: { name: 'Iron Vanguard', icon: '⚔️', type: 'combat', cls: 'knight', desc: 'Masters of the front line. Iron spikes and shields adorn the hall.', perk: '+10% success on combat quests · Knights +10% power · Forge +15% speed' },
@@ -649,6 +649,81 @@ function setMood(h, icon) {
   h.bub.classList.remove('hidden'); if (h.bub.textContent !== icon) h.bub.textContent = icon;
 }
 
+// ---- free time: heroes with nothing to do spend the day in the town (training, the market, the fire, the tavern, a stroll, sleep…) by time of day and personality
+const dayPhase = () => ((G.time + 0.3 * DAY_LEN) % DAY_LEN) / DAY_LEN;   // 0.5 is noon, 0 / 1 midnight
+const phaseKind = () => { const p = dayPhase(); return p < 0.12 || p > 0.82 ? 3 : p < 0.4 ? 0 : p < 0.62 ? 1 : 2; };   // 0 morning, 1 day, 2 evening, 3 night
+const FREE = [
+  { id: 'train', icon: '⚔', need: ['training'], alt: true, ph: [3, 2, 1, 0], tags: { ambitious: 3, hothead: 3, proud: 2, loyal: 1 }, dur: [10, 16], text: 'trains' },
+  { id: 'forge', icon: '🔨', need: ['forge'], ph: [1, 2, 1, 0], tags: { loyal: 1, curious: 1 }, dur: [7, 11], text: 'watches the smith' },
+  { id: 'market', icon: '🛍', need: ['market'], ph: [1, 3, 2, 0], tags: { frugal: 3, cheerful: 1 }, dur: [8, 13], text: 'browses the stalls' },
+  { id: 'read', icon: '📖', need: ['alchemy', 'trophy'], ph: [2, 2, 2, 1], tags: { curious: 3 }, dur: [10, 15], text: 'reads' },
+  { id: 'fire', icon: '🔥', need: ['campfire'], ph: [0, 0.5, 3, 3], tags: { lazy: 3, romantic: 1, gloomy: 1, timid: 1 }, dur: [12, 20], text: 'sits by the fire' },
+  { id: 'pub', icon: '🍻', need: ['tavern'], ph: [0, 1, 4, 2], tags: { cheerful: 2 }, trait: 'glutton', dur: [10, 16], text: 'enjoys the tavern' },
+  { id: 'stroll', icon: '🌸', need: ['fountain', 'pond', 'garden', 'flowers', 'statue'], ph: [3, 2, 3, 0.5], tags: { romantic: 3, kind: 1, curious: 1 }, dur: [8, 13], text: 'takes a stroll' },
+  { id: 'pray', icon: '🕯', need: ['memorial'], ph: [1, 1, 2, 1], tags: { kind: 2, gloomy: 2 }, dur: [8, 12], text: 'pays respects', cond: () => G.fallen.length > 0 },
+  { id: 'sleep', icon: '💤', need: ['tent', 'cottage'], ph: [0, 0, 0.5, 4], tags: { lazy: 2, timid: 1 }, dur: [14, 22], text: 'rests' },
+  { id: 'patrol', icon: '🚶', need: [], ph: [2, 2, 2, 1], tags: { loyal: 2 }, dur: [4, 6], text: 'walks the lanes' },
+];
+const FREE_BY = Object.fromEntries(FREE.map(a => [a.id, a]));
+const venueOf = A => { const list = A.need.flatMap(t => ofType(t)); return list.length ? list[Math.floor(Math.random() * list.length)] : null; };
+function spotAt(b) {   // a free place near the door of a building, spread around so heroes do not stack
+  const cx = b.cx + b.w / 2, cz = b.cz + b.d / 2; let ux = b.door.x - cx, uz = b.door.z - cz; const l = Math.hypot(ux, uz) || 1; ux /= l; uz /= l;
+  const used = (b.spotUse ||= []), now = G.time; for (let k = used.length - 1; k >= 0; k--) if (used[k].t < now) used.splice(k, 1);
+  for (let tries = 0; tries < 8; tries++) { const row = Math.floor(rnd(0, 3)), col = Math.floor(rnd(-1, 2)), x = b.door.x + ux * (0.5 + 0.8 * row) - uz * col * 1.2, z = b.door.z + uz * (0.5 + 0.8 * row) + ux * col * 1.2; if (!used.some(u => Math.hypot(u.x - x, u.z - z) < 0.8) && !blocked(Math.floor(x), Math.floor(z))) { used.push({ x, z, t: now + 40 }); return new THREE.Vector3(x, 0, z); } }
+  return new THREE.Vector3(b.door.x + rnd(-1.5, 1.5), 0, b.door.z + rnd(0, 1.5));
+}
+function plazaSpot(r = 4) { return new THREE.Vector3(HALL.cx + 2.5 + rnd(-r, r), 0, HALL.cz + 5.5 + rnd(0, r * 0.6)); }
+function faceTo(h, x, z) { h.mesh.rotation.y = Math.atan2(x - h.pos.x, z - h.pos.z); }
+function finishFree(h, A, b, social, partner) {
+  setMood(h, '✅'); h.act = null; h.actB = null; h.cool = rnd(1, 3); const ok = !h.lastFx || G.time - h.lastFx > 18; const pos = h.pos;
+  if (partner && G.heroes.includes(partner)) { addAff(h, partner, (h.bonds[partner.id] === 'rival' ? 1.0 : 1.6), true); floatText(pos, { sweet: '💕', rival: '⚡', mentor: '🎓', apprentice: '🎓' }[h.bonds[partner.id]] || '💬', '#fff'); h.happy = Math.min(100, h.happy + 4); h.lastFx = G.time; return; }
+  if (!ok) return; h.lastFx = G.time;
+  if (A.id === 'train') { gainXp(h, 0.35 + 0.1 * ofType('training').length); floatText(pos, '+XP', '#8fd4ff'); }
+  else if (A.id === 'forge') { h.happy = Math.min(100, h.happy + 4); }
+  else if (A.id === 'market') { const g = 2 + Math.floor(rnd(0, 3)); G.gold += g; floatText(pos, `+${g}g`, '#ffd24a'); }
+  else if (A.id === 'read') { gainXp(h, 0.15); if (Math.random() < 0.25) { G.mana += 1; floatText(pos, '+1 ✨', '#c9a0ff'); } }
+  else if (A.id === 'fire') { h.happy = Math.min(100, h.happy + 9); floatText(pos, '😌', '#fff'); }
+  else if (A.id === 'pub') { h.happy = Math.min(100, h.happy + 6); G.gold += 1; floatText(pos, '🍻', '#fff'); }
+  else if (A.id === 'stroll') { h.happy = Math.min(100, h.happy + 6); floatText(pos, '🌸', '#fff'); }
+  else if (A.id === 'pray') { h.happy = Math.min(100, h.happy + 3); h.loy = Math.min(100, (h.loy ?? 60) + 1.5); floatText(pos, '🕯', '#ffd24a'); }
+  else if (A.id === 'sleep') { h.stamina = Math.min(100, h.stamina + 20); h.happy = Math.min(100, h.happy + 2); floatText(pos, '😴', '#fff'); }
+}
+function startFree(h, A, b, partner) {
+  h.act = A.id; h.actB = b; setMood(h, partner ? ({ sweet: '💕', rival: '⚡', mentor: '🎓', apprentice: '🎓', friend: '💬', sibling: '💬' }[h.bonds[partner.id]] || '💬') : A.icon);
+  if (A.id === 'patrol' || !b) {   // walk a short loop around the plaza and the lanes
+    const a1 = rnd(0, 6.283), a2 = a1 + rnd(1.5, 3), R = 7 + rnd(0, 3), p1 = new THREE.Vector3(HALL.cx + 2.5 + Math.cos(a1) * R, 0, HALL.cz + 2 + Math.sin(a1) * R), p2 = new THREE.Vector3(HALL.cx + 2.5 + Math.cos(a2) * R, 0, HALL.cz + 2 + Math.sin(a2) * R);
+    return goTo(h, p1, () => goTo(h, p2, () => { h.state = 'busy'; h.timer = rnd(1, 2); h.onDone = () => finishFree(h, A, null, false, partner); }));
+  }
+  const spot = partner ? new THREE.Vector3(partner.pos.x + rnd(-1.1, 1.1), 0, partner.pos.z + rnd(0.6, 1.4)) : spotAt(b), cx = b.cx + b.w / 2, cz = b.cz + b.d / 2;
+  goTo(h, spot, () => { h.state = 'busy'; h.timer = partner ? rnd(6, 10) : rnd(A.dur[0], A.dur[1]); h.onDone = () => finishFree(h, A, b, false, partner); faceTo(h, partner ? partner.pos.x : cx, partner ? partner.pos.z : cz); h.mesh.visible = true; });
+}
+function freeTime(h) {
+  if (G.goblins.length && (G.flags.postSel || []).length === 0 && h.stamina >= 45) { setMood(h, '🛡'); return goTo(h, new THREE.Vector3(HALL.cx + 2.5 + rnd(-3, 3), 0, HALL.cz + 3.5 + rnd(0, 1.5)), () => { h.state = 'waiting'; h.timer = rnd(4, 7); h.onDone = null; }); }
+  const ph = phaseKind(), tags = h.tags || [];
+  // friends, sweethearts, rivals and mentors seek each other out
+  if (Math.random() < 0.4) {
+    for (const [id, kind] of Object.entries(h.bonds || {})) { const p = G.heroes.find(x => x.id === +id); if (!p || p === h || !p.act || p.state === 'quest' || !p.actB && p.act !== 'patrol') continue; const A = FREE_BY[p.act]; if (!A || A.id === 'sleep' || A.id === 'patrol') continue; if (kind === 'rival' && A.id !== 'train') continue; return startFree(h, A, p.actB, p); }
+  }
+  const opts = FREE.map(A => { if (A.cond && !A.cond()) return [A, 0]; if (A.need.length && !venueOf(A) && !A.alt) return [A, 0]; let w = A.ph[ph]; for (const t of tags) w += (A.tags[t] || 0) * (A.ph[ph] > 0 ? 1 : 0); if (A.trait && traitOf(h) === A.trait) w += 3; return [A, w]; }).filter(([, w]) => w > 0);
+  if (!opts.length) return wanderNearHall(h);
+  let r = Math.random() * opts.reduce((n, [, w]) => n + w, 0), pick1 = opts[0][0]; for (const [A, w] of opts) { r -= w; if (r <= 0) { pick1 = A; break; } }
+  startFree(h, pick1, venueOf(pick1), null);
+}
+// a few heroes drop what they are doing and gather: to greet a returning party, to mourn at the memorial, to man the walls
+function rally(h, pos, icon, dur, fx) {
+  if (h.state === 'quest' || h.state === 'leaving' || h.stamina < 45 || !h.gear) return false; if (h.state === 'busy' && !h.act) return false; h.act = 'rally'; h.actB = null; setMood(h, icon);
+  goTo(h, pos, () => { h.state = 'busy'; h.timer = dur; h.onDone = () => { h.act = null; setMood(h, '✅'); h.cool = rnd(1, 2); if (fx) fx(h); }; }); return true;
+}
+function greetReturn(party) {
+  const free = G.heroes.filter(h => !party.includes(h) && h.state !== 'quest').sort(() => Math.random() - 0.5).slice(0, 4);
+  free.forEach((h, i) => rally(h, new THREE.Vector3(HALL.cx + 2.5 + (i - 1.5) * 1.3, 0, HALL.cz + 6.8), '👏', 4.5, x => { x.happy = Math.min(100, x.happy + 3); floatText(x.pos, '👏', '#fff'); }));
+  const t = first('tavern'); if (t) party.forEach((h, i) => { if (G.heroes.includes(h) && Math.random() < 0.6) rally(h, spotAt(t), '🍻', 7, x => { x.happy = Math.min(100, x.happy + 4); }); });
+}
+function gatherMourners(fallen) {
+  const m = first('memorial'); if (!m) return;
+  const kin = G.heroes.filter(h => h !== fallen && ((h.bonds || {})[fallen.id] || (h.aff || {})[fallen.id] > 30)), rest = G.heroes.filter(h => !kin.includes(h) && h !== fallen).sort(() => Math.random() - 0.5);
+  [...kin, ...rest].slice(0, 4).forEach(h => rally(h, spotAt(m), '🕯', 10, x => { x.happy = Math.min(100, x.happy + 2); x.loy = Math.min(100, (x.loy ?? 60) + 2); floatText(x.pos, '🕯', '#ffd24a'); }));
+}
 function decide(h) {
   h.cool = 1.5;
   const tavern = first('tavern');
@@ -679,10 +754,7 @@ function decide(h) {
     return wanderNearHall(h);
   }
   setMood(h, '✅');
-  if (h.state !== 'ready') {
-    h.state = 'ready';
-    wanderNearHall(h);
-  } else wanderNearHall(h);
+  freeTime(h);
 }
 
 const GRADE = { forge: ['', 'Iron', 'Steel', 'Mythril'], alchemy: ['', 'Minor', 'Greater', 'Superior'] };
@@ -883,7 +955,7 @@ function notify(title, body) {
 }
 function resolveQuest(q) {
   const ok = q.ok; sfx(ok ? 'win' : 'lose'); notify(ok ? '🏆 Quest complete' : '☠ Quest failed', q.name);
-  onQuestEnd(q, ok); maybeQuestEvent(q); if (!ok && !q.defense) { try { whyFailed(q); } catch (e) { logError('why: ' + e.message); } }
+  onQuestEnd(q, ok); maybeQuestEvent(q); setTimeout(() => { try { greetReturn(q.heroes.filter(x => G.heroes.includes(x))); } catch (e) { /* cosmetic */ } }, 600); if (!ok && !q.defense) { try { whyFailed(q); } catch (e) { logError('why: ' + e.message); } }
   const hp = new THREE.Vector3(HALL.cx + 2.5, 0, HALL.cz + 5);
   q.state = 'done'; G.quests.splice(G.quests.indexOf(q), 1);
   const alive = [];
@@ -1100,6 +1172,7 @@ function startRaid() {
     m.position.set(side ? 1.5 + rnd(0, 1.5) : 1.5 + rnd(0, 3), 0, side ? 4 + rnd(0, 3) + i : 1.5 + rnd(0, 1.5));
     scene.add(m); G.goblins.push({ mesh: m, phase: rnd(0, 6) });
   }
+  G.heroes.forEach(h => { if (h.act) { h.act = null; h.state = 'idle'; h.cool = 0; } });
   const { party } = defenderParty(false);
   const q = { id: G.nextId++, name: bossRaid ? 'Warchief Raid at the Gates' : 'Raid at the Gates', type: 'defense', defense: true, state: 'active', heroes: [], party, raidCount: count, bossRaid, minH: Math.max(1, Math.min(3, count - 1)), maxH: 4, dur: 28, t: 28, gold: 0, renown: 0, loot: {}, mods: [], heals: [], deaths: [], enchant: false, seed: (Math.random() * 1e9) | 0, special: true };
   q.chance = Math.max(0.05, Math.min(0.97, defense(false) / raidThreat(q))); q.ok = Math.random() < q.chance; q.script = genScript(q); G.quests.push(q); G.alarm = false;
@@ -3715,4 +3788,4 @@ tutorial.init();
 frame();
 window.__heroHp = heroHp; window.__rebuild = rebuildDive;
 window.__sim = { updateEconomy, updateHero, updateGoblins, resolveDive, rankUp, staffCost, STAFF, TECHS, hasRare, spendRare, upReq, readyHeroes, bestParty, deliverOrder, musterHeroes, chooseStory, STORIES };
-window.__startDemo = () => { if (confirm('Load the demo town? Your own game is kept and can be restored from Settings.')) startDemo(); }; window.__renderer = renderer; window.__scene = scene; window.__api = { bakeBuildings, applyHat, HATS, dvStart, dvChoose, dvRelic, dvState, epilogue, ENDINGS, tickScenes, tickRivalArc, weather, tickCalendar, dayNo, tierDecor, whyFailed, tickAutoManage, rollItem, dropLoot, equipItem, inv, maybeFork, smiteGoblin, tickFlash, cardAdd, tickVisitors, districts, fullKit, ROLES, missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
+window.__startDemo = () => { if (confirm('Load the demo town? Your own game is kept and can be restored from Settings.')) startDemo(); }; window.__renderer = renderer; window.__scene = scene; window.__api = { freeTime, FREE, greetReturn, gatherMourners, phaseKind, bakeBuildings, applyHat, HATS, dvStart, dvChoose, dvRelic, dvState, epilogue, ENDINGS, tickScenes, tickRivalArc, weather, tickCalendar, dayNo, tierDecor, whyFailed, tickAutoManage, rollItem, dropLoot, equipItem, inv, maybeFork, smiteGoblin, tickFlash, cardAdd, tickVisitors, districts, fullKit, ROLES, missions, missionTick, nextAdvice, heroTodo, heroList, todoCount, weekRule, kingdomFavor, kingdomLv, dropBlueprint, craftLegend, equipLegend, LEGWEP, perf: () => ({ frameEma, slowT }), passPts, pass, passTier, checkAway, setAway: v => { pendingAway = v; }, logError, readErrs, a11y, applyA11y, setPhoto, applyTheme, tickTrade, chooseTrade, calEvent, challengeDone, spawnHero, tickFamily, retireHero, pushEvent, inboxItems, checkDaily, tickMemorial, dispatchDive, applyLand, tickRival, legacyGain, checkAch, chanceFor, endWatch, makeQuest, squares, autoRoad, pavable, defense, watchTap, heroScreen: h => toScreen(watching.exp.hero[h].m.position.clone().add(watching.exp.origin), 0.45), skillLeft, startFest, tickFestival, tickPeople, storyChapter, townTick, repGain, addAff, bondGrow, grieve, memorialize, legendTick, resolveQuest, seasonIdx, openModal, startPlacement, confirmPlacement, moveGhost, FACTIONS, applyFactionLook, REGIONS, regionLevel, landBounds, applyLand, audioState, tutorial, gainXp, talentSlots, heroLabel, raidQuest, genScript, relicMods, makeQuest, STORIES, chooseStory, checkStories, modPenalty, chanceFor, maxLevel, previewBonus, adj, gradeUnlocked, heroPower, tickMarket, checkGoals, closeModal, dispatchDive, diveTick, resolveDive, toScreen, findPath, blocked, saveGame, loadGame, serialize, startWatch, endWatch, watchEnchant, watchPotion, watchRecall, addBuilding, canPlace, spawnHero, openModal, ACT, startRaid, startMerchant, addOrder, deliverOrder, genQuest, dispatch, readyHeroes };
